@@ -201,12 +201,63 @@ main{view-transition-name:floor}
 .tile .big{font:800 1.9rem/1 var(--display)}
 .tile .sub{font-size:.82rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .events{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(min(84vw,18.75rem),1fr);gap:0.75rem;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:.6rem;scrollbar-width:thin}
-.ev{scroll-snap-align:start;display:grid;grid-template-rows:9.375rem auto;border-radius:var(--r);overflow:hidden;background:var(--card);border:1px solid var(--line);text-decoration:none}
-.ev .img{position:relative}
-.ev .when{position:absolute;left:0.75rem;top:0.75rem;background:var(--bg);color:var(--fg);border-radius:0.75rem;padding:.35rem .6rem;text-align:center;font:800 .7rem/1.2 var(--body);letter-spacing:.08em;text-transform:uppercase}
-.ev .when b{display:block;font:800 1.3rem/1 var(--display);letter-spacing:0}
-.ev .body{padding:1rem 1.1rem;display:grid;gap:.35rem;align-content:start}
+/* билет события: корешок с датой, перфорация (вырезы маской), тело */
+.events{grid-auto-columns:minmax(min(86vw,22rem),1fr)}
+.ev{--stub:5.5rem;scroll-snap-align:start;display:grid;grid-template-columns:var(--stub) 1fr;min-height:9.5rem;border-radius:var(--r2);background:var(--card);text-decoration:none;color:inherit;box-shadow:var(--hi);
+  -webkit-mask:radial-gradient(circle .55rem at var(--stub) 0,#0000 97%,#000) top/100% 51% no-repeat,radial-gradient(circle .55rem at var(--stub) 100%,#0000 97%,#000) bottom/100% 51% no-repeat;
+  mask:radial-gradient(circle .55rem at var(--stub) 0,#0000 97%,#000) top/100% 51% no-repeat,radial-gradient(circle .55rem at var(--stub) 100%,#0000 97%,#000) bottom/100% 51% no-repeat;transition:transform var(--d-hover) var(--ease-out)}
+.ev:hover{transform:translateY(-2px)}
+.ev .stub{display:grid;align-content:center;justify-items:center;gap:.15rem;padding:.8rem .3rem;border-right:2px dashed rgba(249,237,199,.14);background:linear-gradient(165deg,color-mix(in srgb,var(--a) 34%,var(--card)),var(--card) 80%) center/cover;text-transform:uppercase;font:800 .7rem/1.1 var(--body);letter-spacing:.14em}
+.ev .stub b{font:800 2rem/1 var(--display);letter-spacing:-.02em}
+.ev .stub small{font:700 .72rem var(--body);color:var(--mut);letter-spacing:.04em;margin-top:.3rem}
+.ev.live .stub{background:linear-gradient(165deg,color-mix(in srgb,var(--pink) 55%,var(--card)),var(--card) 85%)}
+.ev .body{padding:1rem 1.1rem;display:grid;gap:.35rem;align-content:start;min-width:0}
 .ev h4{font-size:1.02rem}
+
+/* табло отеля: перекидные ячейки */
+.fboard{position:relative;margin-top:1.4rem;padding:.2rem clamp(.9rem,2.4vw,1.6rem) .6rem;border-radius:var(--r);background:#0a0607;border:1px solid var(--line2);box-shadow:var(--hi),var(--shadow)}
+.fboard::before{content:"";position:absolute;left:1.4rem;right:1.4rem;top:-1px;height:1px;background:var(--edge-brass);opacity:.8}
+.fb-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;padding:.85rem 0 .55rem}
+.fb-live{display:inline-flex;align-items:center;gap:.45rem;font:700 .7rem var(--body);letter-spacing:.06em;color:var(--mut)}
+.fb-live .d{width:.4rem;height:.4rem;border-radius:50%;background:var(--ok);color:var(--ok);animation:pulse 2s infinite}
+.fb-rows{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr));column-gap:clamp(1.5rem,4vw,3rem)}
+.fb-row{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"k v" "s v";align-items:center;column-gap:1rem;padding:.75rem .2rem;border-top:1px solid var(--line);text-decoration:none;color:inherit;transition:background var(--d-hover)}
+a.fb-row:hover{background:linear-gradient(90deg,rgba(249,237,199,.035),transparent 70%)}
+a.fb-row:hover .fb-k{color:var(--floor-accent)}
+.fb-k{grid-area:k;font:800 .74rem/1.3 var(--body);letter-spacing:.16em;text-transform:uppercase;transition:color var(--d-hover)}
+.fb-s{grid-area:s;font-size:.8rem;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fb-v{grid-area:v;color:var(--fg)}
+.fls{display:flex;gap:2px;perspective:20rem}
+.fl{position:relative;display:grid;place-items:center;width:1.3em;height:1.75em;font:800 1rem/1 var(--display);border-radius:3px;background:linear-gradient(#1f1416 50%,#170e10 50%);box-shadow:inset 0 -1px 0 rgba(0,0,0,.6),0 1px 0 rgba(249,237,199,.04);transform-origin:50% 50%}
+.fl::after{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(0,0,0,.75)}
+.fl.e{background:linear-gradient(#150d0f 50%,#110a0c 50%)}
+.fl.flip{animation:flapc .55s var(--ease-out) calc(var(--i) * 40ms) both}
+@keyframes flapc{0%{transform:rotateX(0)}45%{transform:rotateX(-88deg);filter:brightness(1.9)}100%{transform:none}}
+.fb-row[data-st="live"] .fb-v,.fb-row[data-st="event"] .fb-v{color:var(--pink)}
+.fb-row[data-st="open"] .fb-v{color:var(--gold)}
+.fb-row[data-st="calm"] .fb-v{color:var(--warn)}
+.fb-row[data-st="closed"] .fb-v{color:var(--mut)}
+.fb-row[data-st="soon"] .fb-v{color:var(--teal)}
+@media(max-width:480px){.fl{width:1.12em;height:1.6em;font-size:.86rem}.fb-row{column-gap:.6rem}}
+
+/* шахта лифта: этажи сверху вниз, латунная кабина едет к этажу под курсором или фокусом */
+.shaft .head{margin-bottom:1.2rem}
+.shaft-floors{position:relative;list-style:none;margin:0;padding:0 0 0 1.4rem;border-left:1px solid var(--line2)}
+.shaft-floors .car{position:absolute;left:-3px;top:0;width:5px;height:3rem;border-radius:3px;background:var(--edge-brass);opacity:0;transition:transform var(--d-panel) var(--ease-in-out),height var(--d-panel) var(--ease-in-out),opacity var(--d-ui)}
+.shaft-floors.moving .car{opacity:1}
+.shaft-floor{display:grid;grid-template-columns:5.2rem minmax(0,1fr) auto 2rem;align-items:center;gap:1rem;padding:1rem .2rem;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.shaft-floor .fn{font:800 clamp(1.6rem,3.4vw,2.6rem)/1 var(--display);letter-spacing:-.03em;color:transparent;-webkit-text-stroke:1px rgba(249,237,199,.4);transition:color var(--d-ui),-webkit-text-stroke-color var(--d-ui)}
+.shaft-floor .fn.rng{font-size:clamp(1rem,1.7vw,1.35rem);white-space:nowrap;letter-spacing:-.01em}
+.shaft-floor .ft{display:grid;gap:.15rem;min-width:0}
+.shaft-floor .ft b{font:700 1.08rem var(--display)}
+.shaft-floor .ft small{color:var(--mut);font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shaft-floor .fa{display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;border:1px solid var(--line2);transition:transform var(--d-ui) var(--ease-out),background var(--d-ui)}
+.shaft-floor .fa svg{width:1rem;height:1rem}
+.shaft-floor:hover .fn,.shaft-floor:focus-visible .fn{color:var(--gold);-webkit-text-stroke-color:transparent}
+.shaft-floor:hover .fa,.shaft-floor:focus-visible .fa{transform:rotate(-45deg);background:var(--card2)}
+@media(max-width:640px){.shaft-floor{grid-template-columns:3.6rem minmax(0,1fr) 1.6rem;gap:.2rem .7rem}.shaft-floor .fs{grid-column:2;grid-row:2}.shaft-floor .fa{grid-column:3;grid-row:1/3;width:1.6rem;height:1.6rem}.shaft-floor .fn{grid-row:1/3}.shaft-floors{padding-left:.9rem}}
+/* площадка, к которой пришли с табло */
+.venue.hl{outline:2px solid var(--floor-accent);outline-offset:4px;transition:outline-color 1s}
 .explore{display:grid;gap:0.75rem;grid-template-columns:repeat(6,1fr)}
 .ex{grid-column:span 2;position:relative;min-height:15rem;border-radius:var(--r);overflow:hidden;text-decoration:none;display:flex;flex-direction:column;justify-content:flex-end;padding:1.2rem;isolation:isolate;border:1px solid var(--line)}
 .ex.w{grid-column:span 3}

@@ -79,6 +79,21 @@ try {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } }); const page = await ctx.newPage(); const errs = watch(page);
   await page.goto(BASE + '/#stay'); await ready(page); await page.waitForTimeout(800);
 
+  // главная: табло показывает реальные данные, клик по площадке ведёт к её карточке в «Отдыхе»
+  await page.evaluate(() => { location.hash = '#home'; }); await page.waitForSelector('.fboard');
+  const board = await page.evaluate(async () => {
+    const pub = await fetch('/api/public').then(r => r.json());
+    const rows = [...document.querySelectorAll('.fb-row')];
+    return { rooms: rows[0].querySelector('.sr').textContent, want: `${pub.rooms.filter(r => r.status === 'free').length}/${pub.rooms.length}`, venues: document.querySelectorAll('.fb-row[data-venue]').length, total: pub.venues.length, floors: document.querySelectorAll('.shaft-floor').length };
+  });
+  check('главная: табло — свободные номера совпадают с API', board.rooms === board.want, JSON.stringify(board));
+  check('главная: на табло все площадки, в шахте все этажи', board.venues === board.total && board.floors === board.total + 2, JSON.stringify(board));
+  const target = await page.$eval('.fb-row[data-venue][href="#leisure"]', a => a.dataset.venue);
+  await page.click(`.fb-row[data-venue="${target}"]`);
+  const hl = await page.waitForSelector(`#venuesList .venue.hl[data-venue="${target}"]`, { timeout: 8000 }).then(() => true).catch(() => false);
+  check('главная: клик по площадке на табло открывает её карточку в «Отдыхе»', hl, target);
+  await page.evaluate(() => { location.hash = '#stay'; }); await page.waitForTimeout(1200);
+
   // бронь
   await page.click('#types [data-t]');
   await page.waitForSelector('#bookSheet.on #bForm');
