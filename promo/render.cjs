@@ -1,4 +1,4 @@
-// Рендер ролика: node promo/render.cjs <out-dir> [--stills 0.5,2,4.6] [--from N --to M]
+// Рендер ролика: node promo/render.cjs <out-dir> [--page ad.html|nostalgia.html] [--stills 0.5,2,4.6] [--from N --to M]
 // Поднимает статический сервер на корень репозитория (нужен логотип из public/img), открывает promo/ad.html
 // в Chromium (Playwright) и сохраняет кадры PNG. Затем: ffmpeg собирает видео (см. promo/README.md).
 const { chromium } = require('playwright');
@@ -13,10 +13,13 @@ const srv = http.createServer((req, res) => {
 });
 srv.listen(0, async () => {
   const port = srv.address().port; fs.mkdirSync(out, { recursive: true });
-  const b = await chromium.launch(); const page = await b.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  const pageName = arg('--page') || 'ad.html', vertical = /nostalgia/.test(pageName);
+  // WebGL в headless — через SwiftShader (детерминированно, без GPU)
+  const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const page = await b.newPage({ viewport: vertical ? { width: 540, height: 960 } : { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   const errs = []; page.on('pageerror', e => errs.push(e.message)); page.on('console', m => m.type() === 'error' && errs.push(m.text()));
-  await page.goto(`http://localhost:${port}/promo/ad.html?still=1`); await page.evaluate(() => window.AD.ready());
-  const meta = await page.evaluate(() => ({ FPS: AD.FPS, DUR: AD.DUR, CUES: AD.CUES }));
+  await page.goto(`http://localhost:${port}/promo/${pageName}?still=1`); await page.evaluate(() => window.AD.ready());
+  const meta = await page.evaluate(() => ({ FPS: AD.FPS, DUR: AD.DUR, BPM: AD.BPM, CUES: AD.CUES, SHOTS: AD.SHOTS }));
   fs.writeFileSync(path.join(out, 'cues.json'), JSON.stringify(meta, null, 1));
   const grab = async (frame, name) => {
     const data = await page.evaluate(f => { AD.render(f); return document.getElementById('c').toDataURL('image/png'); }, frame);
