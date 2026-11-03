@@ -74,6 +74,18 @@ try {
     await ctx.close();
   }
 
+  /* ---------- GPU: переключения день/ночь не копят WebGL-контексты ---------- */
+  {
+    const gctx = await browser.newContext({ viewport: { width: 1280, height: 800 } }); const gp = await gctx.newPage(); const gerr = watch(gp);
+    await gp.addInitScript(() => { window.__gls = []; const o = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (t, a) { const c = o.call(this, t, a); if (c && /webgl/.test(t) && !window.__gls.includes(c)) window.__gls.push(c); return c; }; });
+    await gp.goto(BASE + '/#home'); await ready(gp); await gp.waitForTimeout(2000);
+    for (let i = 0; i < 4; i++) { await gp.click('#modeBtn'); await gp.waitForTimeout(1200); }
+    const gl = await gp.evaluate(() => ({ created: __gls.length, live: __gls.filter(g => !g.isContextLost()).length }));
+    check('GPU: после 4 переключений день/ночь жив один WebGL-контекст атриума', gl.created === 0 || gl.live <= 1, JSON.stringify(gl) + (gl.created === 0 ? ' (WebGL недоступен в этом браузере — проверка не применима)' : ''));
+    check('GPU: нет ошибок в консоли', gerr.length === 0, gerr.slice(0, 3).join(' | '));
+    await gctx.close();
+  }
+
   /* ---------- сценарии ---------- */
   console.log('\n[сценарии]');
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } }); const page = await ctx.newPage(); const errs = watch(page);

@@ -86,14 +86,16 @@ export function mountHero(canvas, section) {
   }
   // рендерим в полном разрешении экрана (до 2×): без апскейла канваса нет «мыла»
   const size = () => { const dpr = Math.min(devicePixelRatio || 1, 2), w = canvas.clientWidth, h = canvas.clientHeight; if (!w) return; canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); gl.viewport(0, 0, canvas.width, canvas.height); kick(); };
-  new ResizeObserver(size).observe(canvas);
-  new IntersectionObserver(([e]) => { visible = e.isIntersecting; kick(); }).observe(canvas);
+  const ro = new ResizeObserver(size); ro.observe(canvas);
+  const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; kick(); }); io.observe(canvas);
   const coarse = matchMedia('(pointer: coarse)').matches;
   section.addEventListener('pointermove', e => { if (e.pointerType === 'touch') return; const r = section.getBoundingClientRect(); mt = [Math.max(-1, Math.min(1, (e.clientX - r.left) / r.width * 2 - 1)), Math.max(-1, Math.min(1, (e.clientY - r.top) / Math.min(r.height, innerHeight) * 2 - 1))]; kick(); });
   section.addEventListener('pointerleave', () => { mt = [0, 0]; kick(); });
-  if (coarse && 'DeviceOrientationEvent' in window) addEventListener('deviceorientation', e => { if (e.gamma == null) return; mt = [Math.max(-1, Math.min(1, e.gamma / 25)), Math.max(-1, Math.min(1, (e.beta - 45) / 25))]; kick(); }, { passive: true });
+  const onTilt = e => { if (e.gamma == null) return; mt = [Math.max(-1, Math.min(1, e.gamma / 25)), Math.max(-1, Math.min(1, (e.beta - 45) / 25))]; kick(); };
+  if (coarse && 'DeviceOrientationEvent' in window) addEventListener('deviceorientation', onTilt, { passive: true });
   const progress = () => { const r = section.getBoundingClientRect(); return Math.min(1, Math.max(0, -r.top / Math.max(1, r.height - innerHeight * 0.92))); };
-  addEventListener('scroll', () => kick(), { passive: true });
+  const onScroll = () => kick();
+  addEventListener('scroll', onScroll, { passive: true });
   function kick() { if (!raf && visible && ready && document.body.contains(canvas)) raf = requestAnimationFrame(frame); }
   let onProgress = null, last = 0;
   function frame(t) {
@@ -108,5 +110,14 @@ export function mountHero(canvas, section) {
     if (visible) raf = requestAnimationFrame(frame); else last = 0;
   }
   size();
-  return { setWeather(k) { wxT = [k === 'rain' ? 1 : 0, k === 'fog' ? 1 : 0, k === 'snow' ? 1 : 0]; kick(); }, setImage, onProgress: fn => { onProgress = fn; } };
+  let dead = false;
+  // При пересборке главного экрана (день/ночь, новая картинка) старый экземпляр обязан отдать GPU:
+  // три текстуры атриума до 2880 px и сам WebGL-контекст, иначе память растёт с каждым переключением.
+  function destroy() {
+    if (dead) return; dead = true; ready = false; cancelAnimationFrame(raf); raf = 0; onProgress = null;
+    ro.disconnect(); io.disconnect(); removeEventListener('scroll', onScroll); removeEventListener('deviceorientation', onTilt);
+    texs.forEach(t => gl.deleteTexture(t)); gl.deleteBuffer(buf); gl.deleteProgram(pr);
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+  return { setWeather(k) { wxT = [k === 'rain' ? 1 : 0, k === 'fog' ? 1 : 0, k === 'snow' ? 1 : 0]; kick(); }, setImage, onProgress: fn => { onProgress = fn; }, destroy };
 }
