@@ -110,8 +110,9 @@ try {
   const code = await page.waitForSelector('#bookSheet .success .code', { timeout: 8000 }).then(e => e.textContent()).catch(() => null);
   check('бронь: получен код брони', /^MHC-[A-Z0-9]{4}$/.test(code || ''), code || 'нет кода');
   await page.keyboard.press('Escape');
-  await page.evaluate(() => { location.hash = '#me'; }); await page.waitForTimeout(900);
-  check('бронь: видна в «Мои брони»', !!code && (await page.textContent('.view[data-view="me"]')).includes(code));
+  await page.evaluate(() => { location.hash = '#me'; });
+  const inMe = !!code && await page.waitForFunction(c => document.querySelector('.view[data-view="me"]')?.textContent.includes(c), code, { timeout: 8000 }).then(() => true).catch(() => false);
+  check('бронь: видна в «Мои брони»', inMe);
 
   // заказ в номер
   await page.evaluate(() => { location.hash = '#dining'; }); await page.waitForTimeout(900);
@@ -124,6 +125,18 @@ try {
   const orderOk = await page.waitForSelector('#cartSheet .success', { timeout: 8000 }).then(() => true).catch(() => false);
   check('заказ: принят', orderOk);
   await page.keyboard.press('Escape');
+
+  // фильтр хьюмидора: «Крепкие» оставляет только крепость 4–5, стрелки ходят только по ним
+  await page.evaluate(() => { location.hash = '#cigars'; }); await page.waitForSelector('#cFilt [data-cs="4"]');
+  await page.click('#cFilt [data-cs="4"]');
+  const strong = await page.evaluate(async () => {
+    const pub = await fetch('/api/public').then(r => r.json()), want = pub.cigars.filter(c => c.strength >= 4).map(c => c.name).sort();
+    const got = [...document.querySelectorAll('#cStrip button')].map(b => b.textContent.trim()).sort();
+    const seen = new Set(); for (let i = 0; i < want.length + 2; i++) { document.querySelector('#cNext').click(); seen.add(document.querySelector('#cInfo h3').textContent); }
+    return { want, got, outside: [...seen].filter(n => !want.includes(n)) };
+  });
+  check('сигары: фильтр «Крепкие» — лента и стрелки только по крепости 4–5', JSON.stringify(strong.want) === JSON.stringify(strong.got) && strong.outside.length === 0, JSON.stringify(strong));
+  await page.click('#cFilt [data-cs="0"]');
 
   // заявка → чат на сайте
   await page.evaluate(() => { location.hash = '#contact'; }); await page.waitForTimeout(900);

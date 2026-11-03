@@ -900,3 +900,7 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 @media(max-width:640px){.hd-grid{--hn:5.2rem;--hc:5.4rem;--gap:.55rem}.hd-n{font-size:.76rem}.hd-st .chip{font-size:.56rem;padding:.2rem .42rem;gap:.25rem}}
 /* «блюдо летит в корзину» */
 .fly{position:fixed;z-index:46;width:1.1rem;height:1.1rem;border-radius:50%;background:var(--pink);box-shadow:0 0 0 3px rgba(240,23,122,.25),0 0 1.1rem var(--pink);pointer-events:none}
+/* фильтр хьюмидора */
+.cfilt{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center;margin:1rem 0 .6rem}
+.cfilt .seg{max-width:100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+.cfilt .seg button{white-space:nowrap}
