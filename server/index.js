@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import multer from 'multer';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -52,6 +53,8 @@ async function currentUser(req, res) {
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+// gzip/brotli для всего, кроме потока событий: сжатие буферизует SSE и события перестают приходить
+app.use(compression({ filter: (req, res) => req.path !== '/api/stream' && compression.filter(req, res) }));
 app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => { res.set('X-Content-Type-Options', 'nosniff'); res.set('Referrer-Policy', 'same-origin'); next(); });
 
@@ -137,9 +140,42 @@ app.all('/api/*', async (req, res) => {
 });
 
 /* ---- статика ---- */
+// Сборщика нет, поэтому версии ставит сервер: при старте считает хеш каждого JS/CSS и вписывает
+// их в importmap страницы. Importmap срабатывает и для относительных импортов ('./ui.js'),
+// так что все модули грузятся с ?v=хеш и кэшируются навсегда, а после выкладки — обновляются сразу.
+const PUBLIC = path.join(ROOT, 'public');
+const INDEX_HTML = renderIndex();
 app.use('/uploads', express.static(UPLOADS, { maxAge: '30d', immutable: true }));
-app.use(express.static(path.join(ROOT, 'public'), { maxAge: '1h', setHeaders: (res, p) => { if (/\.(glb|webp|jpg|png|woff2)$/.test(p)) res.set('Cache-Control', 'public, max-age=604800'); if (p.endsWith('index.html')) res.set('Cache-Control', 'no-cache'); } }));
-app.get('*', (req, res) => res.sendFile(path.join(ROOT, 'public', 'index.html')));
+app.get(['/', '/index.html'], sendIndex);
+app.use(express.static(PUBLIC, { index: false, maxAge: '1h', setHeaders: (res, p) => {
+  if (res.req.query.v) res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  else if (/\.(glb|webp|jpg|png|woff2)$/.test(p)) res.set('Cache-Control', 'public, max-age=604800');
+} }));
+app.get('*', sendIndex);
+function sendIndex(req, res) { res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }).send(INDEX_HTML); }
+function renderIndex() {
+  const files = [];
+  const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); if (e.isDirectory()) walk(f); else if (/\.(js|css)$/.test(e.name)) files.push(f); } };
+  ['js', 'css', 'vendor'].forEach(d => fs.existsSync(path.join(PUBLIC, d)) && walk(path.join(PUBLIC, d)));
+  const ver = {};
+  for (const f of files) ver['/' + path.relative(PUBLIC, f).split(path.sep).join('/')] = crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex').slice(0, 10);
+  const v = url => url + '?v=' + ver[url];
+  let html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
+  const map = JSON.parse(html.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]);
+  const imports = {};
+  for (const [k, target] of Object.entries(map.imports)) {
+    const abs = '/' + target.replace(/^\.\//, '');
+    if (k.endsWith('/')) { // префикс вроде three/addons/ — каждому файлу под ним своя версия
+      for (const url of Object.keys(ver)) if (url.startsWith(abs)) imports[k + url.slice(abs.length)] = v(url);
+      imports[k] = abs;
+    } else imports[k] = ver[abs] ? v(abs) : abs;
+  }
+  for (const url of Object.keys(ver)) if (url.endsWith('.js')) imports[url] = v(url);
+  html = html.replace(/<script type="importmap">[\s\S]*?<\/script>/, `<script type="importmap">${JSON.stringify({ imports })}</script>`);
+  // прямые ссылки из разметки: css/app.css, js/main.js, vendor/page-flip.browser.js
+  html = html.replace(/(href|src)="((?:css|js|vendor)\/[^"?]+\.(?:css|js))"/g, (m, attr, rel) => ver['/' + rel] ? `${attr}="${v('/' + rel)}"` : m);
+  return html;
+}
 
 app.listen(PORT, () => console.log(`Mile High Club: http://localhost:${PORT}  (Discord-вход: ${OAUTH ? 'включён' : 'не настроен'}, демо-вход: ${DEMO ? 'включён' : 'выключен'}, бот: ${bot ? 'запущен' : 'не запущен'})`));
 
