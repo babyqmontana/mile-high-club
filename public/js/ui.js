@@ -117,8 +117,22 @@ export async function confirmBox(title, text, okLabel = 'Подтвердить'
 // боковая панель
 export function sheet(id) {
   let el = document.getElementById(id);
-  if (!el) { el = document.createElement('div'); el.id = id; el.className = 'sheet'; el.innerHTML = '<div class="scrim"></div><div class="panel" role="dialog" aria-modal="true"></div>'; document.body.append(el); el.querySelector('.scrim').onclick = () => closeSheet(id); }
+  if (!el) { el = document.createElement('div'); el.id = id; el.className = 'sheet'; el.innerHTML = '<div class="scrim"></div><div class="panel" role="dialog" aria-modal="true"></div>'; document.body.append(el); el.querySelector('.scrim').onclick = () => closeSheet(id); swipeToClose(el, id); }
   return el.querySelector('.panel');
+}
+// На телефоне шторка — нижняя: тянем вниз от верха (когда содержимое не прокручено) — закрывается.
+// Кнопка «закрыть», Esc и тап по фону работают как раньше.
+function swipeToClose(el, id) {
+  const panel = el.querySelector('.panel'), narrow = matchMedia('(max-width: 640px)');
+  let y0 = null, dy = 0;
+  panel.addEventListener('touchstart', e => { if (!narrow.matches || panel.scrollTop > 0 || e.touches.length > 1 || e.target.closest('input,textarea,select')) return; y0 = e.touches[0].clientY; dy = 0; }, { passive: true });
+  panel.addEventListener('touchmove', e => {
+    if (y0 === null) return; dy = e.touches[0].clientY - y0;
+    if (dy <= 0 || panel.scrollTop > 0) { if (dy < 0) y0 = null; el.classList.remove('dragging'); panel.style.removeProperty('--drag'); return; }
+    e.preventDefault(); el.classList.add('dragging'); panel.style.setProperty('--drag', dy + 'px');
+  }, { passive: false });
+  const end = () => { if (y0 === null) return; y0 = null; el.classList.remove('dragging'); panel.style.removeProperty('--drag'); if (dy > Math.min(140, panel.offsetHeight * .25)) closeSheet(id); dy = 0; };
+  panel.addEventListener('touchend', end); panel.addEventListener('touchcancel', end);
 }
 export function openSheet(id) { const el = document.getElementById(id); el.classList.add('on'); pushLayer(el, () => closeSheet(id)); play('open'); setTimeout(() => { if (el.classList.contains('on')) el.querySelector('input,select,button:not(.x)')?.focus(); }, 350); }
 export function closeSheet(id) { const el = document.getElementById(id); if (el?.classList.contains('on')) { el.classList.remove('on'); popLayer(el); play('close'); } }

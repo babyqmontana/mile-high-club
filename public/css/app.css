@@ -909,6 +909,32 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 .cfilt{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center;margin:1rem 0 .6rem}
 .cfilt .seg{max-width:100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
 .cfilt .seg button{white-space:nowrap}
+/* ---------- мобильная версия (этап G) ---------- */
+/* svh: адресная строка iOS не съедает низ полноэкранных блоков */
+@supports (height:100svh){.dive .stick{height:calc(100svh - var(--nav))}.admin{min-height:calc(100svh - var(--nav))}}
+/* звук и день/ночь в меню — на узких экранах их нет в шапке */
+.dtools{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1.4rem}
+.dtools .btn{flex:1 1 12rem;justify-content:flex-start}
+@media(max-width:480px){#sndBtn,#modeBtn{display:none}
+  /* переключатели не переносятся внутри «таблетки», а прокручиваются вбок */
+  .seg{flex-wrap:nowrap;max-width:100%;overflow-x:auto;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}.seg button{white-space:nowrap;flex:none}}
+/* нижняя шторка на телефоне: ручка сверху, свайп вниз закрывает */
+@media(max-width:640px){
+  .sheet{align-items:flex-end;justify-content:stretch}
+  .sheet .panel{width:100%;height:auto;max-height:calc(100vh - 2.5rem);border-left:0;border-top:1px solid var(--line2);border-radius:1.25rem 1.25rem 0 0;padding-top:1.7rem;transform:translateY(100%);overscroll-behavior:contain}
+  @supports (height:100svh){.sheet .panel{max-height:calc(100svh - 2.5rem)}}
+  .sheet .panel::before{content:"";position:absolute;top:.6rem;left:50%;width:2.6rem;height:4px;margin-left:-1.3rem;border-radius:2px;background:var(--line2)}
+  .sheet.on .panel{transform:translateY(var(--drag,0px))}
+  .sheet.dragging .panel{transition:none}
+}
+/* сенсорные экраны: цели нажатия не меньше 44 px */
+@media(pointer:coarse){
+  .ibtn{width:2.75rem;height:2.75rem}
+  .pill{height:2.75rem}
+  .btn.sm,.seg button,.strip button,.cmpb,.chips button{min-height:2.75rem}
+  .btn.sm.icon{width:2.75rem}
+  .lnk{display:inline-block;padding:.6rem .2rem}
+}
 /* ---------- микроанимации (этап F) ---------- */
 /* навигация: название прокручивается как барабан указателя лифта */
 .links .rl{display:inline-block;overflow:hidden;vertical-align:bottom;line-height:1.25}

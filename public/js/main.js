@@ -27,7 +27,7 @@ function shell() {
       <button class="ibtn burger" id="burger" aria-label="Меню" data-sfx="open">${I.menu}</button>
     </div>
   </div></header>
-  <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a></nav>
+  <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button><button type="button" class="btn ghost" id="dMode" data-sfx=""></button></div></nav>
   <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
   <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a></span></div><div class="wrap kon" aria-hidden="true">↑ ↑ ↓ ↓ ← → ← → B A</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
@@ -36,8 +36,9 @@ function shell() {
   $('#burger').onclick = () => { drawer.classList.add('on'); pushLayer(drawer, closeDrawer); $('#burger').setAttribute('aria-expanded', 'true'); $('#drawerX').focus(); };
   $('#drawerX').onclick = closeDrawer;
   $$('#drawer a').forEach(a => a.addEventListener('click', closeDrawer));
-  $('#sndBtn').onclick = () => { setSound(!soundOn); paintNav(); burst('dj', 8, 20000); };
-  $('#modeBtn').onclick = () => { manualMode = mode() === 'day' ? 'night' : 'day'; play(manualMode); applyMode(); burst('sunmoon', 6, 60000); };
+  // звук и день/ночь: в шапке, а на узких экранах — в меню (те же действия)
+  $('#sndBtn').onclick = $('#dSnd').onclick = () => { setSound(!soundOn); paintNav(); burst('dj', 8, 20000); };
+  $('#modeBtn').onclick = $('#dMode').onclick = () => { manualMode = mode() === 'day' ? 'night' : 'day'; play(manualMode); applyMode(); burst('sunmoon', 6, 60000); };
   // логотип: с каждым кликом подрагивает сильнее — намёк, что что-то будет
   { let n = 0, tmr = 0; $('.brand').addEventListener('click', () => { clearTimeout(tmr); tmr = setTimeout(() => { n = 0; $('.brand').style.removeProperty('--wob'); }, 2500); n++; const b = $('.brand'); b.style.setProperty('--wob', Math.min(n, 7)); b.classList.remove('wob'); void b.offsetWidth; b.classList.add('wob'); if (n >= 7) { n = 0; unlock('logo'); } }); }
   $('#achBtn').onclick = () => openCabinet();
@@ -47,6 +48,8 @@ function shell() {
 }
 function paintNav() {
   $('#sndBtn').innerHTML = soundOn ? I.sound : I.mute; $('#sndBtn').setAttribute('aria-label', soundOn ? 'Выключить звук' : 'Включить звук');
+  $('#dSnd').innerHTML = `${soundOn ? I.sound : I.mute}${soundOn ? 'Звук включён' : 'Звук выключен'}`; $('#dSnd').setAttribute('aria-pressed', soundOn);
+  $('#dMode').innerHTML = `${mode() === 'day' ? I.sun : I.moon}${mode() === 'day' ? 'Дневной отель' : 'Ночной отель'}`;
   $('#modeBtn').innerHTML = mode() === 'day' ? I.sun : I.moon; $('#modeBtn').title = mode() === 'day' ? 'Дневной отель. Нажмите для ночного' : 'Ночной отель. Нажмите для дневного';
   const u = S.me;
   $('#navUser').innerHTML = u ? `<button class="ibtn" id="userBtn" aria-label="Профиль" style="overflow:hidden;padding:0">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc((u.username || '?')[0])}</span>`}</button>` : `<button class="ibtn" id="userBtn" aria-label="Мои брони и вход">${I.user}</button>`;
