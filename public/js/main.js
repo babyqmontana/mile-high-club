@@ -1,4 +1,4 @@
-import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, sheet, openSheet, closeSheet, reveal } from './ui.js';
+import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer } from './ui.js';
 import { api, subscribe, authConfig, login, logout, DEMO, pref } from './api.js';
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
@@ -31,9 +31,11 @@ function shell() {
   <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
   <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a></span></div><div class="wrap kon" aria-hidden="true">↑ ↑ ↓ ↓ ← → ← → B A</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
-  $('#burger').onclick = () => { $('#drawer').classList.add('on'); $('#drawerX').focus(); };
-  $('#drawerX').onclick = () => $('#drawer').classList.remove('on');
-  $$('#drawer a').forEach(a => a.addEventListener('click', () => $('#drawer').classList.remove('on')));
+  const drawer = $('#drawer'), closeDrawer = () => { if (!drawer.classList.contains('on')) return; drawer.classList.remove('on'); popLayer(drawer); $('#burger').setAttribute('aria-expanded', 'false'); };
+  $('#burger').setAttribute('aria-controls', 'drawer'); $('#burger').setAttribute('aria-expanded', 'false');
+  $('#burger').onclick = () => { drawer.classList.add('on'); pushLayer(drawer, closeDrawer); $('#burger').setAttribute('aria-expanded', 'true'); $('#drawerX').focus(); };
+  $('#drawerX').onclick = closeDrawer;
+  $$('#drawer a').forEach(a => a.addEventListener('click', closeDrawer));
   $('#sndBtn').onclick = () => { setSound(!soundOn); paintNav(); burst('dj', 8, 20000); };
   $('#modeBtn').onclick = () => { manualMode = mode() === 'day' ? 'night' : 'day'; play(manualMode); applyMode(); burst('sunmoon', 6, 60000); };
   // логотип: с каждым кликом подрагивает сильнее — намёк, что что-то будет
@@ -71,7 +73,29 @@ function applyMode() { const m = mode(); if (document.documentElement.dataset.mo
 function onScroll() { }
 
 /* ---------------- маршруты ---------------- */
+// «Этажи» разделов: по ним выбирается направление перехода-лифта (вверх или вниз)
+const FLOOR = { admin: -1, home: 0, staff: 1, me: 2, journal: 3, issue: 3, lost: 4, contact: 20, stay: 23, dining: 30, cigars: 31, leisure: 39 };
+const VT = typeof document.startViewTransition === 'function';
+if (VT) document.documentElement.classList.add('vt');
+let booted = false, vtRunning = null;
+function viewOf(hash) {
+  let h = (hash || '#home').slice(1);
+  if (h === 'login-error') return 'admin';
+  if (h.startsWith('issue-')) return 'issue';
+  return $(`.view[data-view="${h}"]`) && h !== 'lost' ? h : (h && h !== 'home' && h !== 'lost' ? 'lost' : 'home');
+}
 function route() {
+  const next = viewOf(location.hash);
+  const animate = VT && booted && next !== current && document.visibilityState === 'visible' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!animate) return doRoute();
+  vtRunning?.skipTransition();
+  document.documentElement.dataset.dir = (FLOOR[next] ?? 0) >= (FLOOR[current] ?? 0) ? 'up' : 'down';
+  const vt = vtRunning = document.startViewTransition(doRoute);
+  // прерванный переход (новый клик во время анимации) отклоняет ready — это штатно, раздел уже переключён
+  vt.ready.catch(() => {}); vt.updateCallbackDone.catch(e => console.error(e));
+  vt.finished.finally(() => { if (vtRunning === vt) vtRunning = null; });
+}
+function doRoute() {
   let h = (location.hash || '#home').slice(1), param = null;
   if (h === 'login-error') { toast('Вход через Discord не удался. Попробуйте ещё раз.', 'err'); h = 'admin'; history.replaceState(null, '', '#admin'); }
   if (h.startsWith('issue-')) { param = h.slice(6); h = 'issue'; }
@@ -617,12 +641,13 @@ function onChange(cols) {
 function preload(url) { return new Promise(r => { if (!url) return r(); const i = new Image(); i.onload = i.onerror = () => r(); i.src = url; }); }
 async function withLoader(work) {
   const L = $('#loader'); if (!L) return work();
+  // заставка-лифт — только при первом визите за сессию; при повторных сайт открывается сразу
+  let seen = false; try { seen = sessionStorage.getItem('mhc-seen') === '1'; sessionStorage.setItem('mhc-seen', '1'); } catch { }
+  if (seen) { try { await work(() => {}); } finally { L.classList.add('out', 'gone'); } return; }
   let lp = 0; const pct = $('#ldPct'); const set = v => { lp = Math.max(lp, Math.min(100, v)); L.style.setProperty('--lp', lp); pct.textContent = 1 + Math.round(lp / 100 * 39); };
   const creep = setInterval(() => set(lp + (88 - lp) * 0.08), 160);
-  const t0 = performance.now();
   try { await Promise.race([work(set), new Promise(r => setTimeout(r, 8000))]); } finally { clearInterval(creep); }
-  const wait = Math.max(0, 1100 - (performance.now() - t0)); await new Promise(r => setTimeout(r, wait));
-  set(100); await new Promise(r => setTimeout(r, 380));
+  set(100); await new Promise(r => setTimeout(r, 260));
   L.classList.add('out'); play('ding'); setTimeout(() => L.classList.add('gone'), 1400);
 }
 async function boot() {
@@ -633,13 +658,15 @@ async function boot() {
     try { await Promise.all([loadPublic(), loadMe()]); } catch (e) { failed = e; return; }
     set(45);
     const s = S.pub.settings, m = mode(), hero = m === 'day' ? s.heroDay : s.heroNight;
-    let done = 0; const jobs = [document.fonts?.ready, preload('img/logo.webp'), preload(hero), heroLayers(hero), (location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')].map(p => Promise.resolve(p).catch(() => {}).then(() => set(45 + (++done / 5) * 50)));
+    let done = 0; const jobs = [document.fonts?.ready, preload('img/logo.webp'), preload(hero), heroLayers(hero)].map(p => Promise.resolve(p).catch(() => {}).then(() => set(45 + (++done / 4) * 50)));
+    // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов
+    ((location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')).catch(() => {});
     await Promise.all(jobs);
     applyMode(); route(); loadItems();
   });
   if (failed) { $('#main').innerHTML = `<div class="gate"><h2>Сайт недоступен</h2><p class="mut">${esc(failed.message)}</p><button class="btn" onclick="location.reload()">Обновить</button></div>`; return; }
   if (!$('.view.on')) { applyMode(); route(); loadItems(); }
-  addEventListener('hashchange', route);
+  addEventListener('hashchange', route); booted = true;
   subscribe(onChange);
   setInterval(() => { applyMode(); const c = $('#clock'); if (c) c.textContent = hhmm(Date.now()); applyWeather(); if (current === 'leisure' && !focusedIn(view('leisure'))) { renderLeisure(); $$('.view[data-view="leisure"] .reveal').forEach(e => e.classList.add('in')); } }, 20000);
   if (DEMO && !pref.get('mhc-demo-hint')) { pref.set('mhc-demo-hint', '1'); setTimeout(() => toast('Демо-версия: данные хранятся только в этом браузере'), 1200); }
