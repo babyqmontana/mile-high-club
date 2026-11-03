@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Mile High Club — ролик «Ностальгия»</title>
+<!-- Вертикальный ролик 1080×1920: светящиеся пиксельные 3D-предметы отеля на чёрном, RGB-расслоение,
+     ореол цвета предмета, смена предметов в долю такта (83.35 BPM). Детерминированный render(frame) для покадрового рендера. -->
+<style>
+  @font-face{font-family:"Unbounded";font-weight:800;src:url(fonts/unbounded-cyrillic-800-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Unbounded";font-weight:800;src:url(fonts/unbounded-latin-800-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Onest";font-weight:700;src:url(fonts/onest-cyrillic-700-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Onest";font-weight:700;src:url(fonts/onest-latin-700-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  html,body{margin:0;background:#000;overflow:hidden}
+  canvas#c{display:block;width:100vw;height:100vh;object-fit:contain}
+</style>
+<script type="importmap">{"imports":{"three":"../public/vendor/three/build/three.module.js","three/addons/":"../public/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const W = 1080, H = 1920, FPS = 30, BPM = 83.35, P = 60 / BPM; // доля такта ≈ 0.72 с
+const LW = 360, LH = 640;                                       // разрешение 3D-кадра: ×3 → крупный пиксель
+const DUR = 12.9;
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const eo3 = x => 1 - (1 - x) ** 3, eio = x => x < .5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+
+// ---------- рендерер ----------
+const canvas = document.getElementById('c');
+const R = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true, alpha: false });
+R.setPixelRatio(1); R.setSize(W, H, false);
+R.outputColorSpace = THREE.SRGBColorSpace; R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 1.15;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x000000);
+const pmrem = new THREE.PMREMGenerator(R); scene.environment = pmrem.fromScene(new RoomEnvironment(R), .04).texture;
+scene.environmentIntensity = .55;
+const cam = new THREE.PerspectiveCamera(30, LW / LH, .1, 100); cam.position.set(0, -.35, 10.2);
+const key = new THREE.DirectionalLight(0xfff1dc, 2.2); key.position.set(3, 4, 6); scene.add(key);
+const rim = new THREE.DirectionalLight(0xffffff, 5); rim.position.set(-4, 2, -6); scene.add(rim);
+const rim2 = new THREE.DirectionalLight(0xffffff, 3); rim2.position.set(5, -1, -4); scene.add(rim2);
+scene.add(new THREE.AmbientLight(0xffffff, .25));
+
+const rt = (w, h, filter) => new THREE.WebGLRenderTarget(w, h, { minFilter: filter, magFilter: filter, type: THREE.HalfFloatType, colorSpace: THREE.LinearSRGBColorSpace });
+const rtScene = rt(LW, LH, THREE.NearestFilter);
+const blurRTs = [rt(180, 320, THREE.LinearFilter), rt(90, 160, THREE.LinearFilter), rt(45, 80, THREE.LinearFilter)];
+const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), quadScene = new THREE.Scene();
+const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2)); quadScene.add(quad);
+const VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }';
+const blurMat = new THREE.ShaderMaterial({
+  uniforms: { src: { value: null }, px: { value: new THREE.Vector2() }, thr: { value: 0 } }, vertexShader: VS,
+  fragmentShader: `uniform sampler2D src; uniform vec2 px; uniform float thr; varying vec2 vUv;
+    vec3 tap(vec2 o){ vec3 c = texture2D(src, vUv + o * px).rgb; return max(c - thr, 0.); }
+    void main(){ vec3 s = tap(vec2(0)) * .2;
+      s += (tap(vec2(1.5,0)) + tap(vec2(-1.5,0)) + tap(vec2(0,1.5)) + tap(vec2(0,-1.5))) * .12;
+      s += (tap(vec2(1.5,1.5)) + tap(vec2(-1.5,1.5)) + tap(vec2(1.5,-1.5)) + tap(vec2(-1.5,-1.5))) * .08;
+      gl_FragColor = vec4(s, 1.); }` });
+const capCanvas = document.createElement('canvas'); capCanvas.width = 540; capCanvas.height = 960;
+const cx = capCanvas.getContext('2d'); const capTex = new THREE.CanvasTexture(capCanvas);
+capTex.minFilter = capTex.magFilter = THREE.NearestFilter; capTex.colorSpace = THREE.SRGBColorSpace;
+const finalMat = new THREE.ShaderMaterial({
+  uniforms: { sc: { value: rtScene.texture }, b1: { value: blurRTs[0].texture }, b2: { value: blurRTs[1].texture }, b3: { value: blurRTs[2].texture },
+    cap: { value: capTex }, tint: { value: new THREE.Color() }, ca: { value: 1 }, gl: { value: 0 }, seed: { value: 0 }, fade: { value: 1 }, halo: { value: 1 }, flash: { value: 0 } },
+  vertexShader: VS,
+  fragmentShader: `uniform sampler2D sc, b1, b2, b3, cap; uniform vec3 tint; uniform float ca, gl, seed, fade, halo, flash; varying vec2 vUv;
+    float h1(float n){ return fract(sin(n * 91.345 + seed * 13.7) * 47453.5453); }
+    vec3 aces(vec3 x){ return clamp((x * (2.51 * x + .03)) / (x * (2.43 * x + .59) + .14), 0., 1.); }
+    vec3 look(vec2 uv){ return texture2D(sc, uv).rgb * 1.0 + texture2D(b1, uv).rgb * .9 + texture2D(b2, uv).rgb * 1.1 + texture2D(b3, uv).rgb * 1.4; }
+    void main(){
+      vec2 uv = vUv;
+      // глитч: горизонтальные полосы сдвигаются, как битые кадры на склейках
+      float band = floor(uv.y * 38.); float r = h1(band);
+      if (gl > 0. && r < gl * .55) uv.x += (h1(band + 7.) - .5) * .16 * gl;
+      vec2 d = (uv - vec2(.5, .46)); vec2 off = (normalize(d + 1e-4) * (.0016 + length(d) * .006) + vec2(.0042, .0008)) * ca * (1. + gl * 4.);
+      vec3 col; col.r = look(uv + off).r; col.g = look(uv).g; col.b = look(uv - off).b;
+      col = aces(col * 1.1);
+      // подпись (низкое разрешение, тоже расслоена)
+      vec4 tR = texture2D(cap, vec2(uv.x + off.x * .7, uv.y)), tG = texture2D(cap, vec2(uv.x, uv.y)), tB = texture2D(cap, vec2(uv.x - off.x * .7, uv.y));
+      col = vec3(mix(col.r, tR.r, tR.a), mix(col.g, tG.g, tG.a), mix(col.b, tB.b, tB.a));
+      // ореол цвета предмета за ним и общий свет
+      float hd = length((vUv - vec2(.5, .44)) * vec2(1., 1.5));
+      col += tint * (.05 * exp(-hd * hd * 9.)) * halo;
+      // строки развёртки, зерно, виньетка
+      col *= .96 + .04 * sin(vUv.y * 1920. * 3.14159 / 3.);
+      col *= 1. + (fract(sin(dot(vUv * 1000. + seed, vec2(12.9898, 78.233))) * 43758.5453) - .5) * .16;
+      col *= 1. - .55 * pow(length((vUv - .5) * vec2(1., .8)), 2.2);
+      col = mix(col, vec3(1., .93, .78), flash);
+      gl_FragColor = vec4(pow(max(col * fade, 0.), vec3(1. / 2.2)), 1.);
+    }` });
+
+// ---------- текстуры ----------
+const img = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+function ctex(w, h, draw, nearest) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  if (nearest) t.magFilter = THREE.NearestFilter; return t;
+}
+const std = (o) => new THREE.MeshStandardMaterial(o);
+const GOLD = () => std({ color: 0xF7B50A, metalness: 1, roughness: .28 });
+function rrShape(w, h, r) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r);
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); return s;
+}
+// пластина со скруглёнными углами: торец одним материалом, лицевые стороны — текстурами
+function plate(w, h, d, r, edgeMat, front, back) {
+  const g = new THREE.Group(), sh = rrShape(w, h, r);
+  g.add(new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: true, bevelThickness: d * .25, bevelSize: Math.min(r * .3, d * .3), bevelSegments: 3, curveSegments: 10 }), edgeMat));
+  g.children[0].position.z = -d / 2;
+  const face = (mat, z, flip) => {
+    const fg = new THREE.ShapeGeometry(sh, 12), uv = fg.attributes.uv, p = fg.attributes.position;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, flip ? 1 - (p.getX(i) / w + .5) : p.getX(i) / w + .5, p.getY(i) / h + .5);
+    const m = new THREE.Mesh(fg, mat); m.position.z = z; if (flip) m.rotation.y = Math.PI; g.add(m);
+  };
+  if (front) face(front, d / 2 + d * .26, false); if (back) face(back, -d / 2 - d * .26, true);
+  return g;
+}
+const lathe = (pts, mat, seg = 48) => new THREE.Mesh(new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), seg), mat);
+
+// ---------- предметы отеля ----------
+async function buildObjects() {
+  const logo = await img('../public/img/logo.webp'), cover = await img('../public/img/journal/p1.webp');
+  const O = {};
+
+  // звонок ресепшн
+  { const g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.32, .32, 48), std({ color: 0x1a0d10, roughness: .35, metalness: .2 })); base.position.y = -.16; g.add(base);
+    const ringB = new THREE.Mesh(new THREE.TorusGeometry(1.26, .04, 8, 48), GOLD()); ringB.rotation.x = Math.PI / 2; ringB.position.y = 0; g.add(ringB);
+    const pts = []; for (let i = 0; i <= 24; i++) { const a = i / 24 * Math.PI / 2; pts.push([Math.cos(a) * 1.1 + .001, Math.sin(a) * .95]); }
+    g.add(lathe(pts.reverse(), std({ color: 0xF9D46A, metalness: 1, roughness: .18 })));
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, .3, 16), GOLD()); stem.position.y = 1.08; g.add(stem);
+    const btn = new THREE.Mesh(new THREE.SphereGeometry(.17, 24, 12), GOLD()); btn.scale.y = .6; btn.position.y = 1.25; g.add(btn);
+    O.bell = { g, tint: 0xF7B50A, rot: [.42, 0, 0], cap: 'Добро пожаловать', size: 1.5 }; }
+
+  // ключ-карта номера
+  { const front = ctex(1024, 646, (c, w, h) => {
+      const gr = c.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#1b0a10'); gr.addColorStop(.6, '#4a0f22'); gr.addColorStop(1, '#120507');
+      c.fillStyle = gr; c.fillRect(0, 0, w, h);
+      c.strokeStyle = 'rgba(247,181,10,.35)'; c.lineWidth = 3; for (let i = -h; i < w; i += 46) { c.beginPath(); c.moveTo(i, h); c.lineTo(i + h * .6, 0); c.stroke(); }
+      if (logo) c.drawImage(logo, 60, 150, 340, 340);
+      c.fillStyle = '#F7B50A'; c.font = '800 62px Unbounded'; c.fillText('MILE HIGH', 440, 250); c.fillText('CLUB', 440, 322);
+      c.fillStyle = '#F9EDC7'; c.font = '700 40px Onest'; c.fillText('НОМЕР', 440, 440); c.font = '800 96px Unbounded'; c.fillText('2601', 440, 540);
+      const ch = c.createLinearGradient(0, 0, 0, 90); ch.addColorStop(0, '#f9e08a'); ch.addColorStop(1, '#b07a10'); c.fillStyle = ch; c.fillRect(840, 80, 120, 92);
+    });
+    const back = ctex(1024, 646, (c, w, h) => { c.fillStyle = '#16080c'; c.fillRect(0, 0, w, h); c.fillStyle = '#050203'; c.fillRect(0, 70, w, 120);
+      c.fillStyle = '#F7B50A'; c.font = '700 34px Onest'; c.fillText('Приложите к замку двери', 60, 300); c.fillStyle = '#A99D89'; c.fillText('Mile High Club · Лос‑Сантос', 60, 360); });
+    const g = plate(3.4, 2.15, .07, .16, GOLD(), std({ map: front, roughness: .3, metalness: .3, emissive: 0xffffff, emissiveMap: front, emissiveIntensity: .25 }), std({ map: back, roughness: .4 }));
+    O.card = { g, tint: 0xF0177A, rot: [-.15, 0, .18], cap: 'Номера до пентхауса', size: 1.75 }; }
+
+  // ретро-телефон с бронью на экране (сайт отеля)
+  { const g = new THREE.Group();
+    const body = plate(1.6, 3.6, .5, .55, std({ color: 0x173a7a, roughness: .32, metalness: .35 }), std({ color: 0x1c4690, roughness: .3, metalness: .35 }), std({ color: 0x173a7a, roughness: .4 }));
+    g.add(body);
+    const scr = ctex(240, 200, (c, w, h) => {
+      c.fillStyle = '#0d2a08'; c.fillRect(0, 0, w, h); c.fillStyle = '#7dff4f';
+      c.font = '800 22px Unbounded'; c.fillText('MILE HIGH', 18, 38); c.font = '700 20px Onest'; c.fillText('Бронь ✓ подтверждена', 18, 76);
+      c.fillText('Номер 2601', 18, 108); c.fillText('2 ночи · 2 гостя', 18, 138); c.fillRect(18, 156, 204, 3); c.font = '700 18px Onest'; c.fillText('Меню       Выход', 18, 186);
+    }, true);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.08, .9), std({ map: scr, emissive: 0xffffff, emissiveMap: scr, emissiveIntensity: 1.6, roughness: .2 }));
+    screen.position.set(0, .82, .4); g.add(screen);
+    const bezel = new THREE.Mesh(new THREE.PlaneGeometry(1.28, 1.12), std({ color: 0x9fb4c8, metalness: .8, roughness: .3 })); bezel.position.set(0, .82, .395); g.add(bezel);
+    const nav = new THREE.Mesh(new THREE.CylinderGeometry(.26, .26, .08, 24), std({ color: 0xcfe3ff, emissive: 0x2a7cff, emissiveIntensity: .7, roughness: .3 }));
+    nav.rotation.x = Math.PI / 2; nav.scale.z = .5; nav.position.set(0, .02, .4); g.add(nav);
+    const keyM = std({ color: 0xdfe8f2, roughness: .35, metalness: .2 });
+    for (let r = 0; r < 4; r++) for (let k = 0; k < 3; k++) {
+      const b = new THREE.Mesh(new THREE.CapsuleGeometry(.1, .18, 4, 10), keyM); b.rotation.z = Math.PI / 2; b.scale.set(1, 1, .45);
+      b.position.set((k - 1) * .42, -.42 - r * .3, .38); g.add(b); }
+    O.phone = { g, tint: 0x39ff6a, rot: [.05, 0, -.08], cap: 'Бронь на сайте', size: 1.9 }; }
+
+  // надувной круг — Sky Pool
+  { const tex = ctex(512, 64, (c, w, h) => { for (let i = 0; i < 8; i++) { c.fillStyle = i % 2 ? '#f6f1e6' : '#F7B50A'; c.fillRect(i * w / 8, 0, w / 8, h); } });
+    tex.wrapS = THREE.RepeatWrapping;
+    const g = new THREE.Group(); const tor = new THREE.Mesh(new THREE.TorusGeometry(1.15, .5, 24, 64), std({ map: tex, roughness: .22, metalness: .05 })); g.add(tor);
+    const w = new THREE.Mesh(new THREE.TorusGeometry(1.15, .05, 8, 64), std({ color: 0x3fd3ff, emissive: 0x3fd3ff, emissiveIntensity: 1.4 })); w.position.z = -.05; w.scale.setScalar(1.36); g.add(w);
+    O.ring = { g, tint: 0x3fd3ff, rot: [.9, 0, .2], cap: 'Sky Pool · 38 этаж', size: 1.7 }; }
+
+  // винил — Night Pool
+  { const tex = ctex(1024, 1024, (c, w, h) => {
+      c.fillStyle = '#060406'; c.fillRect(0, 0, w, h);
+      for (let r = 160; r < 505; r += 4) { c.strokeStyle = `rgba(255,255,255,${.03 + .05 * hash(r)})`; c.lineWidth = 1.5; c.beginPath(); c.arc(w / 2, h / 2, r, 0, 7); c.stroke(); }
+      c.fillStyle = '#F0177A'; c.beginPath(); c.arc(w / 2, h / 2, 160, 0, 7); c.fill();
+      c.fillStyle = '#fff'; c.font = '800 44px Unbounded'; c.textAlign = 'center'; c.fillText('NIGHT', w / 2, h / 2 - 40); c.fillText('POOL', w / 2, h / 2 + 14);
+      c.font = '700 30px Onest'; c.fillText('40 этаж · до 04:00', w / 2, h / 2 + 70); c.fillStyle = '#000'; c.beginPath(); c.arc(w / 2, h / 2, 12, 0, 7); c.fill();
+    });
+    const g = new THREE.Group();
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, .05, 96), [std({ color: 0x111111, roughness: .3 }), std({ map: tex, roughness: .25, metalness: .2, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: .15 }), std({ map: tex, roughness: .25 })]);
+    disc.rotation.x = Math.PI / 2; g.add(disc);
+    O.vinyl = { g, tint: 0xF0177A, rot: [-.5, .3, 0], cap: 'Night Pool · 40 этаж', size: 1.75, spin: 2.4 }; }
+
+  // коктейль — The Hot Times
+  { const g = new THREE.Group();
+    const glass = std({ color: 0xffffff, metalness: .1, roughness: .05, transparent: true, opacity: .32, emissive: 0xffd9c0, emissiveIntensity: .12, side: THREE.DoubleSide });
+    g.add(lathe([[0.001, -1.6], [.75, -1.58], [.78, -1.53], [.08, -1.45], [.06, -.2], [.12, -.05], [1.15, .95], [1.18, 1.0]], glass));
+    const liq = std({ color: 0xFF5a1f, emissive: 0xFF6a2a, emissiveIntensity: .9, roughness: .15, transparent: true, opacity: .92 });
+    g.add(lathe([[0.001, -.02], [.1, .02], [.98, .78], [0.001, .78]], liq));
+    const ch = new THREE.Mesh(new THREE.SphereGeometry(.2, 20, 12), std({ color: 0xd1002a, emissive: 0x6a0014, roughness: .2 })); ch.position.set(.42, .92, .1); g.add(ch);
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(.025, .025, 1.5, 8), GOLD()); stick.position.set(.2, 1.05, .05); stick.rotation.z = .55; g.add(stick);
+    O.cocktail = { g, tint: 0xFF7A3D, rot: [.18, 0, .1], cap: 'The Hot Times · бар', size: 1.7 }; }
+
+  // клош — Le Ciel, еда в номер
+  { const g = new THREE.Group(), silver = std({ color: 0xb9b2a6, metalness: 1, roughness: .2 });
+    g.add(lathe([[0.001, -.62], [1.6, -.62], [1.72, -.55], [1.75, -.5], [0.001, -.5]], silver, 64));
+    const pts = []; for (let i = 0; i <= 28; i++) { const a = i / 28 * Math.PI / 2; pts.push([Math.cos(a) * 1.35 + .001, -.5 + Math.sin(a) * 1.15]); }
+    g.add(lathe(pts.reverse(), silver, 64));
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(.18, 24, 12), GOLD()); knob.position.y = .78; g.add(knob);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(1.33, .03, 8, 64), GOLD()); band.rotation.x = Math.PI / 2; band.position.y = -.44; g.add(band);
+    O.cloche = { g, tint: 0xF4D9A0, rot: [.38, 0, 0], cap: 'Le Ciel · еда в номер', size: 1.7 }; }
+
+  // сигара с дымом — сигарный клуб
+  { const g = new THREE.Group();
+    const leaf = ctex(512, 128, (c, w, h) => { c.fillStyle = '#5a3218'; c.fillRect(0, 0, w, h);
+      for (let i = 0; i < 90; i++) { c.strokeStyle = `rgba(${hash(i) > .5 ? '30,14,6' : '140,88,48'},${.25 + .3 * hash(i + 3)})`; c.lineWidth = 1 + 3 * hash(i + 9); c.beginPath(); const y = hash(i + 1) * h; c.moveTo(0, y); c.bezierCurveTo(w * .3, y + 20 * (hash(i + 2) - .5), w * .7, y - 20, w, y + 10 * (hash(i + 5) - .5)); c.stroke(); } });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(.3, .3, 3.4, 32, 1, true), std({ map: leaf, roughness: .75 })); g.add(body);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(.3, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), std({ map: leaf, roughness: .75 })); cap.position.y = 1.7; g.add(cap);
+    const bandT = ctex(512, 96, (c, w, h) => { const gr = c.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#f9e08a'); gr.addColorStop(.5, '#c98a12'); gr.addColorStop(1, '#f9e08a');
+      c.fillStyle = gr; c.fillRect(0, 0, w, h); c.fillStyle = '#5a0f22'; c.fillRect(0, 26, w, 44); c.fillStyle = '#F9D46A'; c.font = '800 30px Unbounded'; c.fillText('MHC · MHC · MHC', 14, 60); });
+    const bnd = new THREE.Mesh(new THREE.CylinderGeometry(.315, .315, .5, 32, 1, true), std({ map: bandT, metalness: .6, roughness: .3 })); bnd.position.y = .95; g.add(bnd);
+    const ash = new THREE.Mesh(new THREE.CylinderGeometry(.29, .3, .32, 32), std({ color: 0x8a8580, roughness: .9 })); ash.position.y = -1.82; g.add(ash);
+    const ember = new THREE.Mesh(new THREE.CylinderGeometry(.27, .28, .06, 32), std({ color: 0xff5a10, emissive: 0xff4a00, emissiveIntensity: 3 })); ember.position.y = -1.99; g.add(ember);
+    const puff = ctex(128, 128, (c, w, h) => { const gr = c.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,240,220,.55)'); gr.addColorStop(1, 'rgba(255,240,220,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+    const smoke = new THREE.Group(); smoke.userData.puffs = [];
+    for (let i = 0; i < 14; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: puff, transparent: true, depthWrite: false })); smoke.add(s); smoke.userData.puffs.push(s); }
+    O.cigar = { g, tint: 0xC9A24A, rot: [0, 0, 1.05], cap: 'Сигарный клуб', size: 1.85, smoke }; }
+
+  // шампанское — вечеринки отеля
+  { const g = new THREE.Group();
+    const p = [[0.001, -2], [.62, -2], [.66, -1.9], [.66, .2], [.58, .55], [.3, .95], [.22, 1.25], [.22, 1.75], [.26, 1.8], [.24, 1.95], [0.001, 1.95]];
+    g.add(lathe(p, std({ color: 0x0c3a22, metalness: .3, roughness: .08, emissive: 0x062414, emissiveIntensity: .5 }), 48));
+    g.add(lathe([[.225, .95], [.31, .93], [.36, .85], [.255, 1.3], [.235, 1.97], [.001, 1.98]], std({ color: 0xF7B50A, metalness: 1, roughness: .35 }), 48));
+    const lt = ctex(1024, 300, (c, w, h) => { c.fillStyle = '#f6efe0'; c.fillRect(0, 0, w, h); c.fillStyle = '#5a0f22'; c.fillRect(0, 0, w, 26); c.fillRect(0, h - 26, w, 26);
+      c.fillStyle = '#5a0f22'; c.font = '800 56px Unbounded'; c.textAlign = 'center'; c.fillText('MILE HIGH CLUB', w / 4, 150); c.font = '700 40px Onest'; c.fillText('Neon Night', w / 4, 214); });
+    const label = new THREE.Mesh(new THREE.CylinderGeometry(.665, .665, 1.0, 48, 1, true), std({ map: lt, roughness: .5 })); label.position.y = -.7; label.rotation.y = -1.2; g.add(label);
+    O.bottle = { g, tint: 0xF7B50A, rot: [.1, 0, -.35], cap: 'Вечеринки · Neon Night', size: 1.8 }; }
+
+  // журнал «Высота»
+  { const ct = new THREE.CanvasTexture(cover || document.createElement('canvas')); ct.colorSpace = THREE.SRGBColorSpace; ct.anisotropy = 4;
+    const g = plate(2.2, 3.11, .08, .04, std({ color: 0xf2ece0, roughness: .6 }), std({ map: ct, roughness: .35, emissive: 0xffffff, emissiveMap: ct, emissiveIntensity: .2 }), std({ color: 0x1a0d10, roughness: .5 }));
+    O.mag = { g, tint: 0xF0177A, rot: [-.1, 0, .12], cap: 'Журнал «Высота»', size: 1.85 }; }
+
+  // башня отеля
+  { const g = new THREE.Group();
+    const win = (cols, rows, seed) => ctex(cols * 16, rows * 22, (c, w, h) => { c.fillStyle = '#0b0608'; c.fillRect(0, 0, w, h);
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) { const v = hash(x * 31 + y * 17 + seed); c.fillStyle = v > .45 ? (v > .9 ? '#F0177A' : `rgba(247,${170 + 60 * v | 0},${60 + 80 * v | 0},${.55 + .45 * v})`) : '#1a1014'; c.fillRect(x * 16 + 3, y * 22 + 4, 10, 14); } }, true);
+    const tiers = [[1.5, 3.2, -1.9, 10, 30], [1.15, 1.8, .6, 8, 16], [.8, 1.1, 2.05, 6, 10]];
+    tiers.forEach(([w, hh, y, cols, rows], i) => { const t = win(cols, rows, i * 99); const m = std({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 1.1, roughness: .4, metalness: .3 });
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w, hh, w), m); b.position.y = y; g.add(b);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(w + .08, .06, w + .08), GOLD()); cap.position.y = y + hh / 2; g.add(cap); });
+    const crown = new THREE.Mesh(new THREE.BoxGeometry(.84, .16, .84), std({ color: 0xF0177A, emissive: 0xF0177A, emissiveIntensity: 2.2 })); crown.position.y = 2.72; g.add(crown);
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(.1, 1.1, 8), GOLD()); sp.position.y = 3.35; g.add(sp);
+    O.tower = { g, tint: 0xF0177A, rot: [.22, .6, 0], cap: 'Отель над Лос‑Сантосом', size: 1.62 }; }
+
+  // жетон-логотип для финала
+  { const face = ctex(1024, 1024, (c, w, h) => { const gr = c.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); gr.addColorStop(0, '#3a0d1a'); gr.addColorStop(1, '#14060a');
+      c.fillStyle = gr; c.fillRect(0, 0, w, h); if (logo) c.drawImage(logo, 112, 112, 800, 800); });
+    const faceM = std({ map: face, roughness: .35, metalness: .2, emissive: 0xffffff, emissiveMap: face, emissiveIntensity: .12 });
+    const g = plate(3, 3, .22, 1.499, std({ color: 0xF7B50A, metalness: 1, roughness: .25 }), faceM, faceM);
+    const rimT = new THREE.Mesh(new THREE.TorusGeometry(1.5, .07, 12, 96), GOLD()); g.add(rimT);
+    O.logo = { g, tint: 0xF7B50A, rot: [0, 0, 0], cap: '', size: 1.55 }; }
+
+  // нормализация: центр по габаритам, единый «вес» в кадре
+  for (const k in O) {
+    const o = O[k], inner = new THREE.Group(), outer = new THREE.Group(), box = new THREE.Box3().setFromObject(o.g);
+    const c = box.getCenter(new THREE.Vector3()), r = box.getBoundingSphere(new THREE.Sphere()).radius;
+    o.g.position.sub(c); inner.add(o.g); inner.rotation.set(...o.rot); const s = new THREE.Group(); s.add(inner); s.scale.setScalar(o.size / r);
+    outer.add(s); if (o.smoke) outer.add(o.smoke); outer.visible = false; scene.add(outer); o.outer = outer; o.s = s;
+  }
+  return O;
+}
+
+// ---------- монтаж по долям такта ----------
+// [предмет, длительность в долях]; склейки — точно на долях/полудолях, как в референсе
+const SHOTS = [['bell', 1], ['card', 1.5], ['phone', 1.5], ['ring', .5], ['vinyl', .5], ['cocktail', 1], ['cloche', 1], ['cigar', 1.5], ['bottle', .5], ['mag', 1], ['tower', 2], ['logo', 0]];
+let acc = 0; for (const s of SHOTS) { s.push(acc * P); acc += s[1]; }
+const LOGO_T = SHOTS[SHOTS.length - 1][2];              // 12 долей = 8.64 с
+SHOTS[SHOTS.length - 1][1] = (DUR - LOGO_T) / P;
+
+// звуковые события (для promo/nostalgia_audio.py)
+const CUES = [];
+SHOTS.forEach(([k, d, t], i) => { if (i) CUES.push({ t: +t.toFixed(3), type: k === 'logo' ? 'logo' : 'cut', big: d <= .5 }); });
+CUES.push({ t: +(LOGO_T + 1.0 * P).toFixed(3), type: 'type' }, { t: +(LOGO_T + 1.6 * P).toFixed(3), type: 'type2' }, { t: +(LOGO_T + 2.6 * P).toFixed(3), type: 'cta' });
+
+let O = null;
+function caption(text, t, color, y = 690, size = 38) {
+  // «набор» символов со случайными знаками — ностальгический дисплей
+  const n = text.length, shown = Math.floor(clamp(t / .28) * n), pool = '█▓▒░#%&@01';
+  let s = ''; for (let i = 0; i < n; i++) s += i < shown ? text[i] : (i < shown + 3 && text[i] !== ' ' ? pool[(i * 7 + Math.floor(t * 30)) % pool.length] : ' ');
+  cx.font = `800 ${size}px Unbounded`; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.shadowColor = color; cx.shadowBlur = 18; cx.fillStyle = color; cx.fillText(s.toUpperCase(), 270, y);
+  cx.shadowBlur = 0; cx.fillStyle = '#fff6e4'; cx.globalAlpha = .9; cx.fillText(s.toUpperCase(), 270, y); cx.globalAlpha = 1;
+}
+function fitFont(text, size, maxW) { cx.font = `800 ${size}px Unbounded`; const w = cx.measureText(text.toUpperCase()).width; return w > maxW ? size * maxW / w : size; }
+
+function render(frame) {
+  const t = frame / FPS;
+  let si = SHOTS.length - 1; for (let i = 0; i < SHOTS.length; i++) if (t >= SHOTS[i][2] - 1e-6) si = i;
+  const [k, d, t0] = SHOTS[si], lt = t - t0, dur = d * P, o = O[k];
+  for (const kk in O) O[kk].outer.visible = kk === k;
+  const tint = new THREE.Color(o.tint);
+  rim.color.copy(tint); rim2.color.copy(tint).lerp(new THREE.Color(0xffffff), .3);
+  // вращение: постоянное, с толчком на склейке
+  const spin = o.spin || 1.35, isLogo = k === 'logo';
+  let ry = -.75 + (hash(si) - .5) * .4 + lt * spin + .5 * eo3(clamp(lt / .25)), rx = Math.sin(lt * 1.7 + si) * .12, y = Math.sin(lt * 2.2 + si) * .06;
+  let pop = 1 + .1 * (1 - eo3(clamp(lt / .18)));
+  if (isLogo) { const st = clamp(lt / (1.6 * P)); ry = (1 - eo3(st)) * Math.PI * 6; rx = Math.sin(lt * 1.3) * .06 * st; y = .55 * eio(prog(lt, .4 * P, 1.2 * P)) + Math.sin(lt * 1.5) * .04; pop = 1 + .18 * (1 - eo3(clamp(lt / .3))); }
+  o.outer.rotation.set(rx, ry, 0); o.outer.position.y = y; o.outer.scale.setScalar(pop);
+  if (o.smoke) o.smoke.userData.puffs.forEach((s, i) => { const ph = (lt * .55 + i / 14) % 1; s.position.set(-1.15 + Math.sin(ph * 5 + i) * .3 * ph, -.55 + ph * 2.2, .3); s.scale.setScalar(.2 + ph * .9); s.material.opacity = .22 * Math.sin(ph * Math.PI); });
+
+  // 3D → низкое разрешение; яркое → ореол в трёх масштабах
+  R.setRenderTarget(rtScene); R.render(scene, cam);
+  quad.material = blurMat; let src = rtScene;
+  blurRTs.forEach((b, i) => { blurMat.uniforms.src.value = src.texture; blurMat.uniforms.px.value.set(1 / src.width, 1 / src.height); blurMat.uniforms.thr.value = i ? 0 : .22; R.setRenderTarget(b); R.render(quadScene, quadCam); src = b; });
+
+  // подписи
+  cx.clearRect(0, 0, 540, 960);
+  const css = '#' + tint.getHexString();
+  if (!isLogo && lt > 2 / FPS) caption(o.cap, lt - 2 / FPS, css, 700, fitFont(o.cap, 36, 470));
+  if (isLogo) {
+    const a = LOGO_T + 1.0 * P;
+    if (t > a) caption('MILE HIGH CLUB', t - a, '#F7B50A', 610, 44);
+    if (t > a + .6 * P) { cx.globalAlpha = eo3(prog(t, a + .6 * P, a + 1.1 * P)); cx.font = '700 19px Onest'; cx.fillStyle = '#F9EDC7'; cx.textAlign = 'center'; cx.fillText('Номера · бассейны · Le Ciel · сигарный клуб', 270, 662); cx.globalAlpha = 1; }
+    if (t > a + 1.6 * P) { const p = eo3(prog(t, a + 1.6 * P, a + 1.9 * P)); cx.globalAlpha = p; cx.fillStyle = '#F7B50A'; cx.shadowColor = '#F7B50A'; cx.shadowBlur = 24;
+      const bw = 330, bh = 62, bx = 270 - bw / 2, by = 720 + 10 * (1 - p); cx.beginPath(); cx.roundRect(bx, by, bw, bh, 31); cx.fill(); cx.shadowBlur = 0;
+      cx.fillStyle = '#1a1205'; cx.font = '800 22px Unbounded'; cx.fillText('ЗАБРОНИРУЙ НА САЙТЕ', 270, by + bh / 2 + 1); cx.globalAlpha = 1; }
+  }
+  capTex.needsUpdate = true;
+
+  // глитч на склейках: 2 кадра после и 1 перед следующей
+  const f = Math.round(lt * FPS), fEnd = Math.round(dur * FPS) - f;
+  let g = f < 2 ? (f === 0 ? 1 : .55) : 0; if (!isLogo && fEnd <= 1) g = Math.max(g, .4);
+  const U = finalMat.uniforms;
+  U.tint.value.copy(tint); U.gl.value = g; U.seed.value = frame % 97; U.ca.value = 1 + .6 * Math.sin(t * 9.3) ** 2;
+  U.flash.value = isLogo ? .55 * (1 - clamp(lt / .2)) : 0; U.halo.value = 1;
+  U.fade.value = clamp(t / .12) * (1 - prog(t, DUR - .45, DUR));
+  quad.material = finalMat; R.setRenderTarget(null); R.render(quadScene, quadCam);
+}
+
+const FACES = ['800 40px "Unbounded"', '700 40px "Onest"'];
+const ready = async () => {
+  await Promise.all(FACES.map(f => document.fonts.load(f, 'Абвгд Abc 0123')));
+  if (!O) O = await buildObjects();
+  R.compile(scene, cam); render(0);
+};
+window.AD = { W, H, FPS, DUR, BPM, CUES, SHOTS: SHOTS.map(s => ({ k: s[0], t: s[2] })), render, ready };
+
+const q = new URLSearchParams(location.search);
+if (!q.has('still')) ready().then(() => {
+  if (q.has('t')) return render(Math.round(+q.get('t') * FPS));
+  const st = performance.now(); const loop = () => { render(Math.floor(((performance.now() - st) / 1000 % DUR) * FPS)); requestAnimationFrame(loop); }; loop();
+});
+</script>
+</body>
+</html>
