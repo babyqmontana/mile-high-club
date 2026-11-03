@@ -41,7 +41,7 @@ void main(){
 export function layersFor(url) {
   const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || '');
   if (!m) return null; const b = 'img/layers/' + m[1];
-  return { far: b + '-far.webp', mask: b + '-mask.png' };
+  return { far: b + '-far.webp', mask: b + '-mask.webp' };
 }
 
 export function mountHero(canvas, section) {
