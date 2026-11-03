@@ -8,7 +8,29 @@
   --r:1.25rem;--r2:0.875rem;--gl:max(1rem,env(safe-area-inset-left,0px));--gr:max(1rem,env(safe-area-inset-right,0px));--nav:4rem;
   --sunset:linear-gradient(100deg,#f0177a 0%,#ef5617 30%,#f7b50a 50%,#ef5617 70%,#f0177a 100%);
   color-scheme:dark;
+  /* ---- Vertical Noir (DESIGN_SYSTEM.md). Новые токены поверх старых, старые не удаляются ---- */
+  --surface-0:var(--bg);--surface-1:var(--bg2);--surface-2:var(--card);--surface-3:var(--card2);--edge:var(--line);--edge-strong:var(--line2);
+  --edge-brass:linear-gradient(90deg,#8a6228,#f9edc7 50%,#8a6228);--hi:inset 0 1px 0 rgba(249,237,199,.06);
+  --st-free:var(--gold);--st-booked:var(--pink);--st-occupied:var(--violet);--st-idle:var(--mut);--st-live:var(--pink);
+  --ease-out:cubic-bezier(.2,.8,.2,1);--ease-in-out:cubic-bezier(.65,0,.35,1);--ease-spring:cubic-bezier(.2,.9,.3,1.3);
+  --d-tap:120ms;--d-hover:200ms;--d-ui:320ms;--d-panel:480ms;--d-floor:720ms;--d-scene:1200ms;
+  --s1:.25rem;--s2:.5rem;--s3:.75rem;--s4:1rem;--s5:1.5rem;--s6:2rem;--s7:3rem;--s8:5rem;--s9:8rem;
+  --r-pill:62.4375rem;--cut:.625rem;
+  /* свет этажа: у каждой страницы свой тон фона и акцент (ниже, через :has) */
+  --floor-tint:#59161E;--floor-accent:var(--gold);--floor-grain:.05;
 }
+@property --floor-tint{syntax:"<color>";inherits:true;initial-value:#59161E}
+@property --floor-accent{syntax:"<color>";inherits:true;initial-value:#F7B50A}
+:root{transition:--floor-tint var(--d-floor) var(--ease-in-out),--floor-accent var(--d-floor) var(--ease-in-out)}
+:root:has(.view.on[data-view="stay"]){--floor-tint:#3d2a12}
+:root:has(.view.on[data-view="leisure"]){--floor-tint:#4a1430;--floor-accent:#F0177A}
+:root:has(.view.on[data-view="dining"]){--floor-tint:#3a302a;--floor-accent:#E9E4DA}
+:root:has(.view.on[data-view="cigars"]){--floor-tint:#3d1d0c;--floor-accent:#C9A24A}
+:root:has(.view.on:is([data-view="journal"],[data-view="issue"])){--floor-tint:#2e2620;--floor-accent:#F9EDC7}
+:root:has(.view.on[data-view="staff"]){--floor-tint:#3a1520}
+:root:has(.view.on[data-view="contact"]){--floor-tint:#3a2814}
+:root:has(.view.on[data-view="admin"]){--floor-tint:#1e1517;--floor-grain:0}
+.nw{white-space:nowrap}
 /* Интерфейс всегда тёмный: день и ночь меняют только содержимое (картинки, статусы). */
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-padding-top:calc(var(--nav) + 0.75rem);font-size:16px}
@@ -23,11 +45,15 @@ button{cursor:pointer;background:none;border:0;padding:0}
 h1,h2,h3,h4{margin:0;font-family:var(--display);font-weight:600;line-height:1.08;letter-spacing:-.025em;text-wrap:balance}
 p{margin:0}
 .wrap{max-width:80rem;margin:0 auto;padding-left:var(--gl);padding-right:var(--gr)}
-.eyebrow{font:800 .68rem/1.3 var(--body);letter-spacing:.2em;text-transform:uppercase;color:var(--gold);background:var(--sunset);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:flow 14s linear infinite;justify-self:start;width:fit-content}
+/* надзаголовок: латунная табличка в цвете этажа. Бегущий градиент убран — он перерисовывал каждый заголовок постоянно */
+.eyebrow{display:inline-flex;align-items:center;gap:.7em;font:800 .68rem/1.3 var(--body);letter-spacing:.2em;text-transform:uppercase;color:var(--floor-accent);justify-self:start;width:fit-content}
+.eyebrow::before{content:"";width:1.6em;height:1px;background:currentColor;opacity:.6;flex:none}
 @keyframes flow{to{background-position:300% 0}}
 .glow-text{background:linear-gradient(100deg,#f7b50a,#f9e2a8 50%,#ef8a2a);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-/* мягкое «северное сияние» фоном */
-body::after{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;background:radial-gradient(50% 40% at 12% 8%,rgba(89,22,30,.45),transparent 70%),radial-gradient(40% 35% at 90% 20%,rgba(138,98,40,.12),transparent 70%),radial-gradient(60% 50% at 50% 110%,rgba(89,22,30,.3),transparent 70%)}
+/* свет этажа: тёплое пятно сверху слева в тоне страницы, бронзовый отсвет справа, тень снизу */
+body::after{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;background:radial-gradient(50% 40% at 12% 8%,color-mix(in srgb,var(--floor-tint) 75%,transparent),transparent 70%),radial-gradient(40% 35% at 90% 20%,rgba(138,98,40,.12),transparent 70%),radial-gradient(60% 50% at 50% 110%,color-mix(in srgb,var(--floor-tint) 50%,transparent),transparent 70%)}
+/* зерно: фактура бархата и бумаги без картинок, статичный слой */
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:var(--floor-grain);background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .98 0 0 0 0 .93 0 0 0 0 .78 0 0 0 1.4 -.45'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 @keyframes aurora{to{transform:translate3d(4%,-3%,0) rotate(8deg) scale(1.08)}}
 .scrollbar{position:fixed;top:0;left:0;height:2px;width:100%;transform-origin:0 50%;transform:scaleX(var(--sp,0));background:var(--sunset);background-size:200% 100%;z-index:60;pointer-events:none}
 .mut{color:var(--mut)}
@@ -95,7 +121,7 @@ body::after{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;bac
 .links a{position:relative;text-decoration:none;font:700 .84rem var(--body);padding:.5rem .75rem;border-radius:62.4375rem;color:var(--mut);transition:color .2s}
 .links a:hover{color:var(--fg)}
 .links a[aria-current="page"]{color:var(--fg)}
-.links a[aria-current="page"]::after{content:"";position:absolute;left:50%;bottom:2px;width:1.125rem;height:2px;margin-left:-9px;border-radius:2px;background:var(--sunset);background-size:300% 100%;animation:flow 6s linear infinite}
+.links a[aria-current="page"]::after{content:"";position:absolute;left:50%;bottom:2px;width:1.125rem;height:2px;margin-left:-9px;border-radius:2px;background:var(--sunset);background-size:300% 100%;background-position:40% 0}
 .navr{display:flex;align-items:center;gap:.4rem;flex:none}
 .pill{display:inline-flex;align-items:center;gap:.45rem;height:2.25rem;padding:0 .8rem;border-radius:62.4375rem;border:1px solid var(--line2);font:700 .78rem var(--body);text-decoration:none;white-space:nowrap}
 .pill .d{width:0.4375rem;height:0.4375rem;border-radius:50%;background:var(--ok);animation:pulse 2s infinite;color:var(--ok)}
@@ -656,7 +682,7 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 @media(min-width:900px){:root[data-theme="newyear"] .garland i:nth-child(n+18){display:block}}
 @keyframes bulb{0%,100%{opacity:1;filter:brightness(1.1)}50%{opacity:.35;filter:brightness(.6)}}
 @media(prefers-reduced-motion:reduce){:root[data-theme="newyear"] .garland i{animation:none}}
-:root[data-theme="newyear"] .eyebrow{background:linear-gradient(100deg,#f9edc7,#f7b50a 40%,#f0177a 70%,#f9edc7) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text}
+:root[data-theme="newyear"] .eyebrow{background:linear-gradient(100deg,#f9edc7,#f7b50a 40%,#f0177a 70%,#f9edc7) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 
 /* ---------- интерактивные предметы ---------- */
 /* звонок на ресепшене */
