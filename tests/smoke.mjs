@@ -25,7 +25,8 @@ const VIEWS = { 'issue-i1': 'issue', 'no-such-room': 'lost' };
 const VIEWPORTS = [
   { name: 'desktop', viewport: { width: 1440, height: 900 } },
   { name: 'tablet', viewport: { width: 768, height: 1024 }, hasTouch: true },
-  { name: 'mobile', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }
+  { name: 'mobile', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+  { name: 'small', viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true }
 ];
 // шум окружения, а не ошибки сайта (шрифты Google без сети, программный WebGL в контейнере)
 const IGNORE = [/fonts\.(googleapis|gstatic)\.com/, /GPU stall due to ReadPixels/, /WebGL.*(software|swiftshader)/i, /Automatic fallback to software WebGL/];
@@ -251,6 +252,22 @@ try {
   check('меню: Esc закрывает, фокус на кнопке меню', !closed.on && closed.focus === 'burger' && !closed.mainInert, JSON.stringify(closed));
   await mp.click('#burger'); await mp.waitForTimeout(350); await mp.click('#drawer a[href="#dining"]'); await mp.waitForTimeout(1300);
   check('меню: пункт меню открывает раздел и закрывает меню', await mp.evaluate(() => document.querySelector('.view.on')?.dataset.view === 'dining' && !document.querySelector('#drawer.on') && !document.querySelector('main').inert));
+  // компактная шапка: на 390 px видны максимум 3 иконки; звук и день/ночь — в меню
+  const hdr = await mp.evaluate(() => ({ icons: [...document.querySelectorAll('.navr .ibtn')].filter(b => b.getClientRects().length && getComputedStyle(b).display !== 'none').length, tools: !!document.querySelector('#drawer #dSnd') && !!document.querySelector('#drawer #dMode') }));
+  check('мобильная шапка: не больше 3 иконок, звук и день/ночь в меню', hdr.icons <= 3 && hdr.tools, JSON.stringify(hdr));
+  // цели нажатия на сенсорном экране
+  await mp.evaluate(() => { location.hash = '#stay'; }); await mp.waitForSelector('#rFilt .seg button'); await mp.waitForTimeout(800);
+  const small = await mp.evaluate(() => [...document.querySelectorAll('.navr .ibtn, .navr .pill, #rFilt button, #lfBtns button, .seg button')].filter(b => b.getClientRects().length && getComputedStyle(b).display !== 'none').map(b => Math.round(b.getBoundingClientRect().height)).filter(h => h < 44));
+  check('мобильные: кнопки шапки, фильтров и лифта не меньше 44 px', small.length === 0, small.length ? `меньше 44 px: ${small.join(', ')}` : '');
+  // нижняя шторка: прижата к низу, свайп вниз закрывает
+  await mp.$eval('#types [data-t]', b => b.scrollIntoView({ block: 'center' })); await mp.tap('#types [data-t]'); await mp.waitForSelector('#bookSheet.on'); await mp.waitForTimeout(500);
+  const pan = await mp.$eval('#bookSheet .panel', p => { const r = p.getBoundingClientRect(); return { bottom: Math.round(r.bottom), top: Math.round(r.top), vh: innerHeight }; });
+  check('мобильная шторка: выезжает снизу и прижата к низу экрана', Math.abs(pan.bottom - pan.vh) <= 1 && pan.top > 20, JSON.stringify(pan));
+  const cdp = await mctx.newCDPSession(mp), x = 195, y = pan.top + 20;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  for (let i = 1; i <= 10; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + i * 26 }] }); await mp.waitForTimeout(16); }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await mp.waitForTimeout(500);
+  check('мобильная шторка: свайп вниз закрывает', await mp.evaluate(() => !document.querySelector('#bookSheet.on') && !document.querySelector('#app').inert));
   check('мобильные сценарии: нет ошибок в консоли и сети', merrs.length === 0, merrs.slice(0, 5).join(' | '));
   await mctx.close();
 
