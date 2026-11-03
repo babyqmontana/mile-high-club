@@ -1,7 +1,7 @@
 // Погода поверх сцены: дождь, снег, туман или золотая пыль в солнечном воздухе.
 // Лёгкий 2D-канвас, частиц немного, анимация на паузе, когда вкладка скрыта или блок не виден.
 export function mountWeather(canvas, { strength = 1, wind = 0.25 } = {}) {
-  const g = canvas.getContext('2d'); if (!g) return { set() {} };
+  const g = canvas.getContext('2d'); if (!g) return { set() {}, destroy() {} };
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let W = 0, H = 0, dpr = 1, kind = 'clear', day = 1, P = [], raf = 0, last = 0, visible = true, fogT = 0;
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -46,9 +46,13 @@ export function mountWeather(canvas, { strength = 1, wind = 0.25 } = {}) {
     if (!reduce && visible && P.length && document.visibilityState === 'visible') raf = requestAnimationFrame(frame); else last = 0;
   }
   function kick() { if (!raf && W) raf = requestAnimationFrame(frame); }
-  new ResizeObserver(size).observe(canvas);
-  new IntersectionObserver(([e]) => { visible = e.isIntersecting; kick(); }).observe(canvas);
+  const ro = new ResizeObserver(size); ro.observe(canvas);
+  const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; kick(); }); io.observe(canvas);
   document.addEventListener('visibilitychange', kick);
   size();
-  return { set(k, isDay) { if (k === kind && +!!isDay === day) return; kind = k; day = isDay ? 1 : 0; seed(); kick(); } };
+  return {
+    set(k, isDay) { if (k === kind && +!!isDay === day) return; kind = k; day = isDay ? 1 : 0; seed(); kick(); },
+    // при пересборке главного экрана: остановить цикл и отпустить наблюдатели и обработчики
+    destroy() { cancelAnimationFrame(raf); raf = 0; P = []; ro.disconnect(); io.disconnect(); document.removeEventListener('visibilitychange', kick); }
+  };
 }

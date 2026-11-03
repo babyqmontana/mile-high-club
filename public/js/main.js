@@ -199,6 +199,8 @@ function renderHome() {
   const key = m + '|' + (m === 'day' ? s.heroDay : s.heroNight) + '|' + s.tagline;
   const v = view('home');
   if (v.dataset.key === key && $('#homeRest')) { $('#homeRest').innerHTML = restHtml; wireHome(); reveal(v); applyWeather(); return; }
+  // старый атриум и его погода отдают GPU и обработчики до того, как появится новый
+  mods.hero?.destroy?.(); mods.hero = null; mods.heroWx?.destroy?.(); mods.heroWx = null;
   v.dataset.key = key; v.innerHTML = heroHtml + '<div id="homeRest">' + restHtml + '</div>'; wireHome();
   mods.heroWx = mountWeather($('#heroWx'), { strength: 1.5 }); if (wxNow) mods.heroWx.set(wxNow.kind, m === 'day');
   const logo = $('#heroLogo'), hero = $('#dive');
@@ -207,7 +209,10 @@ function renderHome() {
   const dv1 = $('#dv1'), dv2 = $('#dv2'), hint = $('#dvHint');
   const setP = p => { dv1.style.opacity = Math.max(0, 1 - p * 2.6); dv1.style.transform = `translateY(${-p * 80}px)`; dv1.style.pointerEvents = p > .3 ? 'none' : ''; const q = Math.min(1, Math.max(0, (p - .55) / .3)); dv2.style.opacity = q; dv2.style.transform = `translateY(${(1 - q) * 30}px)`; dv2.style.pointerEvents = q > .5 ? '' : 'none'; hint.style.opacity = Math.max(0, 1 - p * 5); };
   setP(0);
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) import('./hero3d.js').then(mod => { const h = mod.mountHero($('#heroGl'), hero); if (!h) return; mods.hero = h; const url = m === 'day' ? s.heroDay : s.heroNight; h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => console.warn('hero', e));
+  const heroCanvas = $('#heroGl');
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) import('./hero3d.js').then(mod => {
+    if (!heroCanvas.isConnected || mods.hero) return; // пока модуль грузился, главную уже пересобрали
+    const h = mod.mountHero(heroCanvas, hero); if (!h) return; mods.hero = h; const url = m === 'day' ? s.heroDay : s.heroNight; h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => console.warn('hero', e));
   else { hero.classList.add('static'); }
   applyWeather();
 }
