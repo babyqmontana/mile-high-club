@@ -353,8 +353,7 @@ function openBooking(type, room) {
 /* ---------------- отдых ---------------- */
 function timeline(v) {
   const segs = (v.schedule || []).flatMap(s => { const a = minutesOf(s.from), b = minutesOf(s.to); return a < b ? [[a, b, s.state]] : [[a, 1440, s.state], [0, b, s.state]]; });
-  const m = mskMinutes();
-  return `<div><div class="timeline">${segs.map(([a, b, st]) => `<i class="${st}" style="left:${a / 14.4}%;width:${(b - a) / 14.4}%"></i>`).join('')}<span class="now" style="left:var(--now,${m / 14.4}%)"></span></div><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>`;
+  return `<div><div class="timeline">${segs.map(([a, b, st]) => `<i class="${st}" style="left:${a / 14.4}%;width:${(b - a) / 14.4}%"></i>`).join('')}<span class="now" style="left:var(--now,0%)"></span></div><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>`;
 }
 // «Сутки отеля»: все площадки на одной оси 00–24 и ползунок «что будет открыто в 23:00?».
 // Статус на выбранное время считает та же venueState(), что и сервер, — с учётом событий из Discord.
@@ -513,25 +512,43 @@ function renderCigars() {
   if (!v.querySelector('.hum')) {
     v.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Сигарный клуб · 31 этаж</span><h2>Хьюмидор</h2><p>Откройте крышку, листайте сигары стрелками и крутите каждую мышью или пальцем.</p></div>
       <div class="cig"><div class="hum" id="hum"><div class="loading" id="humLoad">Открываем хьюмидор…</div><div class="ctrl"><button class="btn sm gold" id="lidBtn" data-sfx="">Открыть</button><div class="glass"><button class="ibtn" id="cPrev" aria-label="Предыдущая сигара" data-sfx="wood">${I.left}</button><span class="lbl2 num" id="cNum"></span><button class="ibtn" id="cNext" aria-label="Следующая сигара" data-sfx="wood">${I.right}</button></div></div></div>
-      <div class="cinfo card pad" id="cInfo"></div></div><div class="strip" id="cStrip" style="margin-top:1rem"></div></div>`;
-    $('#cPrev').onclick = () => pickCigar(cigIdx - 1); $('#cNext').onclick = () => pickCigar(cigIdx + 1);
+      <div class="cinfo card pad" id="cInfo"></div></div><div class="cfilt" id="cFilt"></div><div class="strip" id="cStrip"></div></div>`;
+    $('#cPrev').onclick = () => stepCigar(-1); $('#cNext').onclick = () => stepCigar(1);
     $('#lidBtn').onclick = () => { const open = mods.hum?.toggleLid(); play(open ? 'lid' : 'wood'); burst('lid', 6, 12000); $('#lidBtn').textContent = open ? 'Закрыть' : 'Открыть'; };
-    v.addEventListener('keydown', e => { if (e.target.closest('input,textarea,select')) return; if (e.key === 'ArrowLeft') pickCigar(cigIdx - 1); if (e.key === 'ArrowRight') pickCigar(cigIdx + 1); });
+    v.addEventListener('keydown', e => { if (e.target.closest('input,textarea,select')) return; if (e.key === 'ArrowLeft') stepCigar(-1); if (e.key === 'ArrowRight') stepCigar(1); });
     import('./humidor3d.js').then(m => { mods.hum = m.mountHumidor($('#hum'), { onPick: i => pickCigar(i, true), onLid: o => { play('lid'); burst('lid', 6, 12000); $('#lidBtn').textContent = o ? 'Закрыть' : 'Открыть'; } }); $('#humLoad')?.remove(); mods.hum.active(current === 'cigars'); mods.hum.setCigars(S.pub.cigars, cigIdx); }).catch(e => { console.error(e); $('#humLoad').textContent = '3D-хьюмидор не загрузился в этом браузере.'; });
   } else mods.hum?.setCigars(p.cigars, cigIdx);
   paintCigar();
 }
 function pickCigar(i, fromScene) { const n = S.pub.cigars.length; if (!n) return; cigIdx = (i + n) % n; if (!fromScene) mods.hum?.select(cigIdx); else play('wood'); paintCigar(); }
+// фильтр хьюмидора по крепости и стране: стрелки и клавиатура ходят только по подходящим сигарам
+const CIG_STR = [[0, 'Любая', 1, 5], [1, 'Лёгкие', 1, 2], [3, 'Средние', 3, 3], [4, 'Крепкие', 4, 5]];
+let cigStr = 0, cigOrigin = '';
+const cigOk = c => { const [, , a, b] = CIG_STR.find(x => x[0] === cigStr); return c.strength >= a && c.strength <= b && (!cigOrigin || c.origin === cigOrigin); };
+function stepCigar(dir) { const L = S.pub.cigars, n = L.length; for (let k = 1; k <= n; k++) { const i = ((cigIdx + dir * k) % n + n) % n; if (cigOk(L[i])) return pickCigar(i); } }
+function setCigarFilter(str, origin) {
+  cigStr = str; cigOrigin = origin;
+  const L = S.pub.cigars, first = L.findIndex(cigOk);
+  if (first >= 0 && !cigOk(L[cigIdx])) pickCigar(first); else paintCigar();
+}
 function paintCigar() {
-  const c = S.pub.cigars[cigIdx];
-  $('#cNum').textContent = S.pub.cigars.length ? `${cigIdx + 1} / ${S.pub.cigars.length}` : '0';
+  const c = S.pub.cigars[cigIdx], L = S.pub.cigars, ok = L.map(cigOk), cnt = ok.filter(Boolean).length, filtered = cigStr !== 0 || !!cigOrigin;
+  $('#cNum').textContent = !L.length ? '0' : ok[cigIdx] ? `${ok.slice(0, cigIdx + 1).filter(Boolean).length} / ${cnt}` : `— / ${cnt}`;
+  const origins = [...new Set(L.map(x => x.origin).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+  $('#cFilt').innerHTML = L.length ? `<div class="seg" role="group" aria-label="Крепость">${CIG_STR.map(([k, n]) => `<button type="button" aria-pressed="${cigStr === k}" data-cs="${k}">${n}</button>`).join('')}</div>
+    <div class="seg" role="group" aria-label="Страна"><button type="button" aria-pressed="${!cigOrigin}" data-co="">Все страны</button>${origins.map(o => `<button type="button" aria-pressed="${cigOrigin === o}" data-co="${esc(o)}">${esc(o)}</button>`).join('')}</div>
+    <span class="note" aria-live="polite">${filtered ? `Подходит ${cnt} из ${L.length}` : `${L.length} ${plural(L.length, 'сигара', 'сигары', 'сигар')} в хьюмидоре`}</span>` : '';
+  $$('#cFilt [data-cs]').forEach(b => b.onclick = () => setCigarFilter(+b.dataset.cs, cigOrigin));
+  $$('#cFilt [data-co]').forEach(b => b.onclick = () => setCigarFilter(cigStr, b.dataset.co));
+  $$('#cFilt [aria-pressed="true"]').forEach(b => { const s = b.parentElement; if (s.scrollWidth > s.clientWidth) s.scrollLeft = b.offsetLeft - (s.clientWidth - b.offsetWidth) / 2; }); // выбранное видно в прокручиваемой ленте
   $('#cInfo').innerHTML = c ? `<span class="eyebrow">${esc(c.origin)}</span><h3>${esc(c.name)}</h3>
     <dl class="kv"><dt>Формат</dt><dd>${esc(CIGAR_SHAPES[c.shape] || c.shape)}</dd><dt>Калибр</dt><dd class="num" title="Ring gauge: диаметр в 1/64 дюйма">${esc(c.ring)} <small class="mut">RG</small></dd><dt>Длина</dt><dd class="num">${esc(c.length)} мм</dd><dt>Крепость</dt><dd><span class="str">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= c.strength ? 'on' : ''}"></i>`).join('')}</span></dd><dt>Цена</dt><dd class="num"><b>${money(c.price)}</b></dd></dl>
     <div class="notes">${(c.notes || []).map(n => `<span>${esc(n)}</span>`).join('')}</div>${c.desc ? `<p class="mut">${esc(c.desc)}</p>` : ''}
     <div class="row"><button class="btn" id="cAdd" data-sfx="">В заказ в номер</button><button class="btn ghost" id="cCart" data-sfx="open">Открыть заказ</button></div>` : '<div class="empty">Хьюмидор пуст. Сигары добавляют в панели персонала.</div>';
   $('#cAdd') && ($('#cAdd').onclick = () => { addCart(c.id, $('#cAdd')); toast(`${c.name}: в заказе`); });
   $('#cCart') && ($('#cCart').onclick = openCart);
-  $('#cStrip').innerHTML = S.pub.cigars.map((x, i) => `<button aria-pressed="${i === cigIdx}" data-i="${i}" data-sfx="wood"><i style="background:${esc(x.band)}"></i>${esc(x.name)}</button>`).join('');
+  $('#cStrip').innerHTML = cnt || !L.length ? L.map((x, i) => ok[i] ? `<button aria-pressed="${i === cigIdx}" data-i="${i}" data-sfx="wood"><i style="background:${esc(x.band)}"></i>${esc(x.name)}</button>` : '').join('') : '<div class="empty" style="padding:.8rem 1rem">Под фильтр ничего не подходит. <button class="btn ghost sm" id="cReset" type="button">Сбросить фильтр</button></div>';
+  $('#cReset') && ($('#cReset').onclick = () => setCigarFilter(0, ''));
   $$('#cStrip button').forEach(b => b.onclick = () => pickCigar(+b.dataset.i));
   $('#cStrip [aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
 }
