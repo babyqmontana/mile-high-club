@@ -89,11 +89,26 @@ function route() {
   const animate = VT && booted && next !== current && document.visibilityState === 'visible' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (!animate) return doRoute();
   vtRunning?.skipTransition();
-  document.documentElement.dataset.dir = (FLOOR[next] ?? 0) >= (FLOOR[current] ?? 0) ? 'up' : 'down';
-  const vt = vtRunning = document.startViewTransition(doRoute);
+  const root = document.documentElement;
+  root.dataset.dir = (FLOOR[next] ?? 0) >= (FLOOR[current] ?? 0) ? 'up' : 'down';
+  root.classList.add('vt-route');
+  // обложка журнала «перетекает» между списком и шапкой выпуска (в обе стороны)
+  const prevIssue = S.param;
+  let from = null;
+  if (current === 'journal' && next === 'issue') from = S.coverFrom?.isConnected ? S.coverFrom : null;
+  if (current === 'issue' && next === 'journal') from = $('.view.on .ihead .cv');
+  if (from) from.style.viewTransitionName = 'issue-cover';
+  let to = null;
+  const vt = vtRunning = document.startViewTransition(() => {
+    doRoute();
+    if (!from) return;
+    from.style.viewTransitionName = '';
+    to = next === 'issue' ? $('.view.on .ihead .cv') : $(`.view.on .issue[href="#issue-${CSS.escape(prevIssue || '')}"] .cv`);
+    if (to) to.style.viewTransitionName = 'issue-cover';
+  });
   // прерванный переход (новый клик во время анимации) отклоняет ready — это штатно, раздел уже переключён
   vt.ready.catch(() => {}); vt.updateCallbackDone.catch(e => console.error(e));
-  vt.finished.finally(() => { if (vtRunning === vt) vtRunning = null; });
+  vt.finished.finally(() => { if (to) to.style.viewTransitionName = ''; if (from) from.style.viewTransitionName = ''; S.coverFrom = null; if (vtRunning === vt) { vtRunning = null; root.classList.remove('vt-route'); } });
 }
 function doRoute() {
   let h = (location.hash || '#home').slice(1), param = null;
@@ -626,6 +641,7 @@ function renderJournal() {
     $('#jSearch').oninput = e => { jq = e.target.value; renderJournal(); };
   }
   $('#issues').innerHTML = list.length ? list.map(i => `<a class="issue reveal" href="#issue-${esc(i.id)}" data-sfx="page"><div class="cv" style="background-image:url('${esc(i.cover || i.pages?.[0]?.image || '')}')"></div><b>${esc(i.title)}</b><small>${esc(i.number || '')} · ${new Date(i.date || Date.now()).toLocaleDateString('ru-RU')}</small></a>`).join('') : `<div class="empty" style="grid-column:1/-1">${S.pub.issues.length ? 'Ничего не нашлось.' : 'Выпусков пока нет. Их добавляют в панели персонала.'}</div>`;
+  $$('#issues .issue').forEach(a => a.addEventListener('click', () => { S.coverFrom = a.querySelector('.cv'); }));
   reveal(v);
 }
 function renderIssue() {
@@ -670,7 +686,16 @@ function paintTeam() {
   $$('#teamV [data-t]').forEach(b => b.onclick = () => openMember(all.find(t => t.id === b.dataset.t)));
 }
 const seenTeam = new Set();
+// фото с карточки «перетекает» в окно анкеты (View Transitions); без поддержки — обычное открытие
 function openMember(t) {
+  const card = t && $(`#teamV .tcard[data-t="${CSS.escape(t.id)}"] .tph`);
+  if (!VT || !card || matchMedia('(prefers-reduced-motion: reduce)').matches) return openMemberNow(t);
+  card.style.viewTransitionName = 'member-photo';
+  const vt = document.startViewTransition(() => { card.style.viewTransitionName = ''; openMemberNow(t); const ph = $('.modal .member .tph'); if (ph) ph.style.viewTransitionName = 'member-photo'; });
+  vt.ready.catch(() => {}); vt.updateCallbackDone.catch(e => console.error(e));
+  vt.finished.finally(() => { card.style.viewTransitionName = ''; const ph = $('.modal .member .tph'); if (ph) ph.style.viewTransitionName = ''; });
+}
+function openMemberNow(t) {
   if (!t) return; seenTeam.add(t.id); if ((S.pub.team || []).length > 1 && S.pub.team.every(x => seenTeam.has(x.id))) setTimeout(() => unlock('team'), 600); const d = S.pub.depts.find(x => x.id === t.dept);
   modal(`<div class="member" style="--ac:${esc(d?.accent || '#F7B50A')}"><div class="tph ${t.photo ? '' : 'none'}" ${t.photo ? `style="background-image:url('${esc(t.photo)}')"` : ''}>${t.photo ? '' : `<b>${esc(initials(t.name))}</b>`}</div>
     <div class="stack"><div><span class="eyebrow">${esc(d?.name || 'Mile High Club')}</span><h3>${esc(t.name)}</h3><p class="mut">${esc(t.position || '')}</p></div>
