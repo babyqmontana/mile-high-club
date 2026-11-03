@@ -239,7 +239,7 @@ function renderHome() {
   applyWeather();
 }
 // предзагрузка слоёв главной картинки (те же правила, что в hero3d.layersFor)
-function heroLayers(url) { const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); return m ? Promise.all(['-far.webp', '-mask.png'].map(x => preload('img/layers/' + m[1] + x))) : null; }
+function heroLayers(url) { const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); return m ? Promise.all(['-far.webp', '-mask.webp'].map(x => preload('img/layers/' + m[1] + x))) : null; }
 // слова через дефис («Лос-Сантос») не разрываются переносом; на вход — уже экранированный текст
 const nowrapHyphens = html => html.replace(/[^\s<>]+-[^\s<>]+/g, w => `<span class="nw">${w}</span>`);
 function evCard(e) {
