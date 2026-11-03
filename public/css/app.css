@@ -878,3 +878,25 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 .cloche{transition:background .6s}
 .cloche.open{background:radial-gradient(80% 120% at 0% 50%,rgba(138,98,40,.35),transparent 70%),var(--card)}
 .seen .loader{display:none}
+/* «Сутки отеля»: все площадки на одной оси, курсор времени, ползунок */
+.hday{margin:1.2rem 0 1.4rem;padding:clamp(1rem,2.4vw,1.5rem);border-radius:var(--r);background:var(--card);border:1px solid var(--line);box-shadow:var(--hi);display:grid;gap:1rem}
+.hd-head{display:flex;justify-content:space-between;align-items:end;gap:1rem;flex-wrap:wrap}
+.hd-head h3{font-size:clamp(1.15rem,2.4vw,1.6rem)}
+.hd-head output{color:var(--floor-accent);white-space:nowrap}
+.hd-grid{--hn:9.5rem;--hc:7.5rem;--gap:1rem;display:grid;gap:.35rem}
+.hd-lw{position:relative}
+#hdLanes{display:grid;gap:.4rem}
+.hd-lane,.hd-scale{display:grid;grid-template-columns:var(--hn) minmax(0,1fr) var(--hc);gap:var(--gap);align-items:center;text-align:left;width:100%}
+.hd-lane{padding:.15rem 0;border-radius:.5rem}
+.hd-lane:hover .hd-n,.hd-lane:focus-visible .hd-n{color:var(--floor-accent)}
+.hd-n{font:700 .86rem var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color var(--d-hover)}
+.timeline.hd-bar{height:1.5rem}
+.hd-ev{position:absolute;top:0;bottom:0;border:2px solid var(--pink);border-radius:.35rem;background:rgba(240,23,122,.2)}
+.hd-st{justify-self:end}
+.hd-axis{position:relative}
+.hd-range{display:block;width:100%;margin:0;accent-color:var(--floor-accent);cursor:pointer}
+.hd-cursor{position:absolute;top:-.3rem;bottom:-.3rem;width:2px;margin-left:-1px;background:var(--fg);box-shadow:0 0 0 2px var(--card);pointer-events:none;left:calc(var(--hn) + var(--gap) + (100% - var(--hn) - var(--hc) - 2 * var(--gap)) * var(--x,0));transition:left var(--d-hover) var(--ease-out)}
+.hday.at .hd-cursor{background:var(--floor-accent)}
+@media(max-width:640px){.hd-grid{--hn:5.2rem;--hc:5.4rem;--gap:.55rem}.hd-n{font-size:.76rem}.hd-st .chip{font-size:.56rem;padding:.2rem .42rem;gap:.25rem}}
+/* «блюдо летит в корзину» */
+.fly{position:fixed;z-index:46;width:1.1rem;height:1.1rem;border-radius:50%;background:var(--pink);box-shadow:0 0 0 3px rgba(240,23,122,.25),0 0 1.1rem var(--pink);pointer-events:none}

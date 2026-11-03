@@ -92,6 +92,14 @@ try {
   await page.click(`.fb-row[data-venue="${target}"]`);
   const hl = await page.waitForSelector(`#venuesList .venue.hl[data-venue="${target}"]`, { timeout: 8000 }).then(() => true).catch(() => false);
   check('главная: клик по площадке на табло открывает её карточку в «Отдыхе»', hl, target);
+  // «Сутки отеля»: ползунок с клавиатуры меняет время и пересчитывает статусы, «Сейчас» возвращает
+  await page.waitForSelector('#hdRange');
+  const lanes = await page.$$eval('.hd-lane', ls => ls.length);
+  await page.focus('#hdRange'); await page.keyboard.press('End'); await page.waitForTimeout(200);
+  const at = await page.evaluate(() => ({ vt: document.querySelector('#hdRange').getAttribute('aria-valuetext'), chips: document.querySelectorAll('.hd-st .chip').length }));
+  await page.click('#hdNow'); await page.waitForTimeout(200);
+  const nowT = await page.$eval('#hdT', e => e.textContent);
+  check('сутки отеля: полоса на каждую площадку, ползунок → 23:45, «Сейчас» возвращает', lanes > 0 && at.chips === lanes && at.vt === '23:45 МСК' && nowT.startsWith('сейчас'), JSON.stringify({ lanes, ...at, nowT }));
   await page.evaluate(() => { location.hash = '#stay'; }); await page.waitForTimeout(1200);
 
   // бронь
