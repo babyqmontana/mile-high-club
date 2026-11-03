@@ -1,4 +1,4 @@
-import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL } from './ui.js';
+import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL, magnet } from './ui.js';
 import { api, subscribe, authConfig, login, logout, DEMO, pref } from './api.js';
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
@@ -17,7 +17,7 @@ function shell() {
   <canvas class="wxbg" id="wxBg" aria-hidden="true"></canvas>
   <header class="nav"><div class="garland" aria-hidden="true">${Array.from({ length: 34 }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</div><div class="wrap">
     <a class="brand" href="#home" aria-label="На главную"><img src="img/logo.webp" alt="" width="42" height="42"><b>MILE HIGH<br>CLUB</b></a>
-    <nav class="links" aria-label="Разделы">${ROUTES.map(([id, n]) => `<a href="#${id}" data-r="${id}">${n}</a>`).join('')}</nav>
+    <nav class="links" aria-label="Разделы">${ROUTES.map(([id, n]) => `<a href="#${id}" data-r="${id}"><span class="rl"><span data-t="${n}">${n}</span></span></a>`).join('')}</nav>
     <div class="navr">
       <span class="pill wxp" id="wxChip" title="Погода и время над отелем (Москва)"></span>
       <a class="pill" href="#stay" title="Свободные номера сейчас"><span class="d"></span><span class="t">Свободно</span><b class="num" id="navFree">—</b></a>
@@ -42,7 +42,7 @@ function shell() {
   { let n = 0, tmr = 0; $('.brand').addEventListener('click', () => { clearTimeout(tmr); tmr = setTimeout(() => { n = 0; $('.brand').style.removeProperty('--wob'); }, 2500); n++; const b = $('.brand'); b.style.setProperty('--wob', Math.min(n, 7)); b.classList.remove('wob'); void b.offsetWidth; b.classList.add('wob'); if (n >= 7) { n = 0; unlock('logo'); } }); }
   $('#achBtn').onclick = () => openCabinet();
   const paintAch = () => { $('#achN').textContent = `${achCount()}/${ACH.length}`; }; paintAch(); onAch(paintAch);
-  $('#fab').onclick = openCart;
+  $('#fab').onclick = openCart; magnet($('#fab'));
   addEventListener('scroll', onScroll, { passive: true });
 }
 function paintNav() {
@@ -51,7 +51,7 @@ function paintNav() {
   const u = S.me;
   $('#navUser').innerHTML = u ? `<button class="ibtn" id="userBtn" aria-label="Профиль" style="overflow:hidden;padding:0">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc((u.username || '?')[0])}</span>`}</button>` : `<button class="ibtn" id="userBtn" aria-label="Мои брони и вход">${I.user}</button>`;
   $('#userBtn').onclick = () => location.hash = u && u.role !== 'guest' ? '#admin' : '#me';
-  if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; $('#navFree').textContent = `${f}/${S.pub.rooms.length}`; $('#foot').textContent = S.pub.settings.footer || ''; }
+  if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; { const nf = $('#navFree'), val = `${f}/${S.pub.rooms.length}`; if (nf.textContent !== val) { const had = nf.textContent !== '—'; nf.textContent = val; if (had) { nf.classList.remove('tick'); void nf.offsetWidth; nf.classList.add('tick'); } } } $('#foot').textContent = S.pub.settings.footer || ''; }
 }
 function mode() { if (manualMode) return manualMode; const s = S.pub?.settings || {}, h = Math.floor(mskMinutes() / 60); return h >= (s.dayStart ?? 6) && h < (s.nightStart ?? 18) ? 'day' : 'night'; }
 // погода: фон страницы, главный экран, 3D-башня и значок в шапке
@@ -224,6 +224,7 @@ function renderHome() {
   const dv1 = $('#dv1'), dv2 = $('#dv2'), hint = $('#dvHint');
   const setP = p => { dv1.style.opacity = Math.max(0, 1 - p * 2.6); dv1.style.transform = `translateY(${-p * 80}px)`; dv1.style.pointerEvents = p > .3 ? 'none' : ''; const q = Math.min(1, Math.max(0, (p - .55) / .3)); dv2.style.opacity = q; dv2.style.transform = `translateY(${(1 - q) * 30}px)`; dv2.style.pointerEvents = q > .5 ? '' : 'none'; hint.style.opacity = Math.max(0, 1 - p * 5); };
   setP(0);
+  magnet($('#dv1 .btn:not(.ghost)'));
   const heroCanvas = $('#heroGl');
   // Без 3D (меньше анимации, нет WebGL, сцена не создалась) атриум статичен и оба его экрана видны сразу.
   // Раньше второй экран показывал только 3D-модуль, и без него текст с кнопками оставался невидимым.
@@ -276,6 +277,9 @@ async function renderStay() {
     (hasWebGL() ? import('./skyline3d.js').then(m => ready(m.mountTower($('#tower'), opts))) : Promise.reject(null))
       .catch(e => { if (e) console.error(e); return import('./facade.js').then(f => ready(f.mountFacade($('#tower'), opts))); })
       .catch(e => { console.error(e); $('#tower').innerHTML = '<div class="empty" style="margin:2rem">Вид башни не загрузился. Этаж можно выбрать кнопками лифта.</div>'; });
+    // подсказка «тяните» нужна, пока гость не попробовал; после первого жеста больше не показываем
+    const tw = $('#tower'); if (pref.get('mhc-hint-tower')) tw.classList.add('used');
+    tw.addEventListener('pointerdown', () => { tw.classList.add('used'); pref.set('mhc-hint-tower', '1'); }, { once: true });
   }
   paintStay();
 }
@@ -343,7 +347,7 @@ function paintFloorPlan() {
 function paintRoom() {
   const p = S.pub, T = Object.fromEntries(p.types.map(t => [t.id, t])), room = selRoom && p.rooms.find(r => r.id === selRoom);
   $('#roomBox').innerHTML = room ? roomPanel(room, T[room.type]) : ''; wireKeyCard();
-  $('#bookRoom')?.addEventListener('click', () => openBooking(room.type, room.id));
+  $('#bookRoom')?.addEventListener('click', () => insertKey(() => openBooking(room.type, room.id)));
   const rp = $('#roomBox .rpanel'); if (rp) { rp.classList.remove('in'); void rp.offsetWidth; rp.classList.add('in'); }
 }
 function paintStay() {
@@ -390,6 +394,15 @@ function wireKeyCard() {
   c.onpointerleave = () => { c.style.setProperty('--rx', '0deg'); c.style.setProperty('--ry', flip ? '180deg' : '0deg'); };
   const toggle = () => { flip = !flip; c.style.setProperty('--ry', flip ? '180deg' : '0deg'); play('flip'); };
   c.onclick = toggle; c.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+}
+// «Забронировать»: ключ-карта вставляется в замок (уезжает вниз и гаснет), затем открывается бронь
+function insertKey(then) {
+  const k = $('#keyCard');
+  if (!k || matchMedia('(prefers-reduced-motion: reduce)').matches) return then();
+  k.style.setProperty('--ry', '0deg'); k.style.setProperty('--rx', '0deg');
+  const a = k.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateY(-6%) rotateX(8deg)', offset: .3 }, { transform: 'translateY(38%) scaleY(.6)', opacity: 0 }], { duration: 420, easing: 'cubic-bezier(.5,0,.75,0)' });
+  let done = false; play('soft');
+  a.onfinish = a.oncancel = () => { if (done) return; done = true; then(); a.cancel(); };
 }
 function roomPanel(r, t) {
   return `<div class="card pad rpanel">${keyCard(r, t)}${t?.image ? `<div class="img cover" style="background-image:url('${esc(t.image)}')"></div>` : ''}<div class="stack" style="gap:.5rem"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.3rem">Номер ${esc(r.id)}</h3><span class="chip ${r.status === 'free' ? 'ok' : 'm'}">${ROOM_STATUS[r.status]}</span></div>

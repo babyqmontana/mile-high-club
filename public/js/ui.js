@@ -45,6 +45,15 @@ export function toast(text, kind = '') {
 }
 export const fail = e => toast(e?.message || 'Что-то пошло не так', 'err');
 
+// «Магнитная» кнопка: под курсором слегка тянется к нему (до max px). Только мышь и без «меньше анимации».
+// Двигаем через CSS-свойство translate, чтобы не мешать transform, которым кнопки уже анимируются.
+export function magnet(el, max = 6) {
+  if (!el || el._mag || !matchMedia('(hover: hover) and (pointer: fine)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  el._mag = true; el.classList.add('mag');
+  el.addEventListener('pointermove', e => { const r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5; el.style.translate = `${(x * 2 * max).toFixed(1)}px ${(y * 2 * max).toFixed(1)}px`; });
+  el.addEventListener('pointerleave', () => { el.style.translate = ''; });
+}
+
 // Есть ли WebGL. Проверяем один раз, пробный контекст сразу отпускаем.
 // Без WebGL 3D-модули не загружаются вовсе (three.js — 670 КБ), а страницы показывают DOM-замену.
 let glOk = null;

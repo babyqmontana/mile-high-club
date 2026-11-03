@@ -148,6 +148,19 @@ try {
   check('номера: сравнение двух типов — таблица с двумя колонками', cols === 3, `столбцов ${cols}`);
   await page.click('#cmpClear').catch(() => {});
 
+  // ключ-карта: «Забронировать» вставляет карту в замок и открывает бронь ровно один раз
+  await page.click('#lfInner .room.free'); await page.waitForSelector('#bookRoom');
+  await page.click('#bookRoom'); await page.waitForSelector('#bookSheet.on', { timeout: 5000 }); await page.waitForTimeout(500);
+  const once = await page.evaluate(() => ({ sheets: document.querySelectorAll('#bookSheet.on').length, room: document.querySelector('#bRoom')?.value }));
+  check('ключ-карта: бронь открылась один раз с выбранным номером', once.sheets === 1 && !!once.room, JSON.stringify(once));
+  await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+
+  // меню: «барабан» при наведении, а имя ссылки для скринридера — без дубля
+  const navName = await page.getByRole('link', { name: 'Номера', exact: true }).count();
+  await page.hover('.links a[data-r="dining"]'); await page.waitForTimeout(450);
+  const rolled = await page.$eval('.links a[data-r="dining"] .rl > span', s => getComputedStyle(s).transform !== 'none');
+  check('меню: название прокручивается при наведении, имя ссылки читается один раз', rolled && navName >= 1, `rolled=${rolled}, links «Номера»=${navName}`);
+
   // бронь
   await page.click('#types [data-t]');
   await page.waitForSelector('#bookSheet.on #bForm');
