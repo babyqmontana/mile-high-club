@@ -904,3 +904,29 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 .cfilt{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:center;margin:1rem 0 .6rem}
 .cfilt .seg{max-width:100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
 .cfilt .seg button{white-space:nowrap}
+/* ---------- без WebGL ---------- */
+/* статичный атриум: оба экрана друг под другом поверх картинки */
+.dive.static .stick{height:auto;min-height:min(80vh,45rem);display:flex;flex-direction:column;justify-content:flex-end}
+.dive.static .dv{position:relative;width:100%}
+.dive.static .dv1{padding-bottom:1.6rem}
+.dive.static .dv2{opacity:1;padding-top:1.6rem;border-top:1px solid rgba(249,237,199,.15)}
+/* фасад башни из DOM: этажи — кнопки, окна — номера в цвете статуса */
+.tower.flat .hint{display:none}
+.facade{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px;padding:4.5rem 1rem 3.6rem;overflow:auto}
+.facade .crown{width:min(9rem,40%);height:2.6rem;margin-bottom:4px;background:var(--edge-brass);opacity:.75;clip-path:polygon(50% 0,62% 45%,100% 45%,100% 100%,0 100%,0 45%,38% 45%)}
+.facade .ff{display:grid;grid-template-columns:2.4rem minmax(0,1fr) 2.6rem;align-items:center;gap:.6rem;width:min(28rem,100%);padding:.45rem .6rem;border:1px solid var(--line);border-radius:.4rem;background:linear-gradient(90deg,#140c0e,#1d1215,#140c0e);transition:border-color var(--d-hover),box-shadow var(--d-hover)}
+.facade .ff b{font:800 .95rem var(--display)}
+.facade .ff small{font:700 .72rem var(--body);color:var(--mut);text-align:right}
+.facade .ff:hover,.facade .ff.hv{border-color:var(--line2)}
+.facade .ff.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold)}
+.facade .ws{display:flex;flex-wrap:wrap;justify-content:center;gap:3px}
+.facade .w{width:clamp(.7rem,2.4vw,1.1rem);height:1.2rem;border-radius:2px;background:#3a2c2e}
+.facade .w.free{background:var(--st-free);box-shadow:0 0 .5rem rgba(247,181,10,.45)}
+.facade .w.booked{background:var(--st-booked)}
+.facade .w.occupied{background:var(--st-occupied)}
+.facade .w.hv{outline:2px solid var(--fg);outline-offset:1px}
+.facade .w.sel{outline:2px solid var(--fg);outline-offset:2px;color:var(--fg);animation:pulse 1.6s infinite}
+.facade .base{margin-top:6px;font:800 .66rem var(--body);letter-spacing:.2em;text-transform:uppercase;color:var(--mut)}
+@media(max-width:640px){.tower.flat .hud{display:none}.facade{padding-top:1.2rem}}
+.hum.flat .loading{padding:2rem;text-align:center;line-height:1.5}
+.hum .btn[hidden]{display:none}

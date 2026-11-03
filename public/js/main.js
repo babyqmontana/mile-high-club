@@ -1,4 +1,4 @@
-import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer } from './ui.js';
+import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL } from './ui.js';
 import { api, subscribe, authConfig, login, logout, DEMO, pref } from './api.js';
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
@@ -210,10 +210,13 @@ function renderHome() {
   const setP = p => { dv1.style.opacity = Math.max(0, 1 - p * 2.6); dv1.style.transform = `translateY(${-p * 80}px)`; dv1.style.pointerEvents = p > .3 ? 'none' : ''; const q = Math.min(1, Math.max(0, (p - .55) / .3)); dv2.style.opacity = q; dv2.style.transform = `translateY(${(1 - q) * 30}px)`; dv2.style.pointerEvents = q > .5 ? '' : 'none'; hint.style.opacity = Math.max(0, 1 - p * 5); };
   setP(0);
   const heroCanvas = $('#heroGl');
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) import('./hero3d.js').then(mod => {
+  // Без 3D (меньше анимации, нет WebGL, сцена не создалась) атриум статичен и оба его экрана видны сразу.
+  // Раньше второй экран показывал только 3D-модуль, и без него текст с кнопками оставался невидимым.
+  const goStatic = () => { if (!hero.isConnected) return; hero.classList.add('static'); [dv1, dv2, hint].forEach(d => d.removeAttribute('style')); };
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !hasWebGL()) goStatic();
+  else import('./hero3d.js').then(mod => {
     if (!heroCanvas.isConnected || mods.hero) return; // пока модуль грузился, главную уже пересобрали
-    const h = mod.mountHero(heroCanvas, hero); if (!h) return; mods.hero = h; const url = m === 'day' ? s.heroDay : s.heroNight; h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => console.warn('hero', e));
-  else { hero.classList.add('static'); }
+    const h = mod.mountHero(heroCanvas, hero); if (!h) return goStatic(); mods.hero = h; const url = m === 'day' ? s.heroDay : s.heroNight; h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => { console.warn('hero', e); goStatic(); });
   applyWeather();
 }
 // предзагрузка слоёв главной картинки (те же правила, что в hero3d.layersFor)
@@ -251,10 +254,12 @@ async function renderStay() {
           <div id="roomBox"></div></aside>
       </div>
       <div class="head" style="margin-top:3rem"><span class="eyebrow">Категории</span><h2>Типы номеров</h2></div><div class="types" id="types"></div></div>`;
-    import('./skyline3d.js').then(m => {
-      mods.tower = m.mountTower($('#tower'), { onPick: f => goFloor(f), onSpin: () => unlock('dizzy'), onHoverFloor: f => $$('#lfBtns button').forEach(b => b.classList.toggle('hv', +b.dataset.f === f)) });
-      mods.tower.active(current === 'stay'); mods.tower.update(S.pub.rooms, selFloor, S.pub.types); if (selRoom) mods.tower.focusRoom(selRoom); if (wxNow) mods.tower.setWeather(wxNow);
-    }).catch(e => { console.error(e); $('#tower').innerHTML = '<div class="empty" style="margin:2rem">3D-вид не загрузился. Этаж можно выбрать кнопками лифта.</div>'; });
+    const opts = { onPick: f => goFloor(f), onSpin: () => unlock('dizzy'), onHoverFloor: f => $$('#lfBtns button').forEach(b => b.classList.toggle('hv', +b.dataset.f === f)) };
+    const ready = t => { mods.tower = t; t.active(current === 'stay'); t.update(S.pub.rooms, selFloor, S.pub.types); if (selRoom) t.focusRoom(selRoom); if (wxNow) t.setWeather(wxNow); };
+    // 3D-башня, а если WebGL нет или сцена не создалась — фасад из DOM с тем же интерфейсом
+    (hasWebGL() ? import('./skyline3d.js').then(m => ready(m.mountTower($('#tower'), opts))) : Promise.reject(null))
+      .catch(e => { if (e) console.error(e); return import('./facade.js').then(f => ready(f.mountFacade($('#tower'), opts))); })
+      .catch(e => { console.error(e); $('#tower').innerHTML = '<div class="empty" style="margin:2rem">Вид башни не загрузился. Этаж можно выбрать кнопками лифта.</div>'; });
   }
   paintStay();
 }
@@ -521,7 +526,9 @@ function renderCigars() {
     $('#cPrev').onclick = () => stepCigar(-1); $('#cNext').onclick = () => stepCigar(1);
     $('#lidBtn').onclick = () => { const open = mods.hum?.toggleLid(); play(open ? 'lid' : 'wood'); burst('lid', 6, 12000); $('#lidBtn').textContent = open ? 'Закрыть' : 'Открыть'; };
     v.addEventListener('keydown', e => { if (e.target.closest('input,textarea,select')) return; if (e.key === 'ArrowLeft') stepCigar(-1); if (e.key === 'ArrowRight') stepCigar(1); });
-    import('./humidor3d.js').then(m => { mods.hum = m.mountHumidor($('#hum'), { onPick: i => pickCigar(i, true), onLid: o => { play('lid'); burst('lid', 6, 12000); $('#lidBtn').textContent = o ? 'Закрыть' : 'Открыть'; } }); $('#humLoad')?.remove(); mods.hum.active(current === 'cigars'); mods.hum.setCigars(S.pub.cigars, cigIdx); }).catch(e => { console.error(e); $('#humLoad').textContent = '3D-хьюмидор не загрузился в этом браузере.'; });
+    const humFallback = () => { $('#hum').classList.add('flat'); $('#lidBtn').hidden = true; $('#humLoad').textContent = '3D-хьюмидор недоступен в этом браузере. Выбирайте сигары стрелками или в ленте ниже — заказ работает как обычно.'; };
+    if (!hasWebGL()) humFallback();
+    else import('./humidor3d.js').then(m => { mods.hum = m.mountHumidor($('#hum'), { onPick: i => pickCigar(i, true), onLid: o => { play('lid'); burst('lid', 6, 12000); $('#lidBtn').textContent = o ? 'Закрыть' : 'Открыть'; } }); $('#humLoad')?.remove(); mods.hum.active(current === 'cigars'); mods.hum.setCigars(S.pub.cigars, cigIdx); }).catch(e => { console.error(e); humFallback(); });
   } else mods.hum?.setCigars(p.cigars, cigIdx);
   paintCigar();
 }
@@ -625,6 +632,7 @@ function openMember(t) {
 }
 function loadStaff3d() {
   if (mods.staff || loadStaff3d.busy) return; loadStaff3d.busy = true;
+  if (!hasWebGL()) { $('#stLoad').textContent = '3D-манекен недоступен в этом браузере. Форму отдела можно посмотреть во вкладке «Униформа 360°».'; return; }
   import('./staff3d.js').then(m => { mods.staff = m.mountStaff($('#stage'), () => $('#stLoad')?.remove()); mods.staff.active(current === 'staff' && staffMode === 'model'); paintStaff(); }).catch(e => { console.error(e); $('#stLoad').textContent = '3D-просмотр не загрузился.'; });
 }
 function paintStaff() {
@@ -772,7 +780,7 @@ async function boot() {
     const s = S.pub.settings, m = mode(), hero = m === 'day' ? s.heroDay : s.heroNight;
     let done = 0; const jobs = [document.fonts?.ready, preload('img/logo.webp'), preload(hero), heroLayers(hero)].map(p => Promise.resolve(p).catch(() => {}).then(() => set(45 + (++done / 4) * 50)));
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов
-    ((location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')).catch(() => {});
+    if (hasWebGL()) ((location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')).catch(() => {});
     await Promise.all(jobs);
     applyMode(); route(); loadItems();
   });

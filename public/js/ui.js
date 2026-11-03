@@ -45,6 +45,16 @@ export function toast(text, kind = '') {
 }
 export const fail = e => toast(e?.message || 'Что-то пошло не так', 'err');
 
+// Есть ли WebGL. Проверяем один раз, пробный контекст сразу отпускаем.
+// Без WebGL 3D-модули не загружаются вовсе (three.js — 670 КБ), а страницы показывают DOM-замену.
+let glOk = null;
+export function hasWebGL() {
+  if (glOk !== null) return glOk;
+  try { const c = document.createElement('canvas'), g = c.getContext('webgl2') || c.getContext('webgl'); glOk = !!g; g?.getExtension('WEBGL_lose_context')?.loseContext(); }
+  catch { glOk = false; }
+  return glOk;
+}
+
 // Слои поверх страницы: модалка, шторка, мобильное меню. Пока слой открыт, всё вокруг него inert
 // (не ловит фокус и скрыто от скринридера), Tab ходит по кругу внутри слоя, Esc закрывает верхний слой,
 // после закрытия фокус возвращается на элемент, с которого слой открыли.
