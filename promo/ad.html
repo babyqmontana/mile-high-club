@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Mile High Club — рекламный ролик</title>
+<style>
+  /* Шрифты сайта, локально (OFL): рендер не зависит от сети */
+  @font-face{font-family:"Unbounded";font-weight:800;src:url(fonts/unbounded-cyrillic-800-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Unbounded";font-weight:800;src:url(fonts/unbounded-latin-800-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Unbounded";font-weight:600;src:url(fonts/unbounded-cyrillic-600-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Unbounded";font-weight:600;src:url(fonts/unbounded-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Onest";font-weight:400;src:url(fonts/onest-cyrillic-400-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Onest";font-weight:400;src:url(fonts/onest-latin-400-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Onest";font-weight:700;src:url(fonts/onest-cyrillic-700-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Onest";font-weight:700;src:url(fonts/onest-latin-700-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Cormorant Garamond";font-style:italic;font-weight:600;src:url(fonts/cormorant-garamond-cyrillic-600-italic.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Cormorant Garamond";font-style:italic;font-weight:600;src:url(fonts/cormorant-garamond-latin-600-italic.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  html,body{margin:0;background:#000;overflow:hidden}
+  canvas{display:block;width:100vw;height:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// Рекламный ролик Mile High Club, 15 с, 1920×1080, 30 к/с.
+// Каждый кадр — чистая функция времени: render(t). Размытие в движении — усреднение под-кадров.
+// CUES — список звуковых событий; по нему promo/sfx.py синтезирует звук кадр в кадр.
+const W = 1920, H = 1080, FPS = 30, DUR = 15;
+const C = { bg: '#060407', card: '#151013', card2: '#1e1619', line: 'rgba(249,237,199,0.13)', fg: '#F9EDC7', mut: '#A99D89', gold: '#F7B50A', pink: '#F0177A', dark: '#1a1205' };
+const DISP = 'Unbounded', BODY = 'Onest', SERIF = 'Cormorant Garamond';
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const acc = document.createElement('canvas'); acc.width = W; acc.height = H; const actx = acc.getContext('2d');
+const logo = new Image(); logo.src = '../public/img/logo.webp';
+
+/* ---------- математика времени ---------- */
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, x) => a + (b - a) * x;
+const eo4 = x => 1 - Math.pow(1 - x, 4);
+const eoX = x => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x);
+const eio = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const ein = x => x * x * x;
+const back = (x, s = 1.7) => 1 + (s + 1) * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2);
+function rnd(seed) { let h = seed * 2654435761 >>> 0; return () => { h ^= h << 13; h >>>= 0; h ^= h >> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; }; }
+
+/* ---------- рисование ---------- */
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function font(size, w = 800, fam = DISP, style = '') { ctx.font = `${style} ${w} ${size}px "${fam}"`; }
+function txt(s, x, y, size, color, { w = 800, fam = DISP, align = 'left', base = 'alphabetic', style = '', track = 0 } = {}) {
+  font(size, w, fam, style); ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = base;
+  if (track) ctx.letterSpacing = track + 'px'; ctx.fillText(s, x, y); ctx.letterSpacing = '0px';
+}
+function tw(s, size, w = 800, fam = DISP, style = '', track = 0) { font(size, w, fam, style); ctx.letterSpacing = track + 'px'; const m = ctx.measureText(s).width; ctx.letterSpacing = '0px'; return m; }
+function glow(x, y, r, color, a) { if (a <= 0) return; const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, color.replace('A', a)); g.addColorStop(1, color.replace('A', 0)); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); }
+const GOLD_A = 'rgba(247,181,10,A)', PINK_A = 'rgba(240,23,122,A)', CREAM_A = 'rgba(249,237,199,A)';
+function chip(x, y, label, color, { fill = false, size = 22, padX = 18, h = 44, a = 1 } = {}) {
+  const w = tw(label, size, 700, BODY, '', 2) + padX * 2;
+  ctx.globalAlpha *= a; rr(x, y, w, h, h / 2);
+  if (fill) { ctx.fillStyle = color; ctx.fill(); } else { ctx.fillStyle = color === C.pink ? 'rgba(240,23,122,.16)' : color === C.gold ? 'rgba(247,181,10,.14)' : 'rgba(249,237,199,.08)'; ctx.fill(); }
+  txt(label, x + w / 2, y + h / 2 + 1, size, fill ? C.dark : color, { w: 700, fam: BODY, align: 'center', base: 'middle', track: 2 });
+  ctx.globalAlpha /= a; return w;
+}
+function chevron(x, y, s, up = false) { ctx.strokeStyle = C.mut; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath(); const d = up ? -1 : 1; ctx.moveTo(x - s, y - s * .5 * d); ctx.lineTo(x, y + s * .5 * d); ctx.lineTo(x + s, y - s * .5 * d); ctx.stroke(); }
+function ring(x, y, r, label, { a = 1, gold = true } = {}) {
+  ctx.globalAlpha *= a;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = '#100b0d'; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = gold ? C.gold : C.line; ctx.stroke();
+  txt(label, x, y + 2, r * .62, gold ? C.gold : C.fg, { align: 'center', base: 'middle' });
+  ctx.beginPath(); ctx.arc(x + r * .72, y + r * .72, r * .22, 0, 7); ctx.fillStyle = C.gold; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = '#100b0d'; ctx.stroke();
+  ctx.globalAlpha /= a;
+}
+function logoCircle(x, y, r, a = 1) { if (!logo.complete || a <= 0) return; ctx.save(); ctx.globalAlpha *= a; ctx.drawImage(logo, x - r, y - r, r * 2, r * 2); ctx.restore(); }
+
+/* ---------- фон: почти чёрный, лёгкая бордовая виньетка и зерно ---------- */
+function backdrop(frame, tint) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W / 2, H * .55, 100, W / 2, H * .55, W * .7); g.addColorStop(0, `rgba(89,22,30,${.18 * tint})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function grain(frame) {
+  const r = rnd(frame + 7); ctx.save(); ctx.globalAlpha = .045;
+  for (let i = 0; i < 900; i++) { ctx.fillStyle = r() > .5 ? '#fff' : '#000'; ctx.fillRect(r() * W, r() * H, 2, 2); }
+  ctx.restore();
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, W * .75); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.55)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+/* ================= сцены ================= */
+const PILLS = ['Все', 'Номера', 'Отдых', 'Le Ciel', 'Сигары'];
+const CARDS = [['ДЕЛЮКС', '$4 000', 'Свободно 12'], ['СЮИТ', '$12 000', 'Свободно 3'], ['ПЕНТХАУС', '$30 000', 'Свободен 1']];
+// A. Вкладки и карточки номеров (0–3.1)
+function sceneA(t) {
+  const enter = eoX(prog(t, 0, .65)), exit = ein(prog(t, 2.78, 3.1));
+  const s = lerp(1, 1.16, eio(prog(t, .2, 3.0)));
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(s, s); ctx.translate(-W / 2 + lerp(1100, 0, enter) - 60 * eio(prog(t, .2, 3)), -H / 2 - 1000 * exit);
+  ctx.globalAlpha = prog(t, 0, .2);
+  // строка вкладок
+  const size = 34, h = 78, gap = 16, widths = PILLS.map(p => tw(p, size, 700, BODY) + 56), total = 92 + gap * 2 + widths.reduce((a, b) => a + b + gap, 0);
+  let x = W / 2 - total / 2; const y = 330;
+  ring(x + 40, y + h / 2, 40, 'MHC'); x += 92 + gap * 2;
+  const xs = []; widths.forEach(w => { xs.push(x); x += w + gap; });
+  const k = eio(prog(t, .95, 1.25)), ax = lerp(xs[0], xs[1], k), aw = lerp(widths[0], widths[1], k);
+  glow(ax + aw / 2, y + h / 2, 260, GOLD_A, .22 * prog(t, .9, 1.4));
+  PILLS.forEach((p, i) => { rr(xs[i], y, widths[i], h, h / 2); ctx.fillStyle = 'rgba(249,237,199,.07)'; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = C.line; ctx.stroke(); });
+  rr(ax, y, aw, h, h / 2); ctx.fillStyle = C.gold; ctx.fill();
+  PILLS.forEach((p, i) => { const on = (i === 0 && k < .5) || (i === 1 && k >= .5); txt(p, xs[i] + widths[i] / 2, y + h / 2 + 2, size, on ? C.dark : C.fg, { w: 700, fam: BODY, align: 'center', base: 'middle' }); });
+  // карточки номеров
+  CARDS.forEach(([lab, price, free], i) => {
+    const a = eo4(prog(t, 1.45 + i * .12, 1.9 + i * .12)); if (!a) return;
+    const cw = 400, ch = 250, cx = W / 2 - (cw * 3 + 40) / 2 + i * (cw + 20), cy = 470 + 70 * (1 - a);
+    ctx.save(); ctx.globalAlpha *= a;
+    const hot = i === 2 && t > 2.2;
+    rr(cx, cy, cw, ch, 26); ctx.fillStyle = C.card; ctx.fill(); ctx.lineWidth = hot ? 3 : 1.5; ctx.strokeStyle = hot ? C.gold : C.line; ctx.stroke();
+    if (hot) glow(cx + cw / 2, cy + ch / 2, 330, GOLD_A, .16 * prog(t, 2.2, 2.5));
+    txt(lab, cx + 34, cy + 62, 22, C.gold, { w: 700, fam: BODY, track: 5 });
+    txt(price, cx + 32, cy + 142, 58, C.fg);
+    txt('за ночь', cx + 34, cy + 184, 22, C.mut, { w: 400, fam: BODY });
+    chip(cx + 34, cy + 198 - 6, free, C.gold, { size: 18, h: 38, padX: 14 });
+    ctx.restore();
+  });
+  ctx.restore();
+}
+// B. Табло площадок и раскрытие брони (3.1–5.2)
+const ROWS = [['SP', 'Sky Pool', 'Диджей-сеты · до 18:00', 'LIVE', C.pink], ['NP', 'Night Pool', 'Вечеринка с 22:00', 'СКОРО', C.mut], ['HT', 'The Hot Times', 'Лаунж-бар в атриуме', 'ОТКРЫТО', C.gold], ['26', 'Номер 2601', 'Пентхаус · 26 этаж', 'СВОБОДЕН', C.gold]];
+function sceneB(t) {
+  const out = prog(t, 4.98, 5.2), s = lerp(1.02, 1.12, eio(prog(t, 3.1, 5.0))) * (1 - .18 * ein(out));
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(s, s); ctx.translate(-W / 2, -H / 2 - 60 * eio(prog(t, 4.1, 4.6))); ctx.globalAlpha = 1 - ein(out);
+  const pw = 1060, px = W / 2 - pw / 2; let y = 190;
+  const ex = eio(prog(t, 4.12, 4.48));
+  ROWS.forEach(([ini, name, sub, st, col], i) => {
+    const a = eoX(prog(t, 3.1 + i * .08, 3.7 + i * .08)); if (!a) { y += 128; return; }
+    const last = i === ROWS.length - 1, h = last ? lerp(112, 300, ex) : 112, x = px + 760 * (1 - a);
+    ctx.save(); ctx.globalAlpha *= a;
+    rr(x, y, pw, h, 28); ctx.fillStyle = last && ex > 0 ? C.card2 : C.card; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = last && ex > 0 ? 'rgba(247,181,10,.45)' : C.line; ctx.stroke();
+    ring(x + 66, y + 56, 34, ini, { gold: col !== C.mut });
+    txt(name, x + 124, y + 50, 32, C.fg, { w: 600 });
+    txt(sub, x + 124, y + 86, 22, C.mut, { w: 400, fam: BODY });
+    const cw = tw(st, 18, 700, BODY, '', 2) + 28; chip(x + pw - 110 - cw, y + 35, st, col, { size: 18, h: 40, padX: 14 });
+    chevron(x + pw - 52, y + 56, 11, last && ex > .5);
+    if (last && ex > 0) {
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y + 112, pw, h - 112); ctx.clip(); ctx.globalAlpha *= prog(t, 4.3, 4.5);
+      txt('БРОНЬ', x + 124, y + 160, 18, C.mut, { w: 700, fam: BODY, track: 4 });
+      let cx = x + 124;
+      [['2 ночи', 4.45], ['2 гостя', 4.55], ['$60 000', 4.65]].forEach(([l, at]) => { const p = back(prog(t, at, at + .25)); if (p <= 0) { return; } ctx.save(); ctx.translate(cx, y + 200); ctx.scale(p, p); cx += chip(0, -22, l, C.fg, { size: 22, h: 50, padX: 22 }) * 1 + 14; ctx.restore(); });
+      const bp = prog(t, 4.78, 5.0), press = t > 4.9 && t < 5.0 ? .94 : 1;
+      if (bp > 0) { ctx.save(); ctx.globalAlpha *= eo4(bp); const bw = 330, bx = x + pw - 60 - bw, by = y + 176; ctx.translate(bx + bw / 2, by + 30); ctx.scale(press, press); rr(-bw / 2, -30, bw, 60, 30); ctx.fillStyle = C.gold; ctx.fill(); txt('Забронировать', 0, 2, 24, C.dark, { w: 700, fam: BODY, align: 'center', base: 'middle' }); ctx.restore(); glow(x + pw - 60 - 165, y + 206, 260, GOLD_A, .2 * bp); }
+      ctx.restore();
+    }
+    ctx.restore(); y += h + 16;
+  });
+  ctx.restore();
+}
+// C. «Абсолютная высота» (5.2–7.0)
+function sceneC(t) {
+  const out = ein(prog(t, 6.82, 7.0));
+  ctx.save(); ctx.translate(W / 2, H / 2); const s = lerp(1, 1.08, prog(t, 5.2, 7.0)) * (1 + .7 * out); ctx.scale(s, s); ctx.globalAlpha = 1 - out;
+  const drift = lerp(120, -120, prog(t, 5.2, 7.0));
+  const w1 = tw('Абсолютная', 112), w2 = tw('высота', 128, 600, SERIF, 'italic'), gap = 34, R = 66, total = w1 + gap + w2 + gap + R * 2, x0 = -total / 2 + drift;
+  // слова поднимаются из-под маски
+  [[ 'Абсолютная', x0, 5.22, 112, C.fg, {}], ['высота', x0 + w1 + gap, 5.42, 128, C.gold, { w: 600, fam: SERIF, style: 'italic' }]].forEach(([wd, x, at, size, col, o]) => {
+    const p = eo4(prog(t, at, at + .5)); ctx.save(); ctx.beginPath(); ctx.rect(x - 10, -150, 2000, 210); ctx.clip(); txt(wd, x, 40 + 140 * (1 - p), size, col, o); ctx.restore();
+  });
+  const bp = back(prog(t, 5.62, 5.95)); if (bp > 0) { const bx = x0 + w1 + gap + w2 + gap + R, by = 0; glow(bx, by, 300, GOLD_A, .35 * clamp(bp)); ctx.save(); ctx.translate(bx, by); ctx.scale(bp, bp); ctx.rotate(-.25 * (1 - clamp(bp)) + .05 * Math.sin(t * 3)); ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fillStyle = C.gold; ctx.fill(); logoCircle(0, 0, R * .86); ctx.restore(); }
+  ctx.restore();
+}
+// D. «Смотри, какие [36/36] номера свободны» (7.0–9.5)
+function sceneD(t) {
+  const out = ein(prog(t, 9.28, 9.5));
+  ctx.save(); ctx.translate(W / 2 - 1400 * out, H / 2); const s = lerp(1.05, 1, eo4(prog(t, 7.0, 8.0))); ctx.scale(s, s);
+  const size = 96, l1 = ['Смотри,', 'какие'], l2 = ['номера', 'свободны'], gap = 30;
+  const pillW = 330, pillH = 112;
+  const w1 = l1.map(w => tw(w, size)), wl1 = w1[0] + gap + w1[1] + gap + pillW, w2 = l2.map(w => tw(w, size)), wl2 = w2[0] + gap + w2[1];
+  const word = (s2, x, y, at, col = C.fg) => { const p = eo4(prog(t, at, at + .35)); if (!p) return; ctx.save(); ctx.globalAlpha *= p; txt(s2, x, y + 40 * (1 - p), size, col); ctx.restore(); };
+  let x = -wl1 / 2; word(l1[0], x, -40, 7.05); x += w1[0] + gap; word(l1[1], x, -40, 7.3); x += w1[1] + gap;
+  const pp = back(prog(t, 7.55, 7.9));
+  if (pp > 0) {
+    ctx.save(); ctx.translate(x + pillW / 2, -72); ctx.scale(pp, pp);
+    glow(0, 0, 340, GOLD_A, .3 * clamp(pp) * (1 + .4 * Math.max(0, Math.sin((t - 8.8) * 6)) * (t > 8.8 ? 1 : 0)));
+    rr(-pillW / 2, -pillH / 2, pillW, pillH, pillH / 2); ctx.fillStyle = '#0d0809'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = C.gold; ctx.stroke();
+    // перекидные цифры: 00 → 36 (7.6–8.1), потом 36 → 35 (8.9): кто-то только что забронировал
+    const n = t < 8.9 ? Math.round(36 * clamp((t - 7.6) / .5)) : 35;
+    const s2 = String(n).padStart(2, '0') + '/36';
+    const cw = 50, ch = 76; let fx = -(cw * 5 + 4 * 4) / 2;
+    [...s2].forEach((c, i) => { ctx.save(); ctx.translate(fx + cw / 2, 0); const flip = (t > 8.9 && t < 9.1 && i === 1) ? Math.cos((t - 8.9) / .2 * Math.PI) : 1; ctx.scale(1, Math.abs(flip) * .9 + .1); rr(-cw / 2, -ch / 2, cw, ch, 8); ctx.fillStyle = '#1d1416'; ctx.fill(); ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(-cw / 2, -1, cw, 2); txt(c, 0, 4, 48, C.gold, { align: 'center', base: 'middle' }); ctx.restore(); fx += cw + 4; });
+    ctx.restore();
+  }
+  x = -wl2 / 2; word(l2[0], x, 110, 7.85); x += w2[0] + gap; word(l2[1], x, 110, 8.1, C.gold);
+  ctx.restore();
+}
+// E. «И бронируй сразу» (9.5–10.8)
+function sceneE(t) {
+  ctx.save(); ctx.translate(W / 2, H / 2 + 30);
+  const parts = [['И бронируй ', C.fg, 112, {}], ['сразу', C.gold, 136, { w: 600, fam: SERIF, style: 'italic' }]];
+  const total = tw(parts[0][0], 112) + tw('сразу', 136, 600, SERIF, 'italic'); let x = -total / 2, i = 0;
+  parts.forEach(([s, col, size, o]) => { for (const ch of s) { const at = 9.52 + i * .03, p = back(prog(t, at, at + .32), 2.2), cwid = tw(ch, size, o.w || 800, o.fam || DISP, o.style || ''); if (p > 0) { ctx.save(); ctx.translate(x + cwid / 2, 0); ctx.scale(p, p); ctx.globalAlpha *= clamp(p * 1.3); txt(ch, 0, 0, size, col, { ...o, align: 'center' }); ctx.restore(); } x += cwid; i++; } });
+  ctx.restore();
+}
+// F. «В реальном времени» с глитчем (10.8–11.85)
+function sceneF(t, frame) {
+  const sq = ein(prog(t, 11.7, 11.85)), p = eo4(prog(t, 10.8, 11.1));
+  ctx.save(); ctx.translate(W / 2, H / 2 + 40); ctx.scale(lerp(.9, 1, p), lerp(.9, 1, p) * (1 - sq * .98));
+  const s = 'В реальном времени', size = 98, gl = t > 11.0 && t < 11.7;
+  const r = rnd(frame * 13 + 1), jx = gl ? (r() - .5) * 40 : 0;
+  if (gl) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; txt(s, jx - 12, 0, size, 'rgba(240,23,122,.55)', { align: 'center' }); txt(s, jx + 12, 0, size, 'rgba(247,181,10,.45)', { align: 'center' }); ctx.restore(); }
+  ctx.globalAlpha = p; txt(s, jx, 0, size, C.fg, { align: 'center' });
+  if (gl) { for (let k = 0; k < 6; k++) { const yy = -120 + r() * 160, hh = 8 + r() * 26, dx = (r() - .5) * 160; ctx.save(); ctx.beginPath(); ctx.rect(-W / 2, yy, W, hh); ctx.clip(); ctx.fillStyle = C.bg; ctx.fillRect(-W / 2, yy, W, hh); txt(s, jx + dx, 0, size, k % 2 ? C.gold : C.fg, { align: 'center' }); ctx.restore(); } }
+  ctx.restore();
+  if (gl && r() > .55) { ctx.fillStyle = 'rgba(247,181,10,.06)'; ctx.fillRect(0, r() * H, W, 40 + r() * 120); }
+}
+// G–H. Удар, золотая точка → логотип, слоган и призыв (11.85–15)
+function sceneG(t) {
+  const flash = Math.max(0, 1 - (t - 11.85) / .25); if (flash > 0) { ctx.fillStyle = `rgba(249,237,199,${.5 * flash})`; ctx.fillRect(0, 0, W, H); }
+  const up = eio(prog(t, 13.55, 14.0)), cy = H / 2 - 40 - 90 * up;
+  const dot = back(prog(t, 11.9, 12.2), 2.4), lg = eo4(prog(t, 12.12, 12.5)), slide = eio(prog(t, 12.35, 12.85));
+  const R = 92, wm = 'MILE HIGH CLUB', wmSize = 92, wmW = tw(wm, wmSize, 800, DISP, '', 6), groupW = R * 2 + 44 + wmW;
+  const lx = lerp(W / 2, W / 2 - groupW / 2 + R, slide);
+  glow(lx, cy, 520, GOLD_A, .32 * clamp(dot) * (1 - .4 * prog(t, 13, 14)));
+  if (dot > 0) { ctx.save(); ctx.translate(lx, cy); ctx.scale(dot, dot); ctx.beginPath(); ctx.arc(0, 0, R * (1 - .1 * lg), 0, 7); ctx.fillStyle = C.gold; ctx.globalAlpha = 1 - lg; ctx.fill(); ctx.restore(); }
+  ctx.save(); ctx.translate(lx, cy); const ls = lerp(.6, 1, lg); ctx.scale(ls, ls); logoCircle(0, 0, R * 1.18, lg); ctx.restore();
+  if (slide > 0) { const x = lx + R + 44; ctx.save(); ctx.beginPath(); ctx.rect(x - 4, cy - 80, wmW * slide + 8, 160); ctx.clip(); txt(wm, x, cy + 34, wmSize, C.fg, { track: 6 }); ctx.restore(); }
+  const tg = eo4(prog(t, 12.9, 13.3)); if (tg > 0) { ctx.save(); ctx.globalAlpha = tg; txt('Отель над Лос‑Сантосом', W / 2, cy + 150 + 20 * (1 - tg), 64, C.gold, { w: 600, fam: SERIF, style: 'italic', align: 'center' }); ctx.restore(); }
+  const sub = eo4(prog(t, 13.9, 14.3)); if (sub > 0) { ctx.save(); ctx.globalAlpha = sub; txt('НОМЕРА · БАССЕЙНЫ · LE CIEL · СИГАРНЫЙ КЛУБ', W / 2, cy + 236, 24, C.mut, { w: 700, fam: BODY, align: 'center', track: 6 }); ctx.restore(); }
+  const cta = back(prog(t, 14.05, 14.4)); if (cta > 0) { ctx.save(); ctx.translate(W / 2, cy + 330); ctx.scale(cta, cta); const w = 560; rr(-w / 2, -40, w, 80, 40); ctx.fillStyle = C.gold; ctx.fill(); txt('Забронируйте на сайте', 0, 3, 30, C.dark, { w: 700, fam: BODY, align: 'center', base: 'middle' }); ctx.restore(); glow(W / 2, cy + 330, 360, GOLD_A, .18 * clamp(cta)); }
+}
+
+function scene(t, frame) {
+  if (t < 3.1) sceneA(t); else if (t < 5.2) sceneB(t); else if (t < 7.0) sceneC(t); else if (t < 9.5) sceneD(t); else if (t < 10.8) sceneE(t); else if (t < 11.85) sceneF(t, frame); else sceneG(t);
+  if (t >= 5.2 && t < 5.45) { ctx.fillStyle = `rgba(247,181,10,${.18 * (1 - (t - 5.2) / .25)})`; ctx.fillRect(0, 0, W, H); } // вспышка удара
+}
+// кадр с размытием в движении: усредняем K под-кадров за половину интервала кадра
+function render(frame, K = 5) {
+  const t0 = frame / FPS;
+  actx.clearRect(0, 0, W, H);
+  for (let k = 0; k < K; k++) {
+    const t = t0 + (k / K) * (0.5 / FPS);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; backdrop(frame, 1); scene(Math.min(t, DUR - 1e-3), frame);
+    actx.globalAlpha = 1 / (k + 1); actx.drawImage(cv, 0, 0);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.drawImage(acc, 0, 0); grain(frame);
+  const fade = Math.min(prog(t0, 0, .25), 1 - prog(t0, 14.65, 15)); if (fade < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// Звуковые события (секунды). Типы синтезирует promo/sfx.py.
+const CUES = [
+  { t: 0.00, type: 'whoosh', dur: .55, gain: .7 }, { t: .95, type: 'click', pitch: 1.0 }, { t: 1.0, type: 'tick', pitch: 1.4 },
+  { t: 1.45, type: 'swish', gain: .5 }, { t: 1.57, type: 'swish', gain: .45 }, { t: 1.69, type: 'swish', gain: .4 },
+  { t: 2.2, type: 'tick', pitch: 1.1 }, { t: 2.45, type: 'riser', dur: .65, gain: .45 }, { t: 2.78, type: 'whoosh', dur: .35, gain: .8, up: true },
+  { t: 3.1, type: 'whoosh', dur: .5, gain: .65 }, { t: 3.14, type: 'tick', pitch: .9 }, { t: 3.22, type: 'tick', pitch: 1.0 }, { t: 3.30, type: 'tick', pitch: 1.1 }, { t: 3.38, type: 'tick', pitch: 1.2 },
+  { t: 4.12, type: 'expand', dur: .4 }, { t: 4.45, type: 'pop', pitch: 1.0 }, { t: 4.55, type: 'pop', pitch: 1.12 }, { t: 4.65, type: 'pop', pitch: 1.26 },
+  { t: 4.9, type: 'click', pitch: .8 }, { t: 4.7, type: 'riser', dur: .5, gain: .55 }, { t: 5.2, type: 'impact', gain: .9 },
+  { t: 5.22, type: 'swish', gain: .45 }, { t: 5.42, type: 'swish', gain: .45 }, { t: 5.62, type: 'pop', pitch: .7, gain: 1.2 },
+  { t: 6.3, type: 'riser', dur: .7, gain: .8 }, { t: 6.82, type: 'whoosh', dur: .25, gain: .7, up: true }, { t: 7.0, type: 'hit', gain: .8 },
+  { t: 7.05, type: 'click', pitch: 1.0 }, { t: 7.3, type: 'click', pitch: 1.1 }, { t: 7.55, type: 'pop', pitch: .9 }, { t: 7.6, type: 'flaps', dur: .5 },
+  { t: 7.85, type: 'click', pitch: 1.2 }, { t: 8.1, type: 'click', pitch: 1.35 }, { t: 8.9, type: 'flaps', dur: .2 }, { t: 8.95, type: 'ding', pitch: 1.0, gain: .5 },
+  { t: 9.28, type: 'whoosh', dur: .3, gain: .75 }, { t: 9.5, type: 'stutter', dur: .5 },
+  { t: 10.3, type: 'riser', dur: .5, gain: .55 }, { t: 10.8, type: 'hit', gain: .6 }, { t: 11.0, type: 'glitch', dur: .7 },
+  { t: 11.6, type: 'reverse', dur: .25 }, { t: 11.85, type: 'impact', gain: 1.0, big: true },
+  { t: 11.9, type: 'pop', pitch: .6, gain: 1.3 }, { t: 12.15, type: 'sting', gain: .9 }, { t: 12.35, type: 'swish', gain: .55 },
+  { t: 12.9, type: 'sparkle', gain: .5 }, { t: 13.55, type: 'whoosh', dur: .45, gain: .45, up: true }, { t: 14.05, type: 'pop', pitch: 1.05 }, { t: 14.1, type: 'click', pitch: .9 }
+];
+// шрифты грузятся только по требованию: загружаем каждое начертание явно (с кириллицей), иначе первые кадры уйдут с запасным шрифтом
+const FACES = ['800 40px "Unbounded"', '600 40px "Unbounded"', '400 40px "Onest"', '700 40px "Onest"', 'italic 600 40px "Cormorant Garamond"'];
+const ready = () => Promise.all([...FACES.map(f => document.fonts.load(f, 'Абвгд Abc 0123$')), logo.decode().catch(() => {})])
+  .then(() => { if (!FACES.every(f => document.fonts.check(f, 'Абв'))) throw new Error('fonts not loaded'); });
+window.AD = { W, H, FPS, DUR, CUES, render, ready };
+// предпросмотр в браузере: ?t=секунды показывает кадр, без параметра — проигрывание
+const q = new URLSearchParams(location.search);
+window.AD.ready().then(() => {
+  if (q.has('t')) return render(Math.round(+q.get('t') * FPS));
+  if (q.has('still')) return;
+  const t0 = performance.now(); const loop = () => { const f = Math.floor((performance.now() - t0) / 1000 * FPS) % (DUR * FPS); render(f, 2); requestAnimationFrame(loop); }; loop();
+});
+</script>
+</body>
+</html>
