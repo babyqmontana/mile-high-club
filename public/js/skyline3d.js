@@ -316,7 +316,8 @@ export function mountTower(host, { onPick, onSpin, onHoverFloor }) {
   el.addEventListener('pointerup', e => { if (drag && !drag.moved) { const f = pick(e); if (f !== null) onPick?.(f); } drag = null; });
   el.addEventListener('pointerleave', () => { if (hover !== null) onHoverFloor?.(null); hover = null; if (tip) tip.style.opacity = 0; });
 
-  let active = false, visible = true, raf = 0, last = performance.now(), camY = 0, first = true;
+  let active = false, visible = true, raf = 0, last = performance.now(), camY = 0, first = true, travelling = false, arriveAt = 0;
+  const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
   new IntersectionObserver(([en]) => { visible = en.isIntersecting; kick(); }).observe(host);
   function size() { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); kick(); }
   new ResizeObserver(size).observe(host);
@@ -333,9 +334,14 @@ export function mountTower(host, { onPick, onSpin, onHoverFloor }) {
     if (first) { camY = camTargetY; first = false; }
     camY += (camTargetY - camY) * Math.min(1, dt * 2.5); pitch += (pitchT - pitch) * Math.min(1, dt * 4);
     // камера по кругу вокруг башни; высота ограничена, чтобы горизонт всегда был закрыт городом, дымкой и холмами
-    zk += ((hiRoom ? .72 : 1) - zk) * Math.min(1, dt * 2.5); const dist = (cam.aspect < 0.8 ? 44 : cam.aspect < 1.2 ? 36 : 31) * zk, el2 = 0.1 + pitch * 0.18;
+    // переезд на дальний этаж: камера немного отъезжает, пока «кабина» в пути, и возвращается к прибытию;
+    // когда камера доехала, выбранный этаж дважды вспыхивает
+    const gap = Math.abs(camTargetY - camY), far = RM ? 0 : Math.min(1, gap / Math.max(1, topY * .3));
+    if (gap > .3) travelling = true; else if (travelling && gap < .05) { travelling = false; if (!RM) arriveAt = t; }
+    zk += ((hiRoom ? .72 : 1) + far * .22 - zk) * Math.min(1, dt * 2.5);
+    const ap = arriveAt ? (t - arriveAt) / 1200 : 1, pulse = ap < 1 ? (1 - ap) * (.5 - .5 * Math.cos(ap * Math.PI * 4)) * 1.4 : 0; const dist = (cam.aspect < 0.8 ? 44 : cam.aspect < 1.2 ? 36 : 31) * zk, el2 = 0.1 + pitch * 0.18;
     cam.position.set(Math.sin(rotY) * dist * Math.cos(el2), camY + 2 + Math.sin(el2) * dist, Math.cos(rotY) * dist * Math.cos(el2)); cam.lookAt(0, camY + 1.2, 0);
-    floors.forEach(m => { const on = m.userData.floor === sel, hv = m.userData.floor === hover; const target = on ? 1.6 : hv && m.userData.hotel ? 1.25 : m.userData.hotel ? (sel !== null ? 0.75 : 1) : 0.6; m.material.emissiveIntensity += (target - m.material.emissiveIntensity) * Math.min(1, dt * 8); const sc = on ? 1.035 : 1; m.scale.x += (sc - m.scale.x) * Math.min(1, dt * 8); m.scale.z = m.scale.x; m.userData.slab?.scale.set(m.scale.x, 1, m.scale.x); });
+    floors.forEach(m => { const on = m.userData.floor === sel, hv = m.userData.floor === hover; const target = on ? 1.6 + pulse : hv && m.userData.hotel ? 1.25 : m.userData.hotel ? (sel !== null ? 0.75 : 1) : 0.6; m.material.emissiveIntensity += (target - m.material.emissiveIntensity) * Math.min(1, dt * 8); const sc = on ? 1.035 : 1; m.scale.x += (sc - m.scale.x) * Math.min(1, dt * 8); m.scale.z = m.scale.x; m.userData.slab?.scale.set(m.scale.x, 1, m.scale.x); });
     if (hl) hl.material.opacity += ((sel !== null ? .9 : 0) - hl.material.opacity) * Math.min(1, dt * 6);
     if (beacon) beacon.material.color.setHSL(0.05, .9, 0.42 + Math.max(0, Math.sin(t / 420)) * 0.18);
     beacons.material.opacity = .55 + .45 * Math.sin(t / 500);
