@@ -356,12 +356,52 @@ function timeline(v) {
   const m = mskMinutes();
   return `<div><div class="timeline">${segs.map(([a, b, st]) => `<i class="${st}" style="left:${a / 14.4}%;width:${(b - a) / 14.4}%"></i>`).join('')}<span class="now" style="left:var(--now,${m / 14.4}%)"></span></div><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>`;
 }
+// «Сутки отеля»: все площадки на одной оси 00–24 и ползунок «что будет открыто в 23:00?».
+// Статус на выбранное время считает та же venueState(), что и сервер, — с учётом событий из Discord.
+let dayAt = null; // минуты МСК, выбранные ползунком; null — «сейчас»
+function dayTime() { // ближайший момент в будущем (в пределах суток) с выбранными минутами МСК
+  const now = Date.now(), m = mskMinutes(now); if (dayAt === null) return now;
+  return now + ((dayAt - m + 1440) % 1440) * 60e3;
+}
+function paintDay() {
+  const host = $('#hday'); if (!host) return;
+  const p = S.pub, venues = p.venues.filter(v => !v.comingSoon), t = dayTime(), m = mskMinutes(t);
+  if (!host.querySelector('.hd-range')) {
+    host.innerHTML = `<div class="hd-head"><div class="stack" style="gap:.4rem"><span class="eyebrow">Сутки отеля</span><h3 id="hdH">Что открыто <output id="hdT" for="hdRange"></output></h3></div><button class="btn ghost sm" id="hdNow" type="button">Сейчас</button></div>
+      <div class="hd-grid"><div class="hd-lw"><div id="hdLanes"></div><i class="hd-cursor" aria-hidden="true"></i></div><div class="hd-scale"><span></span><div class="hd-axis"><input type="range" class="hd-range" id="hdRange" min="0" max="1425" step="15" aria-labelledby="hdH"><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div><span></span></div></div>
+      <p class="note">Тяните ползунок или нажимайте ← → — статусы пересчитаются по расписанию и событиям. Нажмите на площадку, чтобы перейти к её карточке.</p>`;
+    const r = $('#hdRange');
+    r.addEventListener('input', () => { dayAt = +r.value; paintDay(); });
+    $('#hdNow').onclick = () => { dayAt = null; paintDay(); };
+  }
+  // полосы перерисовываем, только если поменялись расписание или события
+  const lanes = venues.map(v => {
+    const segs = (v.schedule || []).flatMap(s => { const a = minutesOf(s.from), b = minutesOf(s.to); return a < b ? [[a, b, s.state]] : [[a, 1440, s.state], [0, b, s.state]]; });
+    const evs = p.events.filter(e => e.venueId === v.id && e.status !== 'cancelled' && (e.end || e.start + 3 * 3600e3) > Date.now() && e.start < Date.now() + 864e5)
+      .flatMap(e => { const a = mskMinutes(e.start), d = Math.max(15, Math.round(((e.end || e.start + 3 * 3600e3) - e.start) / 6e4)), b = a + Math.min(d, 1440); return b <= 1440 ? [[a, b, e.name]] : [[a, 1440, e.name], [0, b - 1440, e.name]]; });
+    return `<button class="hd-lane" type="button" data-venue="${esc(v.id)}" aria-label="${esc(v.name)}: перейти к карточке"><span class="hd-n">${esc(v.name)}</span><span class="timeline hd-bar">${segs.map(([a, b, st]) => `<i class="${st}" style="left:${a / 14.4}%;width:${(b - a) / 14.4}%"></i>`).join('')}${evs.map(([a, b, n]) => `<b class="hd-ev" title="${esc(n)}" style="left:${a / 14.4}%;width:${(b - a) / 14.4}%"></b>`).join('')}</span><span class="hd-st"></span></button>`;
+  }).join('');
+  const box = $('#hdLanes');
+  if (box._html !== lanes) { box.innerHTML = lanes; box._html = lanes; $$('.hd-lane', box).forEach(b => b.onclick = () => focusVenueCard(b.dataset.venue)); }
+  $$('.hd-lane', box).forEach(b => { const v = venues.find(x => x.id === b.dataset.venue); if (v) b.querySelector('.hd-st').innerHTML = stateChip(venueState(v, p.events, t)); });
+  const r = $('#hdRange'), hh = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  if (document.activeElement !== r || dayAt === null) r.value = dayAt ?? Math.floor(m / 15) * 15;
+  r.setAttribute('aria-valuetext', dayAt === null ? `сейчас, ${hh}` : `${hh} МСК`);
+  $('#hdT').textContent = dayAt === null ? `сейчас · ${hh}` : `в ${hh}${t - Date.now() > 12 * 3600e3 ? ' (завтра)' : ''}`;
+  host.querySelector('.hd-grid').style.setProperty('--x', m / 1440);
+  host.classList.toggle('at', dayAt !== null); $('#hdNow').disabled = dayAt === null;
+}
+function focusVenueCard(id) {
+  const el = [...($('#venuesList')?.children || [])].find(x => x.dataset.venue === id); if (!el) return;
+  el.classList.add('in', 'hl'); el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  setTimeout(() => el.classList.remove('hl'), 2200);
+}
 function renderLeisure() {
   const p = S.pub, m = mskMinutes();
   const lv = view('leisure');
   if (!lv.querySelector('#venuesList')) {
     lv.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Отдых</span><h2>Что сейчас открыто</h2><p>Статусы обновляются по расписанию и по событиям из Discord. Время — московское. Днём работает Sky Pool, ночью Night Pool и The Hot Times.</p></div>
-      <div id="deckHost" class="reveal"></div><div class="venues" id="venuesList"></div></div>`;
+      <div id="deckHost" class="reveal"></div><section class="hday reveal" id="hday" aria-label="Сутки отеля"></section><div class="venues" id="venuesList"></div></div>`;
     import('./deck.js').then(d => { mods.deck = { ...d.mountDeck($('#deckHost')), active(on) { if (!on) this.stop(); } }; });
   }
   const cards = p.venues.map(v => { const st = venueState(v, p.events), evs = p.events.filter(e => e.venueId === v.id && (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 3);
@@ -380,10 +420,8 @@ function renderLeisure() {
   [...list.children].forEach((el, i) => { el._html = cards[i]; });
   list.style.setProperty('--now', m / 14.4 + '%');
   reveal(lv);
-  if (S.focusVenue) { // пришли с табло или из шахты лифта — показываем нужную площадку
-    const id = S.focusVenue; S.focusVenue = null;
-    setTimeout(() => { const el = [...list.children].find(x => x.dataset.venue === id); if (!el) return; el.classList.add('in', 'hl'); el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); setTimeout(() => el.classList.remove('hl'), 2200); }, 80);
-  }
+  paintDay();
+  if (S.focusVenue) { const id = S.focusVenue; S.focusVenue = null; setTimeout(() => focusVenueCard(id), 80); } // пришли с табло или из шахты лифта
   $$('#venuesList .water').forEach(w => w.onpointerdown = e => { const r = w.getBoundingClientRect(); for (let i = 0; i < 2; i++) { const d = document.createElement('i'); d.className = 'rip'; d.style.left = (e.clientX - r.left) + 'px'; d.style.top = (e.clientY - r.top) + 'px'; w.append(d); setTimeout(() => d.remove(), 1700); } play('splash'); });
 }
 
@@ -411,8 +449,8 @@ function clocheHtml() {
 }
 function wireCloche() {
   const b = $('#clocheBtn'); if (!b) return;
-  b.onclick = () => { clocheOpen = !clocheOpen; play(clocheOpen ? 'cloche' : 'clocheDown'); if (clocheOpen) unlock('chef'); const el = $('#cloche'), tmp = document.createElement('div'); tmp.innerHTML = clocheHtml(); el.querySelector('.ctext').replaceWith(tmp.querySelector('.ctext')); el.classList.toggle('open', clocheOpen); b.setAttribute('aria-label', clocheOpen ? 'Накрыть блюдо' : 'Поднять клош и узнать блюдо дня'); $('#clocheAdd')?.addEventListener('click', () => { const d = dishOfDay(); if (d) addCart(d.id); }); };
-  $('#clocheAdd')?.addEventListener('click', () => { const d = dishOfDay(); if (d) addCart(d.id); });
+  b.onclick = () => { clocheOpen = !clocheOpen; play(clocheOpen ? 'cloche' : 'clocheDown'); if (clocheOpen) unlock('chef'); const el = $('#cloche'), tmp = document.createElement('div'); tmp.innerHTML = clocheHtml(); el.querySelector('.ctext').replaceWith(tmp.querySelector('.ctext')); el.classList.toggle('open', clocheOpen); b.setAttribute('aria-label', clocheOpen ? 'Накрыть блюдо' : 'Поднять клош и узнать блюдо дня'); $('#clocheAdd')?.addEventListener('click', e => { const d = dishOfDay(); if (d) addCart(d.id, e.currentTarget); }); };
+  $('#clocheAdd')?.addEventListener('click', e => { const d = dishOfDay(); if (d) addCart(d.id, e.currentTarget); });
 }
 function renderLost() {
   const p = String(S.lostPath || '').replace(/[^\wа-яё-]/gi, '').slice(0, 30), room = (p.match(/\d{3,4}/) || ['404'])[0];
@@ -422,11 +460,25 @@ function renderLost() {
 function paintDishes() {
   const items = S.pub.menu.filter(i => i.cat === menuCat);
   $('#dishes').innerHTML = items.map(i => { const q = S.cart.get(i.id) || 0; return `<div class="dish"><h4>${esc(i.name)}</h4><span class="pr num">${money(i.price)}</span><span class="add">${q ? `<span class="qty"><button data-m="${esc(i.id)}" aria-label="Меньше" data-sfx="soft">−</button><span class="num">${q}</span><button data-p="${esc(i.id)}" aria-label="Больше" data-sfx="">+</button></span>` : `<button class="btn sm ghost icon" data-p="${esc(i.id)}" aria-label="Добавить ${esc(i.name)}" data-sfx="">${I.plus}</button>`}</span><p>${esc(i.desc)}</p></div>`; }).join('');
-  $$('#dishes [data-p]').forEach(b => b.onclick = () => addCart(b.dataset.p));
+  $$('#dishes [data-p]').forEach(b => b.onclick = () => addCart(b.dataset.p, b));
   $$('#dishes [data-m]').forEach(b => b.onclick = () => subCart(b.dataset.m));
 }
 const itemById = id => S.pub.menu.find(i => i.id === id) || (() => { const c = S.pub.cigars.find(x => x.id === id); return c && { ...c, name: 'Сигара ' + c.name }; })();
-export function addCart(id) { if (!itemById(id)) return; S.cart.set(id, (S.cart.get(id) || 0) + 1); play('add'); if ([...S.cart.values()].reduce((a, b) => a + b, 0) >= 15) unlock('glutton'); updFab(true); if (current === 'dining') paintDishes(); if ($('#cartSheet.on')) paintCart(); }
+// добавленная позиция «летит» по дуге от кнопки к счётчику корзины — видно, куда ушёл заказ
+function flyToCart(from) {
+  const fab = $('#fab'); if (!fab || !from?.isConnected || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const a = from.getBoundingClientRect(); if (!a.width) return;
+  const f = fab.getBoundingClientRect(), dy = new DOMMatrix(getComputedStyle(fab).transform).m42; // FAB может ещё выезжать
+  const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2, tx = f.left + 22 - x0, ty = f.top - dy + f.height / 2 - y0;
+  const dot = document.createElement('i'); dot.className = 'fly'; dot.style.left = x0 + 'px'; dot.style.top = y0 + 'px'; document.body.append(dot);
+  const anim = dot.animate([
+    { transform: 'translate(-50%,-50%) scale(1)' },
+    { transform: `translate(calc(-50% + ${tx * .5}px), calc(-50% + ${ty * .5 - Math.min(140, Math.abs(tx) * .3 + 40)}px)) scale(1.15)`, offset: .45 },
+    { transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(.35)`, opacity: .3 }
+  ], { duration: 640, easing: 'cubic-bezier(.45,0,.55,1)' });
+  anim.onfinish = anim.oncancel = () => dot.remove();
+}
+export function addCart(id, from) { if (!itemById(id)) return; flyToCart(from); S.cart.set(id, (S.cart.get(id) || 0) + 1); play('add'); if ([...S.cart.values()].reduce((a, b) => a + b, 0) >= 15) unlock('glutton'); updFab(true); if (current === 'dining') paintDishes(); if ($('#cartSheet.on')) paintCart(); }
 function subCart(id) { const q = (S.cart.get(id) || 0) - 1; q > 0 ? S.cart.set(id, q) : S.cart.delete(id); updFab(); if (current === 'dining') paintDishes(); if ($('#cartSheet.on')) paintCart(); }
 function updFab(bump) {
   const n = [...S.cart.values()].reduce((a, b) => a + b, 0), fab = $('#fab'); if (!fab) return;
@@ -477,7 +529,7 @@ function paintCigar() {
     <dl class="kv"><dt>Формат</dt><dd>${esc(CIGAR_SHAPES[c.shape] || c.shape)}</dd><dt>Калибр</dt><dd class="num" title="Ring gauge: диаметр в 1/64 дюйма">${esc(c.ring)} <small class="mut">RG</small></dd><dt>Длина</dt><dd class="num">${esc(c.length)} мм</dd><dt>Крепость</dt><dd><span class="str">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= c.strength ? 'on' : ''}"></i>`).join('')}</span></dd><dt>Цена</dt><dd class="num"><b>${money(c.price)}</b></dd></dl>
     <div class="notes">${(c.notes || []).map(n => `<span>${esc(n)}</span>`).join('')}</div>${c.desc ? `<p class="mut">${esc(c.desc)}</p>` : ''}
     <div class="row"><button class="btn" id="cAdd" data-sfx="">В заказ в номер</button><button class="btn ghost" id="cCart" data-sfx="open">Открыть заказ</button></div>` : '<div class="empty">Хьюмидор пуст. Сигары добавляют в панели персонала.</div>';
-  $('#cAdd') && ($('#cAdd').onclick = () => { addCart(c.id); toast(`${c.name}: в заказе`); });
+  $('#cAdd') && ($('#cAdd').onclick = () => { addCart(c.id, $('#cAdd')); toast(`${c.name}: в заказе`); });
   $('#cCart') && ($('#cCart').onclick = openCart);
   $('#cStrip').innerHTML = S.pub.cigars.map((x, i) => `<button aria-pressed="${i === cigIdx}" data-i="${i}" data-sfx="wood"><i style="background:${esc(x.band)}"></i>${esc(x.name)}</button>`).join('');
   $$('#cStrip button').forEach(b => b.onclick = () => pickCigar(+b.dataset.i));
