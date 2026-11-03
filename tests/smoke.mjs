@@ -86,6 +86,27 @@ try {
     await gctx.close();
   }
 
+  /* ---------- без WebGL: 3D не грузится, все сценарии остаются доступны ---------- */
+  {
+    const nb = await chromium.launch({ args: ['--disable-webgl', '--disable-webgl2', '--disable-3d-apis'] });
+    const np = await nb.newPage({ viewport: { width: 1280, height: 800 } }); const nerr = watch(np); const reqs = [];
+    np.on('request', r => reqs.push(r.url()));
+    await np.goto(BASE + '/#home'); await ready(np); await np.waitForTimeout(1200);
+    const home = await np.evaluate(() => ({ gl: !!document.createElement('canvas').getContext('webgl'), dv2: getComputedStyle(document.querySelector('#dv2')).opacity, static: document.querySelector('#dive').classList.contains('static') }));
+    check('без WebGL: атриум статичный, второй экран виден', !home.gl && home.static && home.dv2 === '1', JSON.stringify(home));
+    await np.evaluate(() => { location.hash = '#stay'; }); await np.waitForSelector('.facade .ff', { timeout: 8000 });
+    const target = await np.$$eval('.facade .ff', bs => bs.at(-1).dataset.f);
+    await np.click(`.facade .ff[data-f="${target}"]`); await np.waitForTimeout(1200);
+    const lift = await np.evaluate(() => document.querySelector('#lfBtns [aria-pressed="true"]')?.dataset.f);
+    check('без WebGL: фасад башни вместо 3D, клик по этажу вызывает лифт', lift === target, `этаж ${target}, лифт ${lift}`);
+    await np.evaluate(() => { location.hash = '#cigars'; }); await np.waitForTimeout(1200);
+    const hum = await np.evaluate(() => ({ flat: document.querySelector('#hum').classList.contains('flat'), lid: getComputedStyle(document.querySelector('#lidBtn')).display, info: !!document.querySelector('#cInfo h3') }));
+    check('без WebGL: хьюмидор — понятная замена, карточка сигары и заказ работают', hum.flat && hum.lid === 'none' && hum.info, JSON.stringify(hum));
+    check('без WebGL: three.js не скачивается', !reqs.some(u => /three\.module\.js|skyline3d|humidor3d|hero3d/.test(u)), reqs.filter(u => /three|3d\.js/.test(u)).join(' '));
+    check('без WebGL: нет ошибок в консоли', nerr.length === 0, nerr.slice(0, 3).join(' | '));
+    await nb.close();
+  }
+
   /* ---------- сценарии ---------- */
   console.log('\n[сценарии]');
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } }); const page = await ctx.newPage(); const errs = watch(page);
