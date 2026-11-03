@@ -127,6 +127,37 @@ function nextChange(v) {
   return span ? `до ${span.to}` : '';
 }
 const RANK = { event: 0, live: 1, open: 2, calm: 3, soon: 4, closed: 5 };
+// Табло отеля: значения на перекидных ячейках. Меняющийся символ перещёлкивается — при обновлении по SSE
+// или смене минуты. Ширина значения — 7 ячеек, как на настоящем табло; пустые ячейки остаются видны.
+const FLAP_WORD = { live: 'LIVE', open: 'ОТКРЫТО', calm: 'ТИХО', closed: 'ЗАКРЫТО', event: 'СОБЫТИЕ', soon: 'СКОРО' };
+const flapPrev = new Map();
+function flap(key, text) {
+  const t = String(text).slice(0, 7).padStart(7, ' '), prev = flapPrev.get(key); flapPrev.set(key, t);
+  return `<span class="sr">${esc(String(text))}</span><span class="fls" aria-hidden="true">${[...t].map((c, i) => `<span class="fl${c === ' ' ? ' e' : ''}${prev && prev[i] !== c ? ' flip' : ''}" style="--i:${i}">${c === ' ' ? '' : esc(c)}</span>`).join('')}</span>`;
+}
+const venueRoute = v => ({ restaurant: 'dining', club: 'cigars' }[v.kind] || 'leisure');
+// Шахта лифта: реальные этажи площадок (venue.floor) и номеров, сверху вниз, с живыми статусами
+function shaftHtml(p, latest) {
+  const rows = p.venues.map(v => { const n = parseInt((String(v.floor || '').match(/\d+/) || [])[0], 10), ok = Number.isFinite(n); return { n: ok ? n : 0.5, label: ok ? String(n) : 'A', name: v.name, sub: v.desc, href: '#' + venueRoute(v), venue: v.id, chip: stateChip(venueState(v, p.events)) }; });
+  const fl = [...new Set(p.rooms.map(r => r.floor))].sort((a, b) => a - b);
+  if (fl.length) { const free = p.rooms.filter(r => r.status === 'free').length; rows.push({ n: fl.at(-1), label: fl.length > 1 ? `${fl[0]}–${fl.at(-1)}` : String(fl[0]), name: 'Номера и сюиты', sub: `${p.rooms.length} ${plural(p.rooms.length, 'номер', 'номера', 'номеров')} на ${fl.length} ${plural(fl.length, 'этаже', 'этажах', 'этажах')}`, href: '#stay', chip: `<span class="chip ${free ? 'ok' : 'bad'}"><span class="d"></span>Свободно ${free}</span>` }); }
+  rows.push({ n: 0, label: 'Л', name: 'Лобби · Mile High Journal', sub: latest ? `Свежий выпуск: ${latest.number || ''} ${latest.title}` : 'Журнал отеля', href: latest ? '#issue-' + latest.id : '#journal', chip: '' });
+  rows.sort((a, b) => b.n - a.n);
+  return `<section class="shaft reveal" aria-labelledby="shaftH"><div class="head"><span class="eyebrow">Этажи отеля</span><h2 id="shaftH">Куда поднимемся?</h2></div>
+    <ol class="shaft-floors" id="floors"><i class="car" aria-hidden="true"></i>${rows.map(r => `<li><a class="shaft-floor" href="${r.href}"${r.venue ? ` data-venue="${esc(r.venue)}"` : ''}><span class="fn num${r.label.includes('–') ? ' rng' : ''}">${esc(r.label)}</span><span class="ft"><b>${esc(r.name)}</b><small>${esc(r.sub || '')}</small></span><span class="fs">${r.chip}</span><span class="fa">${I.arrow}</span></a></li>`).join('')}</ol></section>`;
+}
+function wireHome() {
+  const fl = $('#floors');
+  if (fl) {
+    const car = fl.querySelector('.car');
+    const go = a => { const r = a.getBoundingClientRect(), b = fl.getBoundingClientRect(); car.style.transform = `translateY(${r.top - b.top}px)`; car.style.height = r.height + 'px'; fl.classList.add('moving'); };
+    $$('.shaft-floor', fl).forEach(a => { a.addEventListener('pointerenter', () => go(a)); a.addEventListener('focus', () => go(a)); });
+    fl.addEventListener('pointerleave', () => { if (!fl.contains(document.activeElement)) fl.classList.remove('moving'); });
+    fl.addEventListener('focusout', e => { if (!fl.contains(e.relatedTarget)) fl.classList.remove('moving'); });
+  }
+  // площадка с табло или из шахты → в «Отдыхе» прокручиваемся прямо к её карточке
+  $$('#homeRest a[data-venue][href="#leisure"]').forEach(a => a.addEventListener('click', () => { S.focusVenue = a.dataset.venue; }));
+}
 function renderHome() {
   const p = S.pub, s = p.settings, m = mode(), free = p.rooms.filter(r => r.status === 'free').length;
   const evs = p.events.filter(e => (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 12);
@@ -143,11 +174,14 @@ function renderHome() {
 `;
   const restHtml = `
   <div class="wrap">
-    <div class="board">
-      <a class="tile" href="#stay"><span class="eyebrow">Номера</span><span class="big num">${free}<small class="mut" style="font-size:.9rem"> / ${p.rooms.length}</small></span><span class="sub">${free ? 'свободно прямо сейчас' : 'все номера заняты'}</span></a>
-      ${p.venues.map(v => ({ v, st: venueState(v, p.events) })).sort((a, b) => (RANK[a.st.state] ?? 9) - (RANK[b.st.state] ?? 9)).slice(0, 3).map(({ v, st }) => { return `<a class="tile" href="#leisure"><span class="row" style="justify-content:space-between"><b>${esc(v.name)}</b>${stateChip(st)}</span><span class="sub">${esc(st.label || '')}${st.state !== 'event' && st.state !== 'soon' && st.state !== 'closed' ? ' · ' + nextChange(v) : ''}</span></a>`; }).join('')}
-      <div class="tile"><span class="eyebrow">Время в отеле · МСК</span><span class="big num" id="clock">${hhmm(Date.now())}</span><span class="sub" id="wxTile">${wxNow ? '' : (m === 'day' ? 'День' : 'Ночь')}</span></div>
-    </div>
+    <section class="fboard" aria-label="Табло отеля">
+      <div class="fb-head"><span class="eyebrow">Табло отеля</span><span class="fb-live"><span class="d"></span>Обновляется вживую</span></div>
+      <div class="fb-rows">
+      <a class="fb-row" href="#stay" data-st="${free ? 'open' : 'closed'}"><span class="fb-k">Номера</span><span class="fb-v">${flap('rooms', `${free}/${p.rooms.length}`)}</span><span class="fb-s">${free ? 'свободно прямо сейчас' : 'все номера заняты'}</span></a>
+      ${p.venues.map(v => ({ v, st: venueState(v, p.events) })).sort((a, b) => (RANK[a.st.state] ?? 9) - (RANK[b.st.state] ?? 9)).map(({ v, st }) => `<a class="fb-row" href="#${venueRoute(v)}" data-venue="${esc(v.id)}" data-st="${st.state}"><span class="fb-k">${esc(v.name)}</span><span class="fb-v">${flap('v-' + v.id, FLAP_WORD[st.state] || FLAP_WORD.open)}</span><span class="fb-s">${esc(st.label || '')}${st.state !== 'event' && st.state !== 'soon' && st.state !== 'closed' ? ' · ' + nextChange(v) : ''}</span></a>`).join('')}
+      <div class="fb-row" data-st="clock"><span class="fb-k">Время в отеле · МСК</span><span class="fb-v" id="clock">${flap('clock', hhmm(Date.now()))}</span><span class="fb-s" id="wxTile">${wxNow ? '' : (m === 'day' ? 'День' : 'Ночь')}</span></div>
+      </div>
+    </section>
   </div>
   <div class="wrap sec">
     <div class="row reveal" style="justify-content:space-between;margin-bottom:1.2rem"><div class="head" style="margin:0"><span class="eyebrow">Афиша</span><h2>События отеля</h2></div>${s.discordInvite ? `<a class="btn ghost sm" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} События в Discord</a>` : ''}</div>
@@ -157,23 +191,15 @@ function renderHome() {
     <div class="head reveal"><span class="eyebrow">Предложения</span><h2>Пакеты отеля</h2></div>
     <div class="offers">${p.offers.map(o => `<a class="offer reveal" href="${esc(o.link || '#stay')}"><div ${bg(o.image, '', '#F0177A', '#F7B50A', 'img')}></div><div class="ob"><span class="tag">${esc(o.tag || '')}</span><h3>${esc(o.title)}</h3><p>${esc(o.desc || '')}</p><div class="row" style="justify-content:space-between;margin-top:auto"><b class="num">${esc(o.price || '')}</b><span class="lnk">${esc(o.cta || 'Подробнее')} ${I.arrow}</span></div></div></a>`).join('')}</div>
   </div>` : ''}
-  <div class="wrap" style="padding-bottom:3rem">
-    <div class="explore">
-      ${exCard('#stay', 'Номера и сюиты', `${p.rooms.length} ${plural(p.rooms.length, 'номер', 'номера', 'номеров')}, ${new Set(p.rooms.map(r => r.floor)).size} ${plural(new Set(p.rooms.map(r => r.floor)).size, 'этаж', 'этажа', 'этажей')}`, 'img/reception.webp', 'w')}
-      ${exCard('#leisure', 'Бассейны и бар', 'Sky Pool днём, Night Pool до 04:00', '', 'w', 'Бассейны', '#F7B50A', '#F0177A')}
-      ${exCard('#dining', 'Le Ciel', 'Французская кухня с доставкой в номер', '', '', 'Le Ciel', '#8F263A', '#F7B50A')}
-      ${exCard('#cigars', 'Сигарный клуб', 'Откройте 3D-хьюмидор', '', '', 'Сигарный клуб', '#FF7A3D', '#F7B50A')}
-      ${exCard(latest ? '#issue-' + latest.id : '#journal', 'Mile High Journal', latest ? `${latest.number || ''} ${latest.title}` : 'Журнал отеля', latest?.cover || '')}
-    </div>
-  </div>
+  <div class="wrap sec" style="padding-top:0">${shaftHtml(p, latest)}</div>
   <div class="wrap" style="padding-bottom:4rem"><div class="dc reveal">
     <div class="stack"><span class="eyebrow">Discord</span><h3 style="font-size:clamp(1.4rem,3vw,2.2rem)">Всё главное на сайте. В Discord общаемся.</h3><p class="mut">Бронь, заявки, меню и журнал живут здесь. На сервере — анонсы, события и бот, который показывает свободные номера.</p>
       <div class="row">${s.discordInvite ? `<a class="btn discord" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} Зайти на сервер</a>` : ''}<a class="btn ghost" href="#contact">Оставить заявку</a></div></div>
   </div></div>`;
   const key = m + '|' + (m === 'day' ? s.heroDay : s.heroNight) + '|' + s.tagline;
   const v = view('home');
-  if (v.dataset.key === key && $('#homeRest')) { $('#homeRest').innerHTML = restHtml; reveal(v); applyWeather(); return; }
-  v.dataset.key = key; v.innerHTML = heroHtml + '<div id="homeRest">' + restHtml + '</div>';
+  if (v.dataset.key === key && $('#homeRest')) { $('#homeRest').innerHTML = restHtml; wireHome(); reveal(v); applyWeather(); return; }
+  v.dataset.key = key; v.innerHTML = heroHtml + '<div id="homeRest">' + restHtml + '</div>'; wireHome();
   mods.heroWx = mountWeather($('#heroWx'), { strength: 1.5 }); if (wxNow) mods.heroWx.set(wxNow.kind, m === 'day');
   const logo = $('#heroLogo'), hero = $('#dive');
   hero.onpointermove = e => { const r = hero.getBoundingClientRect(); logo.style.setProperty('--ry', ((e.clientX - r.left) / r.width - .5) * 16 + 'deg'); logo.style.setProperty('--rx', -((e.clientY - r.top) / innerHeight - .5) * 12 + 'deg'); };
@@ -190,11 +216,12 @@ function heroLayers(url) { const m = /img\/(atrium-night|atrium-day)\.webp$/.exe
 // слова через дефис («Лос-Сантос») не разрываются переносом; на вход — уже экранированный текст
 const nowrapHyphens = html => html.replace(/[^\s<>]+-[^\s<>]+/g, w => `<span class="nw">${w}</span>`);
 function evCard(e) {
-  const d = new Date(e.start), live = e.start <= Date.now() && (e.end || e.start + 3 * 3600e3) > Date.now(), v = S.pub.venues.find(x => x.id === e.venueId);
-  return `<${e.url ? `a href="${esc(e.url)}" target="_blank" rel="noopener"` : 'div'} class="ev"><div ${bg(e.image, v?.name || 'Событие', v?.accent || '#F0177A', '#F7B50A', 'img')}><span class="when"><b>${d.getDate()}</b>${d.toLocaleDateString('ru-RU', { month: 'short' })}</span></div>
+  // билет: корешок с датой (по московскому времени, как и часы), перфорация, тело с площадкой
+  const live = e.start <= Date.now() && (e.end || e.start + 3 * 3600e3) > Date.now(), v = S.pub.venues.find(x => x.id === e.venueId);
+  const day = new Date(e.start).toLocaleDateString('ru-RU', { day: 'numeric', timeZone: 'Europe/Moscow' }), mon = new Date(e.start).toLocaleDateString('ru-RU', { month: 'short', timeZone: 'Europe/Moscow' }).replace('.', '');
+  return `<${e.url ? `a href="${esc(e.url)}" target="_blank" rel="noopener"` : 'div'} class="ev${live ? ' live' : ''}" style="--a:${esc(v?.accent || '#F0177A')}"><div class="stub"${e.image ? ` style="background-image:linear-gradient(rgba(13,8,9,.5),rgba(13,8,9,.88)),url('${esc(e.image)}')"` : ''}><b class="num">${day}</b><span>${esc(mon)}</span><small class="num">${hhmm(e.start)}</small></div>
     <div class="body"><div class="row">${live ? '<span class="chip p live"><span class="d"></span>Идёт сейчас</span>' : `<span class="chip m">${hhmm(e.start)}${e.end ? '–' + hhmm(e.end) : ''}</span>`}${e.source === 'discord' ? '<span class="chip v">Discord</span>' : ''}</div><h4>${esc(e.name)}</h4><span class="note">${esc(e.location || v?.name || '')}</span>${e.desc ? `<p class="note" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(e.desc)}</p>` : ''}</div></${e.url ? 'a' : 'div'}>`;
 }
-function exCard(href, t, sub, img, cls = '', label, a, a2) { return `<a class="ex ${cls} reveal" href="${href}"><div ${bg(img, label || t, a, a2, 'img')}></div><span class="arrow">${I.arrow}</span><h3>${esc(t)}</h3><p>${esc(sub)}</p></a>`; }
 
 /* ---------------- номера ---------------- */
 let selFloor = null, selRoom = null;
@@ -339,7 +366,7 @@ function renderLeisure() {
   }
   const cards = p.venues.map(v => { const st = venueState(v, p.events), evs = p.events.filter(e => e.venueId === v.id && (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 3);
     const visual = v.image ? `<div class="img cover" style="background-image:url('${esc(v.image)}')">` : v.kind === 'pool' ? `<div class="img"><div class="water ${v.id === 'night' || /night|ноч/i.test(v.name) ? 'n' : ''} ${st.state === 'live' || st.state === 'event' ? 'live' : ''}"><div class="sky"></div><div class="pl"></div></div>` : `<div ${bg('', v.name, v.accent || '#F0177A', '#F7B50A', 'img')}>`;
-    return `<article class="venue reveal">${visual}${stateChip(st)}</div><div class="body"><div class="row" style="justify-content:space-between"><h3>${esc(v.name)}</h3><span class="note">${esc(KIND_LABEL[v.kind] || '')}${v.floor ? ' · ' + esc(v.floor) : ''}</span></div>
+    return `<article class="venue reveal" data-venue="${esc(v.id)}">${visual}${stateChip(st)}</div><div class="body"><div class="row" style="justify-content:space-between"><h3>${esc(v.name)}</h3><span class="note">${esc(KIND_LABEL[v.kind] || '')}${v.floor ? ' · ' + esc(v.floor) : ''}</span></div>
       <p class="note">${esc(v.desc || '')}</p>
       ${st.state === 'event' ? `<div class="card pad" style="padding:.8rem 1rem;border-color:var(--violet)"><span class="eyebrow" style="color:var(--violet)">Сейчас событие</span><b>${esc(st.label)}</b></div>` : ''}
       ${v.comingSoon ? '<span class="chip t">Скоро открытие</span>' : timeline(v) + `<div class="sched">${(v.schedule || []).map(s => `<div class="${inSpan(m, minutesOf(s.from), minutesOf(s.to)) ? 'now' : ''}"><span class="num">${esc(s.from)}–${esc(s.to)}</span><span>${s.state === 'live' && inSpan(m, minutesOf(s.from), minutesOf(s.to)) ? '<span class="eq"><i></i><i></i><i></i></span> ' : ''}${esc(s.label)}</span></div>`).join('')}</div>`}
@@ -353,6 +380,10 @@ function renderLeisure() {
   [...list.children].forEach((el, i) => { el._html = cards[i]; });
   list.style.setProperty('--now', m / 14.4 + '%');
   reveal(lv);
+  if (S.focusVenue) { // пришли с табло или из шахты лифта — показываем нужную площадку
+    const id = S.focusVenue; S.focusVenue = null;
+    setTimeout(() => { const el = [...list.children].find(x => x.dataset.venue === id); if (!el) return; el.classList.add('in', 'hl'); el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); setTimeout(() => el.classList.remove('hl'), 2200); }, 80);
+  }
   $$('#venuesList .water').forEach(w => w.onpointerdown = e => { const r = w.getBoundingClientRect(); for (let i = 0; i < 2; i++) { const d = document.createElement('i'); d.className = 'rip'; d.style.left = (e.clientX - r.left) + 'px'; d.style.top = (e.clientY - r.top) + 'px'; w.append(d); setTimeout(() => d.remove(), 1700); } play('splash'); });
 }
 
@@ -675,7 +706,7 @@ async function boot() {
   if (!$('.view.on')) { applyMode(); route(); loadItems(); }
   addEventListener('hashchange', route); booted = true;
   subscribe(onChange);
-  setInterval(() => { applyMode(); const c = $('#clock'); if (c) c.textContent = hhmm(Date.now()); applyWeather(); if (current === 'leisure' && !focusedIn(view('leisure'))) { renderLeisure(); $$('.view[data-view="leisure"] .reveal').forEach(e => e.classList.add('in')); } }, 20000);
+  setInterval(() => { applyMode(); const c = $('#clock'); if (c) c.innerHTML = flap('clock', hhmm(Date.now())); applyWeather(); if (current === 'leisure' && !focusedIn(view('leisure'))) { renderLeisure(); $$('.view[data-view="leisure"] .reveal').forEach(e => e.classList.add('in')); } }, 20000);
   if (DEMO && !pref.get('mhc-demo-hint')) { pref.set('mhc-demo-hint', '1'); setTimeout(() => toast('Демо-версия: данные хранятся только в этом браузере'), 1200); }
 }
 boot();
