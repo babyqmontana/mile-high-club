@@ -20,7 +20,8 @@ const can = r => r === 'mod' || isAdmin();
 export async function mountAdmin(v, c) {
   ctx = c; root = v;
   const allowed = SECTIONS.flatMap(([, it]) => it).filter(([, , r]) => can(r)).map(x => x[0]);
-  const h = sessionStorage.getItem('mhc-sec'); if (h && allowed.includes(h)) sec = h;
+  let h = null; try { h = sessionStorage.getItem('mhc-sec'); } catch { } // хранилище может быть заблокировано браузером
+  if (h && allowed.includes(h)) sec = h;
   root.innerHTML = `<div class="admin"><aside class="aside" id="aside"></aside><div class="amain" id="amain"><div class="empty">Загружаем панель…</div></div></div>`;
   await load(); paintAside(); paint();
 }
@@ -39,7 +40,7 @@ function paintAside() {
   $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div>` +
     SECTIONS.map(([g, items]) => { const vis = items.filter(([, , r]) => can(r)); return vis.length ? (g ? `<span class="grp">${g}</span>` : '') + vis.map(([k, n]) => `<button data-s="${k}" aria-pressed="${k === sec}" data-sfx="soft"><span>${n}</span>${b[k] ? `<span class="badge">${b[k]}</span>` : ''}</button>`).join('') : ''; }).join('');
   if (innerWidth <= 900) { const on = $('#aside [aria-pressed="true"]'), as = $('#aside'); if (on && as) as.scrollTo({ left: on.offsetLeft - as.clientWidth / 2 + on.offsetWidth / 2, behavior: 'smooth' }); }
-  $$('#aside [data-s]').forEach(x => x.onclick = () => { sec = x.dataset.s; sessionStorage.setItem('mhc-sec', sec); paintAside(); paint(); scrollTo({ top: 0 }); });
+  $$('#aside [data-s]').forEach(x => x.onclick = () => { sec = x.dataset.s; try { sessionStorage.setItem('mhc-sec', sec); } catch { } paintAside(); paint(); scrollTo({ top: 0 }); });
   $('#aOut').onclick = () => ctx.logout();
 }
 function head(title, actions = '', sub = '') { return `<div class="atop"><div class="stack" style="gap:.3rem"><h2>${title}</h2>${sub ? `<p class="note">${sub}</p>` : ''}</div><div class="row">${actions}</div></div>`; }

@@ -724,7 +724,7 @@ function openMemberNow(t) {
 function loadStaff3d() {
   if (mods.staff || loadStaff3d.busy) return; loadStaff3d.busy = true;
   if (!hasWebGL()) { $('#stLoad').textContent = '3D-манекен недоступен в этом браузере. Форму отдела можно посмотреть во вкладке «Униформа 360°».'; return; }
-  import('./staff3d.js').then(m => { mods.staff = m.mountStaff($('#stage'), () => $('#stLoad')?.remove()); mods.staff.active(current === 'staff' && staffMode === 'model'); paintStaff(); }).catch(e => { console.error(e); $('#stLoad').textContent = '3D-просмотр не загрузился.'; });
+  import('./staff3d.js').then(m => { mods.staff = m.mountStaff($('#stage'), () => $('#stLoad')?.remove(), () => { const l = $('#stLoad'); if (l) l.textContent = '3D-манекен не загрузился. Форму отдела можно посмотреть во вкладке «Униформа 360°».'; }); mods.staff.active(current === 'staff' && staffMode === 'model'); paintStaff(); }).catch(e => { console.error(e); $('#stLoad').textContent = '3D-просмотр не загрузился.'; });
 }
 function paintStaff() {
   const T = { team: ['Команда отеля', 'Люди, которые держат Mile High Club на высоте. Нажмите на карточку, чтобы узнать о сотруднике.'], outfit: ['Униформа по отделам', 'Каждая вещь формы крутится на 360°. Пока это заглушки в цветах отдела, фото подставим, когда будут готовы.'], model: ['Форма на манекене', 'Покрутите манекен мышью или пальцем. Цвета берутся из формы отдела.'] }[staffMode];
