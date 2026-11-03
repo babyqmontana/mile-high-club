@@ -45,16 +45,48 @@ export function toast(text, kind = '') {
 }
 export const fail = e => toast(e?.message || 'Что-то пошло не так', 'err');
 
+// Слои поверх страницы: модалка, шторка, мобильное меню. Пока слой открыт, всё вокруг него inert
+// (не ловит фокус и скрыто от скринридера), Tab ходит по кругу внутри слоя, Esc закрывает верхний слой,
+// после закрытия фокус возвращается на элемент, с которого слой открыли.
+const layers = [], inerted = new Set();
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+function applyInert() {
+  inerted.forEach(el => { el.inert = false; }); inerted.clear();
+  const top = layers.at(-1)?.el; if (!top) return;
+  for (let n = top; n && n !== document.body; n = n.parentElement)
+    for (const sib of n.parentElement?.children || []) if (sib !== n && !sib.inert && sib.id !== 'toasts' && !sib.classList.contains('loader') && sib.tagName !== 'SCRIPT') { sib.inert = true; inerted.add(sib); }
+}
+export function pushLayer(el, onEsc) {
+  if (layers.some(l => l.el === el)) return;
+  layers.push({ el, onEsc, prev: document.activeElement }); applyInert();
+}
+export function popLayer(el) {
+  const i = layers.findIndex(l => l.el === el); if (i < 0) return;
+  const [l] = layers.splice(i, 1); applyInert();
+  if (i === layers.length && l.prev?.isConnected) l.prev.focus({ preventScroll: true });
+}
+addEventListener('keydown', e => {
+  const top = layers.at(-1); if (!top) return;
+  if (e.key === 'Escape') { e.preventDefault(); top.onEsc?.(); return; }
+  if (e.key !== 'Tab') return;
+  const f = [...top.el.querySelectorAll(FOCUSABLE)].filter(x => x.getClientRects().length && !x.closest('[inert]'));
+  if (!f.length) { e.preventDefault(); return; }
+  const a = document.activeElement, first = f[0], last = f.at(-1);
+  if (!top.el.contains(a)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+  else if (e.shiftKey && a === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
+});
+
 // модальное окно; resolve(значение) при закрытии
 export function modal(html, { wide = false, onMount } = {}) {
   return new Promise(resolve => {
     const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="box ${wide ? 'wide' : ''}" role="dialog" aria-modal="true">${html}</div>`;
-    const prev = document.activeElement;
-    const close = v => { m.remove(); document.removeEventListener('keydown', key); prev?.focus?.(); resolve(v); };
-    const key = e => { if (e.key === 'Escape') close(null); };
+    const close = v => { if (!m.isConnected) return; m.remove(); popLayer(m); resolve(v); };
     m.addEventListener('click', e => { if (e.target === m) close(null); const b = e.target.closest('[data-close]'); if (b) close(b.dataset.close === '' ? null : b.dataset.close); });
-    document.addEventListener('keydown', key); document.body.append(m);
-    onMount?.(m.firstElementChild, close);
+    document.body.append(m); pushLayer(m, () => close(null));
+    const box = m.firstElementChild, h = box.querySelector('h2,h3');
+    if (h) { h.id ||= 'dlg' + Math.random().toString(36).slice(2, 8); box.setAttribute('aria-labelledby', h.id); }
+    onMount?.(box, close);
     (m.querySelector('[autofocus]') || m.querySelector('input,button'))?.focus();
   });
 }
@@ -69,9 +101,8 @@ export function sheet(id) {
   if (!el) { el = document.createElement('div'); el.id = id; el.className = 'sheet'; el.innerHTML = '<div class="scrim"></div><div class="panel" role="dialog" aria-modal="true"></div>'; document.body.append(el); el.querySelector('.scrim').onclick = () => closeSheet(id); }
   return el.querySelector('.panel');
 }
-export function openSheet(id) { const el = document.getElementById(id); el.classList.add('on'); play('open'); setTimeout(() => el.querySelector('input,select,button:not(.x)')?.focus(), 350); }
-export function closeSheet(id) { const el = document.getElementById(id); if (el?.classList.contains('on')) { el.classList.remove('on'); play('close'); } }
-addEventListener('keydown', e => { if (e.key === 'Escape') $$('.sheet.on').forEach(s => closeSheet(s.id)); });
+export function openSheet(id) { const el = document.getElementById(id); el.classList.add('on'); pushLayer(el, () => closeSheet(id)); play('open'); setTimeout(() => { if (el.classList.contains('on')) el.querySelector('input,select,button:not(.x)')?.focus(); }, 350); }
+export function closeSheet(id) { const el = document.getElementById(id); if (el?.classList.contains('on')) { el.classList.remove('on'); popLayer(el); play('close'); } }
 
 // плавное появление блоков при прокрутке
 const io = 'IntersectionObserver' in window ? new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px' }) : null;

@@ -62,6 +62,8 @@ try {
     await page.goto(BASE + '/#home'); await ready(page);
     for (const r of ROUTES) {
       await page.evaluate(h => { location.hash = '#' + h; }, r);
+      // переход-лифт и программный WebGL в контейнере могут задержать смену раздела — ждём сам раздел, а не фиксированное время
+      await page.waitForFunction(v => document.querySelector('.view.on')?.dataset.view === v, VIEWS[r] || r, { timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(r === 'home' || r === 'stay' || r === 'cigars' ? 2200 : 900);
       const st = await page.evaluate(() => ({ view: document.querySelector('.view.on')?.dataset.view, html: (document.querySelector('.view.on')?.innerHTML || '').length, over: document.documentElement.scrollWidth - innerWidth }));
       check(`${vp.name} #${r}: раздел открыт и не пуст`, st.view === (VIEWS[r] || r) && st.html > 200, `view=${st.view}, ${st.html} символов`);
@@ -113,6 +115,49 @@ try {
     const sent = await page.waitForFunction(() => document.querySelector('#msgs')?.textContent.includes('Второе сообщение'), null, { timeout: 8000 }).then(() => true).catch(() => false);
     check('заявка: сообщение в чате доставлено', sent);
   }
+
+  // доступность слоёв: модалка анкеты держит фокус, Esc закрывает и возвращает фокус на карточку
+  await page.evaluate(() => { location.hash = '#staff'; }); await page.waitForTimeout(1200);
+  await page.focus('.tcard'); await page.keyboard.press('Enter'); await page.waitForSelector('.modal');
+  let inside = 0; for (let i = 0; i < 15; i++) { await page.keyboard.press('Tab'); inside += await page.evaluate(() => !!document.activeElement?.closest('.modal')); }
+  check('модалка: Tab не выходит за окно', inside === 15, `${inside}/15`);
+  check('модалка: фон недоступен (inert)', await page.evaluate(() => document.querySelector('#app').inert === true));
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  const back = await page.evaluate(() => ({ open: !!document.querySelector('.modal'), focus: document.activeElement?.classList.contains('tcard'), inert: document.querySelector('#app').inert }));
+  check('модалка: Esc закрывает, фокус вернулся на карточку, фон снова доступен', !back.open && back.focus && !back.inert, JSON.stringify(back));
+
+  // шторка брони держит фокус и закрывается по Esc
+  await page.evaluate(() => { location.hash = '#stay'; }); await page.waitForTimeout(1200);
+  await page.click('#types [data-t]'); await page.waitForSelector('#bookSheet.on #bForm'); await page.waitForTimeout(400);
+  inside = 0; for (let i = 0; i < 20; i++) { await page.keyboard.press('Tab'); inside += await page.evaluate(() => !!document.activeElement?.closest('#bookSheet')); }
+  check('шторка: Tab не выходит за шторку', inside === 20, `${inside}/20`);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  check('шторка: Esc закрывает', await page.evaluate(() => !document.querySelector('#bookSheet.on') && !document.querySelector('#app').inert));
+
+  // быстрые переходы подряд, пока идёт анимация лифта, — в итоге открыт последний раздел
+  for (const h of ['dining', 'cigars', 'journal', 'leisure']) { await page.evaluate(h => { location.hash = '#' + h; }, h); await page.waitForTimeout(120); }
+  await page.waitForTimeout(1500);
+  const fin = await page.evaluate(() => ({ view: document.querySelector('.view.on')?.dataset.view, on: document.querySelectorAll('.view.on').length }));
+  check('переходы: серия быстрых переходов заканчивается на последнем разделе', fin.view === 'leisure' && fin.on === 1, JSON.stringify(fin));
+
+  // повторный визит в той же вкладке — без заставки
+  const t0 = Date.now(); await page.reload(); await ready(page);
+  const loaderShown = await page.evaluate(() => getComputedStyle(document.querySelector('#loader')).display !== 'none' && !document.querySelector('#loader').classList.contains('gone'));
+  check('загрузка: при повторном визите заставки нет', !loaderShown, `${Date.now() - t0} мс до готовности`);
+
+  // мобильное меню: Esc закрывает, фокус возвращается на кнопку меню
+  const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); const mp = await mctx.newPage(); const merrs = watch(mp);
+  await mp.goto(BASE + '/#home'); await ready(mp);
+  await mp.click('#burger'); await mp.waitForTimeout(350);
+  const opened = await mp.evaluate(() => ({ on: document.querySelector('#drawer').classList.contains('on'), exp: document.querySelector('#burger').getAttribute('aria-expanded'), mainInert: document.querySelector('main').inert }));
+  check('меню: открыто, aria-expanded=true, контент inert', opened.on && opened.exp === 'true' && opened.mainInert, JSON.stringify(opened));
+  await mp.keyboard.press('Escape'); await mp.waitForTimeout(350);
+  const closed = await mp.evaluate(() => ({ on: document.querySelector('#drawer').classList.contains('on'), focus: document.activeElement?.id, mainInert: document.querySelector('main').inert }));
+  check('меню: Esc закрывает, фокус на кнопке меню', !closed.on && closed.focus === 'burger' && !closed.mainInert, JSON.stringify(closed));
+  await mp.click('#burger'); await mp.waitForTimeout(350); await mp.click('#drawer a[href="#dining"]'); await mp.waitForTimeout(1300);
+  check('меню: пункт меню открывает раздел и закрывает меню', await mp.evaluate(() => document.querySelector('.view.on')?.dataset.view === 'dining' && !document.querySelector('#drawer.on') && !document.querySelector('main').inert));
+  check('мобильные сценарии: нет ошибок в консоли и сети', merrs.length === 0, merrs.slice(0, 5).join(' | '));
+  await mctx.close();
 
   // персонал: демо-вход администратора, подтверждение брони, номер на башне меняет статус
   await page.goto(BASE + '/auth/demo?role=admin'); await ready(page);
