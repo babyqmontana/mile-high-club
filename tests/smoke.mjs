@@ -1,0 +1,138 @@
+// Smoke-тест сайта: поднимает сервер в демо-режиме на временной базе, проходит все разделы
+// на трёх размерах экрана и основные сценарии гостя и персонала.
+// Запуск: npm run smoke            (нужен установленный Playwright с Chromium)
+//         npm run smoke -- --shots out/   — дополнительно сохранить скриншоты разделов
+// Выход с кодом 1, если хоть одна проверка не прошла.
+import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import net from 'node:net';
+import { fileURLToPath } from 'node:url';
+
+const require = createRequire(import.meta.url);
+let chromium;
+try { ({ chromium } = require('playwright')); } catch { console.error('Playwright не найден: установите его (npm i -g playwright) или запустите там, где он есть.'); process.exit(2); }
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const shotsArg = process.argv.indexOf('--shots');
+const SHOTS = shotsArg > 0 ? path.resolve(process.argv[shotsArg + 1]) : null;
+if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
+
+const ROUTES = ['home', 'stay', 'leisure', 'dining', 'cigars', 'journal', 'issue-i1', 'staff', 'contact', 'me', 'admin', 'no-such-room'];
+const VIEWS = { 'issue-i1': 'issue', 'no-such-room': 'lost' };
+const VIEWPORTS = [
+  { name: 'desktop', viewport: { width: 1440, height: 900 } },
+  { name: 'tablet', viewport: { width: 768, height: 1024 }, hasTouch: true },
+  { name: 'mobile', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }
+];
+// шум окружения, а не ошибки сайта (шрифты Google без сети, программный WebGL в контейнере)
+const IGNORE = [/fonts\.(googleapis|gstatic)\.com/, /GPU stall due to ReadPixels/, /WebGL.*(software|swiftshader)/i, /Automatic fallback to software WebGL/];
+
+const results = []; let failed = 0;
+const check = (name, ok, info = '') => { results.push({ name, ok, info }); if (!ok) failed++; console.log(`${ok ? '  ok ' : 'FAIL '} ${name}${info ? ' — ' + info : ''}`); };
+
+const freePort = () => new Promise(r => { const s = net.createServer(); s.listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
+const port = await freePort();
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mhc-smoke-'));
+const BASE = `http://localhost:${port}`;
+const server = spawn(process.execPath, ['server/index.js'], { cwd: ROOT, env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, DEMO_LOGIN: 'true', DISCORD_BOT_TOKEN: '', DISCORD_CLIENT_ID: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
+let serverLog = ''; server.stdout.on('data', d => serverLog += d); server.stderr.on('data', d => serverLog += d);
+const stop = () => { server.kill(); fs.rmSync(dataDir, { recursive: true, force: true }); };
+for (let i = 0; i < 60 && !/localhost:/.test(serverLog); i++) await new Promise(r => setTimeout(r, 250));
+if (!/localhost:/.test(serverLog)) { console.error('Сервер не запустился:\n' + serverLog); stop(); process.exit(1); }
+
+const browser = await chromium.launch();
+const ready = p => p.waitForSelector('#loader.gone', { state: 'attached', timeout: 30000 });
+function watch(page) {
+  const errs = [];
+  page.on('console', m => { if (m.type() === 'error' && !IGNORE.some(r => r.test(m.text()))) errs.push(m.text().slice(0, 200)); });
+  page.on('pageerror', e => errs.push('pageerror: ' + e.message.slice(0, 200)));
+  page.on('requestfailed', r => { const u = r.url(); if (u.startsWith(BASE) && !/\/api\/stream/.test(u)) errs.push('requestfailed: ' + u.replace(BASE, '')); });
+  page.on('response', r => { if (r.url().startsWith(BASE) && r.status() >= 400 && !/\/api\/stream/.test(r.url())) errs.push(`HTTP ${r.status()} ${r.url().replace(BASE, '')}`); });
+  return errs;
+}
+
+try {
+  /* ---------- все разделы на трёх экранах ---------- */
+  for (const vp of VIEWPORTS) {
+    console.log(`\n[${vp.name}]`);
+    const ctx = await browser.newContext({ ...vp, deviceScaleFactor: 1 }); const page = await ctx.newPage(); const errs = watch(page);
+    await page.goto(BASE + '/#home'); await ready(page);
+    for (const r of ROUTES) {
+      await page.evaluate(h => { location.hash = '#' + h; }, r);
+      await page.waitForTimeout(r === 'home' || r === 'stay' || r === 'cigars' ? 2200 : 900);
+      const st = await page.evaluate(() => ({ view: document.querySelector('.view.on')?.dataset.view, html: (document.querySelector('.view.on')?.innerHTML || '').length, over: document.documentElement.scrollWidth - innerWidth }));
+      check(`${vp.name} #${r}: раздел открыт и не пуст`, st.view === (VIEWS[r] || r) && st.html > 200, `view=${st.view}, ${st.html} символов`);
+      check(`${vp.name} #${r}: нет горизонтальной прокрутки`, st.over <= 1, `лишние ${st.over}px`);
+      if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `${vp.name}-${r}.png`), fullPage: !['home', 'stay'].includes(r) });
+    }
+    check(`${vp.name}: нет ошибок в консоли и сети`, errs.length === 0, errs.slice(0, 5).join(' | '));
+    await ctx.close();
+  }
+
+  /* ---------- сценарии ---------- */
+  console.log('\n[сценарии]');
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } }); const page = await ctx.newPage(); const errs = watch(page);
+  await page.goto(BASE + '/#stay'); await ready(page); await page.waitForTimeout(800);
+
+  // бронь
+  await page.click('#types [data-t]');
+  await page.waitForSelector('#bookSheet.on #bForm');
+  await page.fill('#bName', 'Смоук Тест'); await page.fill('#bDiscord', 'smoke_test');
+  await page.click('#bForm button[type=submit]');
+  const code = await page.waitForSelector('#bookSheet .success .code', { timeout: 8000 }).then(e => e.textContent()).catch(() => null);
+  check('бронь: получен код брони', /^MHC-[A-Z0-9]{4}$/.test(code || ''), code || 'нет кода');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { location.hash = '#me'; }); await page.waitForTimeout(900);
+  check('бронь: видна в «Мои брони»', !!code && (await page.textContent('.view[data-view="me"]')).includes(code));
+
+  // заказ в номер
+  await page.evaluate(() => { location.hash = '#dining'; }); await page.waitForTimeout(900);
+  await page.click('#dishes [data-p]');
+  await page.waitForFunction(() => document.querySelector('#fab')?.classList.contains('on'));
+  check('заказ: блюдо в корзине, FAB показывает 1', (await page.textContent('#fabN')) === '1');
+  await page.click('#fab'); await page.waitForSelector('#cartSheet.on #oForm');
+  await page.selectOption('#oRoom', { index: 1 }); await page.fill('#oName', 'Смоук'); await page.fill('#oDiscord', 'smoke_test');
+  await page.click('#oForm button');
+  const orderOk = await page.waitForSelector('#cartSheet .success', { timeout: 8000 }).then(() => true).catch(() => false);
+  check('заказ: принят', orderOk);
+  await page.keyboard.press('Escape');
+
+  // заявка → чат на сайте
+  await page.evaluate(() => { location.hash = '#contact'; }); await page.waitForTimeout(900);
+  await page.fill('#tDiscord', 'smoke_test'); await page.fill('#tText', 'Проверка заявки smoke-тестом');
+  await page.click('#tForm button');
+  await page.waitForSelector('#tSite', { timeout: 8000 });
+  await page.click('#tSite');
+  const chat = await page.waitForSelector('#chatF', { timeout: 8000 }).then(() => true).catch(() => false);
+  check('заявка: открыт чат на сайте', chat);
+  if (chat) {
+    await page.fill('#chatIn', 'Второе сообщение'); await page.press('#chatIn', 'Enter');
+    const sent = await page.waitForFunction(() => document.querySelector('#msgs')?.textContent.includes('Второе сообщение'), null, { timeout: 8000 }).then(() => true).catch(() => false);
+    check('заявка: сообщение в чате доставлено', sent);
+  }
+
+  // персонал: демо-вход администратора, подтверждение брони, номер на башне меняет статус
+  await page.goto(BASE + '/auth/demo?role=admin'); await ready(page);
+  const adminOk = await page.waitForSelector('#aside', { timeout: 10000 }).then(() => true).catch(() => false);
+  check('панель: демо-администратор вошёл', adminOk);
+  const conf = await page.evaluate(async () => {
+    const j = (m, u, b) => fetch('/api' + u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then(r => r.json());
+    const all = await j('GET', '/admin/all'); const b = all.bookings.find(x => x.status === 'new'); if (!b) return { err: 'нет новой брони' };
+    const room = all.rooms.find(r => r.type === b.type && r.status === 'free'); if (!room) return { err: 'нет свободного номера' };
+    const res = await j('POST', `/admin/bookings/${b.id}/action`, { act: 'confirm', room: room.id });
+    const pub = await j('GET', '/public');
+    return { status: res.booking?.status, room: room.id, roomStatus: pub.rooms.find(r => r.id === room.id)?.status };
+  });
+  check('панель: бронь подтверждена, номер стал «Забронирован»', conf.status === 'confirmed' && conf.roomStatus === 'booked', JSON.stringify(conf));
+  check('сценарии: нет ошибок в консоли и сети', errs.length === 0, errs.slice(0, 5).join(' | '));
+  await ctx.close();
+} catch (e) {
+  check('smoke-тест завершился без исключений', false, e.message.split('\n')[0]);
+} finally {
+  await browser.close(); stop();
+}
+console.log(`\n${results.length - failed}/${results.length} проверок прошли`);
+process.exit(failed ? 1 : 0);

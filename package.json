@@ -5,7 +5,8 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "DEMO_LOGIN=true node server/index.js"
+    "dev": "DEMO_LOGIN=true node server/index.js",
+    "smoke": "node tests/smoke.mjs"
   },
   "license": "ISC",
   "dependencies": {
