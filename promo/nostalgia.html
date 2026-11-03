@@ -283,9 +283,9 @@ SHOTS.forEach(([k, d, t], i) => { if (i) CUES.push({ t: +t.toFixed(3), type: k =
 CUES.push({ t: +(LOGO_T + 1.0 * P).toFixed(3), type: 'type' }, { t: +(LOGO_T + 1.6 * P).toFixed(3), type: 'type2' }, { t: +(LOGO_T + 2.6 * P).toFixed(3), type: 'cta' });
 
 let O = null;
-function caption(text, t, color, y = 690, size = 38) {
+function caption(text, t, color, y = 690, size = 38, rev = .28) {
   // «набор» символов со случайными знаками — ностальгический дисплей
-  const n = text.length, shown = Math.floor(clamp(t / .28) * n), pool = '█▓▒░#%&@01';
+  const n = text.length, shown = Math.floor(clamp(t / rev) * n), pool = '█▓▒░#%&@01';
   let s = ''; for (let i = 0; i < n; i++) s += i < shown ? text[i] : (i < shown + 3 && text[i] !== ' ' ? pool[(i * 7 + Math.floor(t * 30)) % pool.length] : ' ');
   cx.font = `800 ${size}px Unbounded`; cx.textAlign = 'center'; cx.textBaseline = 'middle';
   cx.shadowColor = color; cx.shadowBlur = 18; cx.fillStyle = color; cx.fillText(s.toUpperCase(), 270, y);
@@ -316,7 +316,7 @@ function render(frame) {
   // подписи
   cx.clearRect(0, 0, 540, 960);
   const css = '#' + tint.getHexString();
-  if (!isLogo && lt > 2 / FPS) caption(o.cap, lt - 2 / FPS, css, 700, fitFont(o.cap, 36, 470));
+  if (!isLogo && lt > 2 / FPS) caption(o.cap, lt - 2 / FPS, css, 700, fitFont(o.cap, 36, 470), Math.min(.28, dur * .3));
   if (isLogo) {
     const a = LOGO_T + 1.0 * P;
     if (t > a) caption('MILE HIGH CLUB', t - a, '#F7B50A', 610, 44);
