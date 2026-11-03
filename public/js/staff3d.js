@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Манекены (мужской и женский) в цветах отдела. Если у отдела загружена своя модель формы (.glb) — показываем её.
 const BUILTIN = window.MHC_DEMO ? { male: 'models/male.json', female: 'models/female.json' } : { male: 'models/male.glb', female: 'models/female.glb' };
 
-export function mountStaff(host, onReady) {
+export function mountStaff(host, onReady, onFail) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75)); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -37,7 +37,8 @@ export function mountStaff(host, onReady) {
   }
   async function show(dept, gender) {
     const url = dept.model || BUILTIN[gender] || BUILTIN.male; want = url;
-    let m; try { m = await load(url); } catch (e) { console.error(e); if (url !== BUILTIN[gender]) m = await load(BUILTIN[gender] || BUILTIN.male); else return; }
+    // своя модель не загрузилась — показываем встроенный манекен; не загрузился и он — сообщаем, а не висим на «Загружаем…»
+    let m; try { m = await load(url); } catch (e) { console.error(e); try { if (url === BUILTIN[gender]) throw e; m = await load(BUILTIN[gender] || BUILTIN.male); } catch { onFail?.(); return; } }
     if (want !== url && !(dept.model && want === dept.model)) return;
     if (cur !== m) { if (cur) scene.remove(cur.root); scene.add(m.root); cur = m; mixer = m.mix; m.root.userData.t = 0; }
     if (!m.custom) {
