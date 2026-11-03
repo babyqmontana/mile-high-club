@@ -111,7 +111,7 @@ function renderHome() {
   <section class="dive" id="dive"><div class="stick">
     <div class="bg" style="background-image:url('${esc(m === 'day' ? s.heroDay : s.heroNight)}')"></div><canvas id="heroGl" aria-hidden="true"></canvas><canvas class="wxc" id="heroWx" aria-hidden="true"></canvas>
     <div class="wrap dv dv1" id="dv1"><img class="logo" id="heroLogo" src="img/logo.webp" alt="${esc(s.hotelName)}" width="300" height="300">
-      <h1>${esc(s.tagline || 'Отель над Лос-Сантосом')}. <span class="serif">${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</span></h1>
+      <h1>${nowrapHyphens(esc(s.tagline || 'Отель над Лос-Сантосом'))}. <span class="serif">${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</span></h1>
       <div class="row"><a class="btn" href="#stay">Забронировать номер</a><a class="btn ghost" href="#leisure">Что сейчас открыто</a></div></div>
     <div class="wrap dv dv2" id="dv2"><span class="eyebrow">Вы в атриуме</span><h2>Сорок этажей стекла, латуни и неона</h2><p>Лифт поднимет в номера с 20 этажа, бассейны ждут на 38 и 40, Le Ciel на 30.</p><div class="row"><a class="btn" href="#stay">Выбрать номер</a><a class="btn ghost" href="#cigars">Сигарный клуб</a></div></div>
     <span class="hint" id="dvHint">Листайте, чтобы войти</span>
@@ -163,6 +163,8 @@ function renderHome() {
 }
 // предзагрузка слоёв главной картинки (те же правила, что в hero3d.layersFor)
 function heroLayers(url) { const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); return m ? Promise.all(['-far.webp', '-mask.png'].map(x => preload('img/layers/' + m[1] + x))) : null; }
+// слова через дефис («Лос-Сантос») не разрываются переносом; на вход — уже экранированный текст
+const nowrapHyphens = html => html.replace(/[^\s<>]+-[^\s<>]+/g, w => `<span class="nw">${w}</span>`);
 function evCard(e) {
   const d = new Date(e.start), live = e.start <= Date.now() && (e.end || e.start + 3 * 3600e3) > Date.now(), v = S.pub.venues.find(x => x.id === e.venueId);
   return `<${e.url ? `a href="${esc(e.url)}" target="_blank" rel="noopener"` : 'div'} class="ev"><div ${bg(e.image, v?.name || 'Событие', v?.accent || '#F0177A', '#F7B50A', 'img')}><span class="when"><b>${d.getDate()}</b>${d.toLocaleDateString('ru-RU', { month: 'short' })}</span></div>
