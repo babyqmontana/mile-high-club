@@ -172,6 +172,16 @@ try {
     return { status: res.booking?.status, room: room.id, roomStatus: pub.rooms.find(r => r.id === room.id)?.status };
   });
   check('панель: бронь подтверждена, номер стал «Забронирован»', conf.status === 'confirmed' && conf.roomStatus === 'booked', JSON.stringify(conf));
+
+  // «Отдых» обновляется точечно: правка одной площадки перерисовывает только её карточку
+  const guest = await ctx.newPage(); const gerrs = watch(guest);
+  await guest.goto(BASE + '/#leisure'); await ready(guest); await guest.waitForSelector('#venuesList .venue');
+  await guest.evaluate(() => [...document.querySelectorAll('#venuesList .venue')].forEach((el, i) => { el.dataset.mark = i; }));
+  await page.evaluate(() => fetch('/api/admin/venues/sky', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ desc: 'Обновлено smoke-тестом' }) }));
+  const upd = await guest.waitForFunction(() => document.querySelector('#venuesList').textContent.includes('Обновлено smoke-тестом'), null, { timeout: 8000 }).then(() => guest.evaluate(() => [...document.querySelectorAll('#venuesList .venue')].map(el => el.dataset.mark ?? 'new'))).catch(() => null);
+  check('отдых: по SSE заменена только изменённая карточка', !!upd && upd[0] === 'new' && upd.slice(1).every((m, i) => m === String(i + 1)), JSON.stringify(upd));
+  check('отдых: нет ошибок в консоли и сети', gerrs.length === 0, gerrs.slice(0, 5).join(' | '));
+  await guest.close();
   check('сценарии: нет ошибок в консоли и сети', errs.length === 0, errs.slice(0, 5).join(' | '));
   await ctx.close();
 } catch (e) {
