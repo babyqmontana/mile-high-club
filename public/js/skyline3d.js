@@ -30,7 +30,7 @@ function slabGeo(pts, h) { const sh = new THREE.Shape(pts.map(([x, z]) => new TH
 
 // --- окна этажа: для этажей отеля — по номерам, для остальных — офисные ---
 let seedN = 1; const rnd = () => (seedN = seedN * 16807 % 2147483647) / 2147483647;
-function floorCanvas(rooms, mode, hi = null, hov = null) {
+function floorCanvas(rooms, mode, hi = null, hov = null, dim = null) { // dim — номера, не прошедшие фильтр: окна гаснут
   const c = document.createElement('canvas'); c.width = 2048; c.height = 64; const g = c.getContext('2d');
   g.fillStyle = '#110a0b'; g.fillRect(0, 0, 2048, 64);
   const cw = 2048 / COLS;
@@ -39,6 +39,7 @@ function floorCanvas(rooms, mode, hi = null, hov = null) {
     if (rooms) {
       const n = Math.max(1, rooms.length), ri = Math.floor(i / COLS * n), room = rooms[ri];
       col = STATUS[room?.status] || '#24161a';
+      if (dim && room && dim.has(room.id) && room.id !== hi) a = .14;
       if (room && (room.id === hi || room.id === hov)) { g.fillStyle = room.id === hi ? '#f9edc7' : 'rgba(249,237,199,.55)'; g.fillRect(i * cw, 0, cw, 7); g.fillRect(i * cw, 57, cw, 7); if (room.id === hi) col = '#fff4d8'; }
       const edge = Math.floor((ri + 1) * COLS / n) - 1 === i; // простенок между номерами
       if (edge && n > 1) { g.fillStyle = '#2a2516'; g.fillRect(i * cw + cw - 5, 6, 5, 52); }
@@ -211,6 +212,7 @@ export function mountTower(host, { onPick, onSpin, onHoverFloor }) {
   }
 
   // ---------- отель ----------
+  let dim = null; // Set id номеров, которые фильтр гасит на фасаде
   let snowCaps = null, garland = null, garlandBase = null, floors = [], hotel = [], sel = null, curRooms = [], built = '', topY = 0, camTargetY = 0, beacon = null, hl = null;
   const setbackAt = t => t > 0.9 ? 0.66 : t > 0.76 ? 0.82 : 1;
   function build(rooms) {
@@ -221,7 +223,7 @@ export function mountTower(host, { onPick, onSpin, onHoverFloor }) {
     const podH = 4; // подиум 4 этажа
     for (let i = 0; i < n; i++) {
       const f = base + i, t = i / n, s = setbackAt(t), y = i * FH, isHotel = hF.includes(f);
-      const mat = isHotel ? emis(floorCanvas(rooms.filter(r => r.floor === f), 0), 1) : emis(office[i % 3], 0.5);
+      const mat = isHotel ? emis(floorCanvas(rooms.filter(r => r.floor === f), 0, null, null, dim), 1) : emis(office[i % 3], 0.5);
       const m = new THREE.Mesh(ringGeo(outline(s), FH * .84), mat); m.position.y = y; m.userData = { floor: f, hotel: isHotel, s };
       root.add(m); floors.push(m); if (isHotel) hotel.push(m);
       const sl = new THREE.Mesh(slabGeo(outline(s * 1.012), FH * .16), isHotel ? brass : slabM); sl.position.y = y + FH * .84; root.add(sl); m.userData.slab = sl;
@@ -282,7 +284,7 @@ export function mountTower(host, { onPick, onSpin, onHoverFloor }) {
     built = JSON.stringify(rooms.map(r => [r.id, r.floor]));
   }
   let hiRoom = null, hovRoom = null, rotTarget = null;
-  function retexture(rooms, only) { hotel.forEach(m => { if (only != null && m.userData.floor !== only) return; const t = floorCanvas(rooms.filter(r => r.floor === m.userData.floor), 0, hiRoom, hovRoom); m.material.map.dispose(); m.material.map = t; m.material.emissiveMap = t; m.material.needsUpdate = true; }); }
+  function retexture(rooms, only) { hotel.forEach(m => { if (only != null && m.userData.floor !== only) return; const t = floorCanvas(rooms.filter(r => r.floor === m.userData.floor), 0, hiRoom, hovRoom, dim); m.material.map.dispose(); m.material.map = t; m.material.emissiveMap = t; m.material.needsUpdate = true; }); }
   // направление «лицом к номеру»: позиция номера по периметру этажа -> угол камеры
   function roomAngle(id) {
     const r = curRooms.find(x => x.id === id); if (!r) return null; const fr = curRooms.filter(x => x.floor === r.floor), i = fr.indexOf(r), n = fr.length;
@@ -366,5 +368,5 @@ export function mountTower(host, { onPick, onSpin, onHoverFloor }) {
     rim.intensity = day ? 6 : 25; kick();
   }
   relight(); size();
-  return { setWeather(w) { if (!w || (w.kind === wx.kind && w.newyear === wx.newyear)) return; wx = { kind: w.kind, newyear: w.newyear }; applyWx(); }, update, focusRoom, hoverRoom, hoverFloor(f) { if (f !== hover) { hover = f; kick(); } }, active(on) { active = on; if (on) { size(); kick(); } }, relight };
+  return { setWeather(w) { if (!w || (w.kind === wx.kind && w.newyear === wx.newyear)) return; wx = { kind: w.kind, newyear: w.newyear }; applyWx(); }, update, focusRoom, hoverRoom, setFilter(ids) { const next = ids ? new Set(curRooms.filter(r => !ids.has(r.id)).map(r => r.id)) : null; if (String([...(next || [])]) === String([...(dim || [])])) return; dim = next; retexture(curRooms); kick(); }, hoverFloor(f) { if (f !== hover) { hover = f; kick(); } }, active(on) { active = on; if (on) { size(); kick(); } }, relight };
 }

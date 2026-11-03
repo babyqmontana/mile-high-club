@@ -135,6 +135,19 @@ try {
   check('сутки отеля: полоса на каждую площадку, ползунок → 23:45, «Сейчас» возвращает', lanes > 0 && at.chips === lanes && at.vt === '23:45 МСК' && nowT.startsWith('сейчас'), JSON.stringify({ lanes, ...at, nowT }));
   await page.evaluate(() => { location.hash = '#stay'; }); await page.waitForTimeout(1200);
 
+  // фильтр номеров: тип «Пентхаус» → лифт едет на его этаж, в плане только подходящие номера; сравнение типов
+  await page.waitForSelector('#rFilt [data-rt]');
+  const ph = await page.evaluate(async () => { const pub = await fetch('/api/public').then(r => r.json()); const t = pub.types.at(-1); return { id: t.id, floors: [...new Set(pub.rooms.filter(r => r.type === t.id).map(r => r.floor))] }; });
+  await page.click(`#rFilt [data-rt="${ph.id}"]`); await page.waitForTimeout(1500);
+  const rf = await page.evaluate(() => ({ lift: +document.querySelector('#lfBtns [aria-pressed="true"]')?.dataset.f, plan: [...document.querySelectorAll('#lfInner .room')].map(b => b.classList.contains('dim')) }));
+  check('номера: фильтр по типу ведёт лифт на подходящий этаж, в плане нет погашенных', ph.floors.includes(rf.lift) && rf.plan.length > 0 && rf.plan.every(d => !d), JSON.stringify({ ...ph, ...rf }));
+  await page.click('#rfReset'); await page.waitForTimeout(300);
+  const cmpIds = await page.$$eval('#types [data-cmp]', bs => bs.slice(0, 2).map(b => b.dataset.cmp));
+  for (const id of cmpIds) await page.click(`#types [data-cmp="${id}"]`);
+  const cols = await page.$$eval('.cmp thead th', ths => ths.length).catch(() => 0);
+  check('номера: сравнение двух типов — таблица с двумя колонками', cols === 3, `столбцов ${cols}`);
+  await page.click('#cmpClear').catch(() => {});
+
   // бронь
   await page.click('#types [data-t]');
   await page.waitForSelector('#bookSheet.on #bForm');

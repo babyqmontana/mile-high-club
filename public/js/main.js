@@ -241,6 +241,7 @@ async function renderStay() {
   if (!v.querySelector('.tower')) {
     v.innerHTML = `<div class="wrap sec">
       <div class="head"><span class="eyebrow">Номера</span><h2>Выберите этаж и номер</h2><p>Вызовите лифт кнопкой или нажмите на этаж башни. Окна горят цветом статуса, выбранный номер подсвечивается прямо на фасаде.</p></div>
+      <div class="rfilt" id="rFilt" role="group" aria-label="Фильтр номеров"></div>
       <div class="stay3">
         <div class="tower" id="tower"><span class="hint">Тяните, чтобы облететь башню</span><span class="tip" id="ttip"></span>
           <div class="hud" aria-hidden="true"><svg viewBox="-6 -10 212 122"><defs><linearGradient id="hbr" x1="0" x2="1"><stop offset="0" stop-color="#8a6228"/><stop offset=".5" stop-color="#f9edc7"/><stop offset="1" stop-color="#8a6228"/></linearGradient></defs>
@@ -253,15 +254,41 @@ async function renderStay() {
           <div class="ldoors open" id="lfDoors"><div class="linner" id="lfInner"></div><i class="door l"></i><i class="door r"></i></div>
           <div id="roomBox"></div></aside>
       </div>
-      <div class="head" style="margin-top:3rem"><span class="eyebrow">Категории</span><h2>Типы номеров</h2></div><div class="types" id="types"></div></div>`;
+      <div class="head" style="margin-top:3rem"><span class="eyebrow">Категории</span><h2>Типы номеров</h2></div><div class="types" id="types"></div><div id="cmpBox" aria-live="polite"></div></div>`;
     const opts = { onPick: f => goFloor(f), onSpin: () => unlock('dizzy'), onHoverFloor: f => $$('#lfBtns button').forEach(b => b.classList.toggle('hv', +b.dataset.f === f)) };
-    const ready = t => { mods.tower = t; t.active(current === 'stay'); t.update(S.pub.rooms, selFloor, S.pub.types); if (selRoom) t.focusRoom(selRoom); if (wxNow) t.setWeather(wxNow); };
+    const ready = t => { mods.tower = t; t.active(current === 'stay'); t.update(S.pub.rooms, selFloor, S.pub.types); t.setFilter?.(roomFilterIds()); if (selRoom) t.focusRoom(selRoom); if (wxNow) t.setWeather(wxNow); };
     // 3D-башня, а если WebGL нет или сцена не создалась — фасад из DOM с тем же интерфейсом
     (hasWebGL() ? import('./skyline3d.js').then(m => ready(m.mountTower($('#tower'), opts))) : Promise.reject(null))
       .catch(e => { if (e) console.error(e); return import('./facade.js').then(f => ready(f.mountFacade($('#tower'), opts))); })
       .catch(e => { console.error(e); $('#tower').innerHTML = '<div class="empty" style="margin:2rem">Вид башни не загрузился. Этаж можно выбрать кнопками лифта.</div>'; });
   }
   paintStay();
+}
+// Фильтр номеров: тип, сколько гостей, только свободные. Неподходящие номера гаснут на башне и в плане этажа,
+// этажи лифта без совпадений приглушаются, лифт сам едет на ближайший подходящий этаж. Данные — реальные rooms/types.
+const RF = { type: '', guests: 0, free: false };
+const rfOn = () => !!(RF.type || RF.guests || RF.free);
+function matchRoom(r) { const t = S.pub.types.find(x => x.id === r.type); return (!RF.type || r.type === RF.type) && (!RF.guests || (t?.capacity || 0) >= RF.guests) && (!RF.free || r.status === 'free'); }
+const roomFilterIds = () => rfOn() ? new Set(S.pub.rooms.filter(matchRoom).map(r => r.id)) : null;
+function paintRoomFilter() {
+  const p = S.pub, caps = [...new Set(p.types.map(t => t.capacity).filter(Boolean))].sort((a, b) => a - b), hit = p.rooms.filter(matchRoom), floors = new Set(hit.map(r => r.floor)).size;
+  $('#rFilt').innerHTML = `<div class="seg" role="group" aria-label="Тип номера"><button type="button" data-rt="" aria-pressed="${!RF.type}">Все типы</button>${p.types.map(t => `<button type="button" data-rt="${esc(t.id)}" aria-pressed="${RF.type === t.id}">${esc(t.name)}</button>`).join('')}</div>
+    <div class="seg" role="group" aria-label="Гостей"><button type="button" data-rg="0" aria-pressed="${!RF.guests}">Гостей: любое</button>${caps.filter(c => c > 1).map(c => `<button type="button" data-rg="${c}" aria-pressed="${RF.guests === c}">${c}+</button>`).join('')}</div>
+    <button type="button" class="btn sm ${RF.free ? '' : 'ghost'}" id="rfFree" aria-pressed="${RF.free}">Только свободные</button>
+    <span class="note" aria-live="polite">${rfOn() ? (hit.length ? `Подходит ${hit.length} ${plural(hit.length, 'номер', 'номера', 'номеров')} на ${floors} ${plural(floors, 'этаже', 'этажах', 'этажах')}` : 'Ничего не подходит') + ' · <button type="button" class="lnk" id="rfReset">сбросить</button>' : ''}</span>`;
+  $$('#rFilt [data-rt]').forEach(b => b.onclick = () => setRoomFilter({ type: b.dataset.rt }));
+  $$('#rFilt [data-rg]').forEach(b => b.onclick = () => setRoomFilter({ guests: +b.dataset.rg }));
+  $('#rfFree').onclick = () => setRoomFilter({ free: !RF.free });
+  $('#rfReset') && ($('#rfReset').onclick = () => setRoomFilter({ type: '', guests: 0, free: false }));
+}
+function setRoomFilter(patch) {
+  Object.assign(RF, patch);
+  const hit = S.pub.rooms.filter(matchRoom);
+  if (selRoom && !hit.some(r => r.id === selRoom)) { selRoom = null; mods.tower?.focusRoom(null); }
+  mods.tower?.setFilter?.(roomFilterIds());
+  const floorsHit = [...new Set(hit.map(r => r.floor))].sort((a, b) => b - a);
+  if (rfOn() && floorsHit.length && !floorsHit.includes(selFloor)) { paintRoomFilter(); return goFloor(floorsHit.reduce((a, f) => Math.abs(f - selFloor) < Math.abs(a - selFloor) ? f : a, floorsHit[0])); }
+  paintRoomFilter(); paintLift(); paintFloorPlan(); paintRoom();
 }
 let liftTimer = 0;
 function goFloor(f) {
@@ -279,7 +306,7 @@ function goFloor(f) {
 function paintLift() {
   const p = S.pub, fl = [...new Set(p.rooms.map(r => r.floor))].sort((a, b) => b - a);
   $('#lfBtns').innerHTML = fl.map(f => { const fr = p.rooms.filter(r => r.floor === f), free = fr.filter(r => r.status === 'free').length;
-    return `<button data-f="${f}" aria-pressed="${f === selFloor}" class="${free ? 'has' : ''}" data-sfx="wood" aria-label="${f} этаж, свободно ${free} из ${fr.length}"><b class="num">${f}</b><small>${free}/${fr.length}</small></button>`; }).join('');
+    return `<button data-f="${f}" aria-pressed="${f === selFloor}" class="${free ? 'has' : ''}${rfOn() && !fr.some(matchRoom) ? ' nomatch' : ''}" data-sfx="wood" aria-label="${f} этаж, свободно ${free} из ${fr.length}${rfOn() ? `, подходит ${fr.filter(matchRoom).length}` : ''}"><b class="num">${f}</b><small>${free}/${fr.length}</small></button>`; }).join('');
   $$('#lfBtns button').forEach(b => { b.onclick = () => goFloor(+b.dataset.f); b.onmouseenter = () => mods.tower?.hoverFloor(+b.dataset.f); b.onmouseleave = () => mods.tower?.hoverFloor(null); });
   const asc = [...fl].sort((a, b) => a - b), n = asc.length, every = n > 12 ? Math.ceil(n / 10) : 1;
   $('#hTicks').innerHTML = asc.map((f, i) => { const a = (FLOOR_ANG(fl, f) - 90) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
@@ -291,7 +318,7 @@ function paintLift() {
 function paintFloorPlan() {
   const p = S.pub, T = Object.fromEntries(p.types.map(t => [t.id, t])), rooms = p.rooms.filter(r => r.floor === selFloor);
   $('#lfInner').innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="font-size:1.15rem">${selFloor ?? '—'} этаж</h3><span class="note">${rooms.filter(r => r.status === 'free').length} из ${rooms.length} свободно</span></div>
-    <div class="plan">${rooms.map(r => `<button class="room ${r.status}" data-room="${esc(r.id)}" aria-pressed="${r.id === selRoom}" data-sfx="soft" aria-label="Номер ${esc(r.id)}, ${esc(T[r.type]?.name || '')}, ${ROOM_STATUS[r.status]}"><b class="num">${esc(r.id)}</b><small>${esc(T[r.type]?.name || r.type)}<br>${ROOM_STATUS[r.status]}</small></button>`).join('') || '<div class="empty">На этом этаже нет номеров.</div>'}</div>
+    <div class="plan">${rooms.map(r => `<button class="room ${r.status}${rfOn() && !matchRoom(r) ? ' dim' : ''}" data-room="${esc(r.id)}" aria-pressed="${r.id === selRoom}" data-sfx="soft" aria-label="Номер ${esc(r.id)}, ${esc(T[r.type]?.name || '')}, ${ROOM_STATUS[r.status]}"><b class="num">${esc(r.id)}</b><small>${esc(T[r.type]?.name || r.type)}<br>${ROOM_STATUS[r.status]}</small></button>`).join('') || '<div class="empty">На этом этаже нет номеров.</div>'}</div>
     ${selRoom ? '' : '<p class="note">Наведите на номер — он подсветится на фасаде. Нажмите, чтобы увидеть цену.</p>'}`;
   $$('#lfInner [data-room]').forEach(b => {
     b.onclick = () => { selRoom = b.dataset.room; mods.tower?.focusRoom(selRoom); paintFloorPlan(); paintRoom(); };
@@ -308,10 +335,33 @@ function paintStay() {
   const p = S.pub;
   paintLift(); if (!liftTimer || $('#lfDoors').classList.contains('open')) paintFloorPlan(); paintRoom();
   $('#types').innerHTML = p.types.map(t => { const fr = p.rooms.filter(r => r.type === t.id), f = fr.filter(r => r.status === 'free').length;
-    return `<button class="type reveal" data-t="${esc(t.id)}"><div ${bg(t.image, t.name, '#F7B50A', '#F0177A')}></div><div class="body"><div class="row" style="justify-content:space-between"><h4>${esc(t.name)}</h4><span class="pr">${money(t.price)}<small class="mut" style="font:600 .7rem var(--body)"> / ночь</small></span></div><p class="note">${esc(t.desc)}</p><div class="feat">${(t.features || []).map(x => `<span>${esc(x)}</span>`).join('')}${t.capacity ? `<span>до ${t.capacity} гостей</span>` : ''}</div><span class="chip ${f ? 'ok' : 'bad'}">${f ? `Свободно ${f} из ${fr.length}` : 'Всё занято'}</span></div></button>`; }).join('');
+    const on = cmpSel.includes(t.id);
+    return `<div class="typew reveal${on ? ' cmp-on' : ''}"><button class="type" data-t="${esc(t.id)}"><div ${bg(t.image, t.name, '#F7B50A', '#F0177A')}></div><div class="body"><div class="row" style="justify-content:space-between"><h4>${esc(t.name)}</h4><span class="pr">${money(t.price)}<small class="mut" style="font:600 .7rem var(--body)"> / ночь</small></span></div><p class="note">${esc(t.desc)}</p><div class="feat">${(t.features || []).map(x => `<span>${esc(x)}</span>`).join('')}${t.capacity ? `<span>до ${t.capacity} гостей</span>` : ''}</div><span class="chip ${f ? 'ok' : 'bad'}">${f ? `Свободно ${f} из ${fr.length}` : 'Всё занято'}</span></div></button><button type="button" class="cmpb" data-cmp="${esc(t.id)}" aria-pressed="${on}" aria-label="Сравнить: ${esc(t.name)}">${on ? I.check : I.plus}<span>Сравнить</span></button></div>`; }).join('');
   $$('#types [data-t]').forEach(b => b.onclick = () => openBooking(b.dataset.t));
+  $$('#types [data-cmp]').forEach(b => b.onclick = () => { const id = b.dataset.cmp; cmpSel = cmpSel.includes(id) ? cmpSel.filter(x => x !== id) : [...cmpSel, id].slice(-3); paintStay(); if (cmpSel.length >= 2 && cmpSel.includes(id)) $('#cmpBox')?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
+  paintCompare();
+  paintRoomFilter();
   reveal(view('stay'));
-  mods.tower?.update(p.rooms, selFloor, p.types);
+  mods.tower?.update(p.rooms, selFloor, p.types); mods.tower?.setFilter?.(roomFilterIds());
+}
+// сравнение 2–3 типов номеров: цена, вместимость, особенности, свободно сейчас — из реальных types/rooms
+let cmpSel = [];
+function paintCompare() {
+  const p = S.pub; cmpSel = cmpSel.filter(id => p.types.some(t => t.id === id));
+  const box = $('#cmpBox'); if (!box) return;
+  if (cmpSel.length < 2) { box.innerHTML = cmpSel.length ? '<p class="note cmp-hint">Выберите ещё один тип, чтобы сравнить.</p>' : ''; return; }
+  const ts = cmpSel.map(id => p.types.find(t => t.id === id)), feats = [...new Set(ts.flatMap(t => t.features || []))];
+  const free = t => p.rooms.filter(r => r.type === t.id && r.status === 'free').length, min = Math.min(...ts.map(t => t.price));
+  box.innerHTML = `<section class="cmp" aria-labelledby="cmpH"><div class="row" style="justify-content:space-between"><h3 id="cmpH">Сравнение</h3><button type="button" class="btn ghost sm" id="cmpClear">Очистить</button></div>
+    <div class="cmp-scroll"><table><thead><tr><th scope="col"><span class="sr">Параметр</span></th>${ts.map(t => `<th scope="col">${esc(t.name)}</th>`).join('')}</tr></thead><tbody>
+      <tr><th scope="row">Цена за ночь</th>${ts.map(t => `<td class="num${t.price === min ? ' best' : ''}">${money(t.price)}</td>`).join('')}</tr>
+      <tr><th scope="row">Гостей</th>${ts.map(t => `<td class="num">${t.capacity ? 'до ' + t.capacity : '—'}</td>`).join('')}</tr>
+      ${feats.map(fe => `<tr><th scope="row">${esc(fe)}</th>${ts.map(t => (t.features || []).includes(fe) ? `<td class="yes">${I.check}<span class="sr">есть</span></td>` : '<td class="no">—<span class="sr">нет</span></td>').join('')}</tr>`).join('')}
+      <tr><th scope="row">Свободно сейчас</th>${ts.map(t => `<td class="num">${free(t)}</td>`).join('')}</tr>
+      <tr><th scope="row"><span class="sr">Действие</span></th>${ts.map(t => `<td>${free(t) ? `<button type="button" class="btn sm" data-cb="${esc(t.id)}">Забронировать</button>` : '<span class="chip bad">Всё занято</span>'}</td>`).join('')}</tr>
+    </tbody></table></div></section>`;
+  $('#cmpClear').onclick = () => { cmpSel = []; paintStay(); };
+  $$('#cmpBox [data-cb]').forEach(b => b.onclick = () => openBooking(b.dataset.cb));
 }
 function keyCard(r, t) {
   return `<div class="kc" id="keyCard" tabindex="0" role="button" aria-label="Ключ-карта номера ${esc(r.id)}, нажмите, чтобы перевернуть"><div class="kci">
