@@ -327,7 +327,7 @@ function openBooking(type, room) {
 function timeline(v) {
   const segs = (v.schedule || []).flatMap(s => { const a = minutesOf(s.from), b = minutesOf(s.to); return a < b ? [[a, b, s.state]] : [[a, 1440, s.state], [0, b, s.state]]; });
   const m = mskMinutes();
-  return `<div><div class="timeline">${segs.map(([a, b, st]) => `<i class="${st}" style="left:${a / 14.4}%;width:${(b - a) / 14.4}%"></i>`).join('')}<span class="now" style="left:${m / 14.4}%"></span></div><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>`;
+  return `<div><div class="timeline">${segs.map(([a, b, st]) => `<i class="${st}" style="left:${a / 14.4}%;width:${(b - a) / 14.4}%"></i>`).join('')}<span class="now" style="left:var(--now,${m / 14.4}%)"></span></div><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>`;
 }
 function renderLeisure() {
   const p = S.pub, m = mskMinutes();
@@ -337,14 +337,21 @@ function renderLeisure() {
       <div id="deckHost" class="reveal"></div><div class="venues" id="venuesList"></div></div>`;
     import('./deck.js').then(d => { mods.deck = { ...d.mountDeck($('#deckHost')), active(on) { if (!on) this.stop(); } }; });
   }
-  $('#venuesList').innerHTML = `${p.venues.map(v => { const st = venueState(v, p.events), evs = p.events.filter(e => e.venueId === v.id && (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 3);
+  const cards = p.venues.map(v => { const st = venueState(v, p.events), evs = p.events.filter(e => e.venueId === v.id && (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 3);
     const visual = v.image ? `<div class="img cover" style="background-image:url('${esc(v.image)}')">` : v.kind === 'pool' ? `<div class="img"><div class="water ${v.id === 'night' || /night|ноч/i.test(v.name) ? 'n' : ''} ${st.state === 'live' || st.state === 'event' ? 'live' : ''}"><div class="sky"></div><div class="pl"></div></div>` : `<div ${bg('', v.name, v.accent || '#F0177A', '#F7B50A', 'img')}>`;
     return `<article class="venue reveal">${visual}${stateChip(st)}</div><div class="body"><div class="row" style="justify-content:space-between"><h3>${esc(v.name)}</h3><span class="note">${esc(KIND_LABEL[v.kind] || '')}${v.floor ? ' · ' + esc(v.floor) : ''}</span></div>
       <p class="note">${esc(v.desc || '')}</p>
       ${st.state === 'event' ? `<div class="card pad" style="padding:.8rem 1rem;border-color:var(--violet)"><span class="eyebrow" style="color:var(--violet)">Сейчас событие</span><b>${esc(st.label)}</b></div>` : ''}
       ${v.comingSoon ? '<span class="chip t">Скоро открытие</span>' : timeline(v) + `<div class="sched">${(v.schedule || []).map(s => `<div class="${inSpan(m, minutesOf(s.from), minutesOf(s.to)) ? 'now' : ''}"><span class="num">${esc(s.from)}–${esc(s.to)}</span><span>${s.state === 'live' && inSpan(m, minutesOf(s.from), minutesOf(s.to)) ? '<span class="eq"><i></i><i></i><i></i></span> ' : ''}${esc(s.label)}</span></div>`).join('')}</div>`}
       ${evs.length ? `<div class="stack" style="gap:.4rem"><span class="lbl">Ближайшие события</span>${evs.map(e => `<div class="row" style="justify-content:space-between"><span>${esc(e.name)}</span><span class="note">${when(e.start)}</span></div>`).join('')}</div>` : ''}
-    </div></article>`; }).join('')}`;
+    </div></article>`; });
+  // Карточка перерисовывается, только когда меняется её содержимое (статус, расписание, события).
+  // Раз в 20 секунд двигается лишь линия «сейчас» — hover, фокус и круги на воде не сбрасываются.
+  const list = $('#venuesList');
+  if (list.children.length !== cards.length) list.innerHTML = cards.join('');
+  else cards.forEach((html, i) => { const el = list.children[i]; if (el._html === html) return; const t = document.createElement('div'); t.innerHTML = html; const n = t.firstElementChild; n.classList.add('in'); el.replaceWith(n); });
+  [...list.children].forEach((el, i) => { el._html = cards[i]; });
+  list.style.setProperty('--now', m / 14.4 + '%');
   reveal(lv);
   $$('#venuesList .water').forEach(w => w.onpointerdown = e => { const r = w.getBoundingClientRect(); for (let i = 0; i < 2; i++) { const d = document.createElement('i'); d.className = 'rip'; d.style.left = (e.clientX - r.left) + 'px'; d.style.top = (e.clientY - r.top) + 'px'; w.append(d); setTimeout(() => d.remove(), 1700); } play('splash'); });
 }
@@ -436,7 +443,7 @@ function paintCigar() {
   const c = S.pub.cigars[cigIdx];
   $('#cNum').textContent = S.pub.cigars.length ? `${cigIdx + 1} / ${S.pub.cigars.length}` : '0';
   $('#cInfo').innerHTML = c ? `<span class="eyebrow">${esc(c.origin)}</span><h3>${esc(c.name)}</h3>
-    <dl class="kv"><dt>Формат</dt><dd>${esc(CIGAR_SHAPES[c.shape] || c.shape)}</dd><dt>Размер</dt><dd class="num">${esc(c.ring)} × ${esc(c.length)} мм</dd><dt>Крепость</dt><dd><span class="str">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= c.strength ? 'on' : ''}"></i>`).join('')}</span></dd><dt>Цена</dt><dd class="num"><b>${money(c.price)}</b></dd></dl>
+    <dl class="kv"><dt>Формат</dt><dd>${esc(CIGAR_SHAPES[c.shape] || c.shape)}</dd><dt>Калибр</dt><dd class="num" title="Ring gauge: диаметр в 1/64 дюйма">${esc(c.ring)} <small class="mut">RG</small></dd><dt>Длина</dt><dd class="num">${esc(c.length)} мм</dd><dt>Крепость</dt><dd><span class="str">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= c.strength ? 'on' : ''}"></i>`).join('')}</span></dd><dt>Цена</dt><dd class="num"><b>${money(c.price)}</b></dd></dl>
     <div class="notes">${(c.notes || []).map(n => `<span>${esc(n)}</span>`).join('')}</div>${c.desc ? `<p class="mut">${esc(c.desc)}</p>` : ''}
     <div class="row"><button class="btn" id="cAdd" data-sfx="">В заказ в номер</button><button class="btn ghost" id="cCart" data-sfx="open">Открыть заказ</button></div>` : '<div class="empty">Хьюмидор пуст. Сигары добавляют в панели персонала.</div>';
   $('#cAdd') && ($('#cAdd').onclick = () => { addCart(c.id); toast(`${c.name}: в заказе`); });
