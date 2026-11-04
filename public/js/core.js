@@ -31,8 +31,10 @@ export const CIGAR_SHAPES = { robusto: 'Робусто', corona: 'Корона',
 // Что может редактировать каждая роль через общий редактор
 const EDITABLE = {
   types: 'admin', venues: 'admin', menu: 'admin', cigars: 'admin', depts: 'admin', team: 'admin', offers: 'admin', faq: 'admin', settings: 'admin', media: 'mod',
-  issues: 'mod', events: 'mod'
+  issues: 'mod', events: 'mod', senders: 'admin'
 };
+// Отправители постов в Discord: имя и аватарка вебхука
+const DEFAULT_SENDERS = [['concierge', 'Консьерж'], ['reception', 'Ресепшен'], ['manager', 'Управляющий'], ['journal', 'Журнал «Высота»']].map(([id, name], order) => ({ id, name, avatar: `img/discord/${id}.png`, order }));
 const PUBLIC_SETTINGS = ['weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer'];
 
 export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -63,6 +65,7 @@ export function createCore(store, hooks = {}) {
   const call = async (name, ...args) => { try { return hooks[name] ? await hooks[name](...args) : null; } catch (e) { log(`Discord: ${name} не выполнено (${e.message})`, 'error'); return null; } };
   const roomsSorted = () => store.all('rooms').sort((a, b) => a.floor - b.floor || String(a.id).localeCompare(String(b.id), 'ru', { numeric: true }));
   const freeSummary = () => { const types = sort(store.all('types')); const rooms = store.all('rooms'); return { total: rooms.length, free: rooms.filter(r => r.status === 'free').length, byType: types.map(t => ({ name: t.name, free: rooms.filter(r => r.type === t.id && r.status === 'free').length, total: rooms.filter(r => r.type === t.id).length })) }; };
+  const senders = () => { if (!store.all('senders').length) DEFAULT_SENDERS.forEach(s => store.put('senders', s.id, s)); return sort(store.all('senders')); };
   const roomsChanged = () => { emit(['rooms']); call('roomsChanged', freeSummary()); };
   const ownerOf = (user, guestKey) => user ? 'd:' + user.id : guestKey ? 'g:' + str(guestKey, 64) : null;
   const isOwner = (doc, user, guestKey) => doc.owner && (doc.owner === ownerOf(user, guestKey) || (user && doc.owner === 'd:' + user.id));
@@ -161,7 +164,7 @@ export function createCore(store, hooks = {}) {
     need(user, 'mod');
     const s = settings();
     return { ...publicData(), team: store.all('team').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), offers: store.all('offers').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), settingsFull: user.role === 'admin' ? s : null, rooms: roomsSorted(), issues: store.all('issues').sort((a, b) => (b.date || 0) - (a.date || 0)), events: store.all('events').sort((a, b) => b.start - a.start).slice(0, 100),
-      bookings: store.all('bookings').sort((a, b) => b.createdAt - a.createdAt).slice(0, 500), tickets: store.all('tickets').sort((a, b) => b.lastAt - a.lastAt).slice(0, 300), orders: store.all('orders').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300), log: store.all('log').sort((a, b) => b.at - a.at).slice(0, 120), summary: freeSummary(), discord: hooks.status ? hooks.status() : { connected: false } };
+      bookings: store.all('bookings').sort((a, b) => b.createdAt - a.createdAt).slice(0, 500), tickets: store.all('tickets').sort((a, b) => b.lastAt - a.lastAt).slice(0, 300), orders: store.all('orders').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300), log: store.all('log').sort((a, b) => b.at - a.at).slice(0, 120), summary: freeSummary(), discord: hooks.status ? hooks.status() : { connected: false }, senders: senders(), posts: store.all('posts').sort((a, b) => b.at - a.at).slice(0, 30) };
   });
   on('PUT', '/admin/:col/:id', ({ params, body, user }) => {
     const role = EDITABLE[params.col]; if (!role) bad('Этот раздел так не редактируется'); need(user, role);
@@ -231,9 +234,40 @@ export function createCore(store, hooks = {}) {
   on('POST', '/admin/events/sync', async ({ user }) => { need(user, 'mod'); const r = await call('syncEvents'); emit(['events']); return { synced: r ?? 0, connected: !!hooks.syncEvents }; });
 
   // Discord
-  on('POST', '/admin/discord/post', async ({ body, user }) => { need(user, 'mod'); const ch = str(body.channel, 40), text = str(body.text, 1900); if (!text) bad('Пустой пост'); const ok = await call('post', ch, text, user.username); log(`${user.username} опубликовал в ${ch}`, 'discord', user.username); emit(['log']); return { ok: !!ok }; });
-  on('POST', '/admin/discord/plan', async ({ user }) => { need(user, 'admin'); const r = await call('planGuild'); if (!r) bad('Бот не подключён. Укажите DISCORD_BOT_TOKEN и GUILD_ID в .env'); return r; });
-  on('POST', '/admin/discord/setup', async ({ body, user }) => { need(user, 'admin'); const r = await call('setupGuild', { branding: !!body.branding }); if (!r) bad('Бот не подключён. Укажите DISCORD_BOT_TOKEN и GUILD_ID в .env'); log(`${user.username} развернул структуру Discord-сервера`, 'discord', user.username); emit(['settings', 'log']); return r; });
+  const offline = 'Бот не подключён. Укажите DISCORD_BOT_TOKEN и GUILD_ID в .env';
+  const link = v => { v = str(v, 400); return /^(https?:\/\/|\/?(uploads|img)\/)/.test(v) ? v : ''; };
+  const cleanPost = b => {
+    const p = { content: str(b.content, 2000), title: str(b.title, 256), url: /^https?:\/\//.test(b.url || '') ? str(b.url, 400) : '', description: str(b.description, 4000), color: /^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : '#7A1E26', image: link(b.image), thumbnail: link(b.thumbnail), footer: str(b.footer, 200),
+      fields: (Array.isArray(b.fields) ? b.fields : []).slice(0, 10).map(f => ({ name: str(f.name, 256), value: str(f.value, 1024), inline: !!f.inline })).filter(f => f.name && f.value),
+      button: { label: str(b.button?.label, 80), url: /^https?:\/\//.test(b.button?.url || '') ? str(b.button.url, 400) : '' } };
+    if (!p.content && !p.title && !p.description && !p.image && !p.fields.length) bad('Заполните текст или заголовок');
+    if (p.button.label && !p.button.url) bad('Укажите адрес кнопки');
+    return p;
+  };
+  on('GET', '/admin/discord/meta', async ({ user }) => { need(user, 'mod'); return (await call('guildMeta')) || { channels: [], roles: [] }; });
+  // новый пост или правка уже отправленного: тот же канал и тот же отправитель
+  on('POST', '/admin/discord/send', async ({ body, user }) => {
+    need(user, 'mod'); if (!hooks.sendPost) bad(offline);
+    const post = cleanPost(body.post || {}), prev = body.id ? store.get('posts', str(body.id, 60)) : null;
+    const sender = store.get('senders', prev?.sender || str(body.sender, 60)) || senders()[0], channel = prev?.channel || str(body.channel, 30);
+    if (!/^\d+$/.test(channel)) bad('Выберите канал');
+    let r; try { r = await hooks.sendPost({ channel, sender, post, messageId: prev?.messageId }); } catch (e) { bad('Discord не принял сообщение: ' + e.message); }
+    const doc = { id: prev?.id || uid('p'), channel, channelName: r.channelName, sender: sender.id, senderName: sender.name, messageId: r.messageId, post, by: user.username, at: prev?.at || Date.now(), editedAt: prev ? Date.now() : null };
+    store.put('posts', doc.id, doc); store.all('posts').sort((a, b) => b.at - a.at).slice(100).forEach(p => store.del('posts', p.id));
+    log(`${user.username} ${prev ? 'изменил пост' : 'отправил пост'} в ${r.channelName}: ${post.title || post.content.slice(0, 40) || 'без заголовка'}`, 'discord', user.username); emit(['log']);
+    return { doc };
+  });
+  const roleList = l => (Array.isArray(l) ? l : []).map(x => str(x, 30)).filter(x => /^\d+$/.test(x)).slice(0, 20);
+  on('POST', '/admin/discord/access', async ({ body, user }) => {
+    need(user, 'admin');
+    store.put('settings', 'main', { ...settings(), adminRoles: roleList(body.admin), modRoles: roleList(body.mod), announceChannel: /^\d+$/.test(body.announceChannel || '') ? str(body.announceChannel, 30) : '' });
+    log(`${user.username} изменил доступ к панели и канал анонсов`, 'discord', user.username);
+    await call('setupGuild'); emit(['settings', 'log']); return { ok: true };
+  });
+  on('POST', '/admin/discord/cleanup-plan', async ({ user }) => { need(user, 'admin'); const r = await call('planCleanup'); if (!r) bad(offline); return r; });
+  on('POST', '/admin/discord/cleanup', async ({ user }) => { need(user, 'admin'); const r = await call('cleanupGuild'); if (!r) bad(offline); log(`${user.username} убрал лишнее с Discord-сервера: каналов ${r.channels}, категорий ${r.categories}, ролей ${r.roles}`, 'discord', user.username); emit(['settings', 'log']); return r; });
+  on('POST', '/admin/discord/plan', async ({ user }) => { need(user, 'admin'); const r = await call('planGuild'); if (!r) bad(offline); return r; });
+  on('POST', '/admin/discord/setup', async ({ user }) => { need(user, 'admin'); const r = await call('setupGuild'); if (!r) bad(offline); log(`${user.username} развернул структуру Discord-сервера`, 'discord', user.username); emit(['settings', 'log']); return r; });
 
   // сброс
   on('POST', '/admin/reset', ({ body, user }) => {
@@ -261,10 +295,11 @@ export function createCore(store, hooks = {}) {
     if (col === 'media') { pick('url', S(2_000_000)); pick('name', S(80)); }
     if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', S(400)); pick('date', N); pick('published', B); pick('accent', S(9)); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: str(p.image, 400), cat: str(p.cat, 30) })); }
     if (col === 'events') { pick('name', S(100)); pick('desc', S(1000)); pick('start', N); pick('end', N); pick('location', S(100)); pick('venueId', S(40)); pick('image', S(400)); pick('status', v => ['scheduled', 'active', 'completed', 'cancelled'].includes(v) ? v : 'scheduled'); if (!('source' in o)) o.source = 'manual'; }
+    if (col === 'senders') { pick('name', S(80)); pick('avatar', S(400)); pick('order', N); }
     if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'address', 'footer']) pick(k, S(400)); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
     return o;
   }
-  const label = c => ({ types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие' }[c] || c);
+  const label = c => ({ types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие', senders: 'отправителя' }[c] || c);
 
   async function handle(method, path, ctx = {}) {
     for (const r of routes) {

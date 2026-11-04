@@ -2,19 +2,17 @@ import { Client, GatewayIntentBits, Events, ChannelType, PermissionFlagsBits, Em
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildBlueprint, PERSONAS, SITE_ROLES } from './discord/layout.js';
-import { planSetup, snapshotGuild, applyPlan } from './discord/plan.js';
-import { BOARDS } from './discord/embeds.js';
+import { buildBlueprint } from './discord/layout.js';
+import { planSetup, snapshotGuild, snapshotRoles, applyPlan, planCleanup } from './discord/plan.js';
+import { helpdeskBoard, postPayload, eventAnnouncement } from './discord/embeds.js';
 import { buildCommands, createInteractions } from './discord/commands.js';
-import { venueState } from '../public/js/core.js';
 
-// Discord-бот: события сервера → сайт, уведомления персоналу, тикеты, проверка ролей, живые карточки, персоны, слэш-команды.
+// Discord-бот обслуживает сайт: вход и роли, тикеты, уведомления персоналу, посты из панели, события сервера → сайт.
 const PINK = 0xF0177A, GOLD = 0xF7B50A, TEAL = 0x3FD3C6;
 const EVENT_STATUS = { 1: 'scheduled', 2: 'active', 3: 'completed', 4: 'cancelled' };
+const FEED = 'staffTickets';
 const money = n => '$' + Number(n || 0).toLocaleString('ru-RU');
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const AVATARS = path.join(ROOT, 'public', 'img', 'discord');
-const EMBLEM = path.join(ROOT, 'brand', 'emblem-dark.png');
 
 export async function startBot({ core, store, env, hooks }) {
   if (!env.DISCORD_BOT_TOKEN || !env.GUILD_ID) return null;
@@ -22,40 +20,28 @@ export async function startBot({ core, store, env, hooks }) {
   let guild = null;
   const site = (env.PUBLIC_URL || '').replace(/\/$/, '');
   const S = () => core.settings();
-  const blueprint = () => buildBlueprint({ depts: core.publicData().depts });
   const save = patch => store.put('settings', 'main', { ...S(), ...patch });
   const channel = async key => {
     const id = S().channels?.[key];
     if (id) { const c = await guild.channels.fetch(id).catch(() => null); if (c) return c; }
-    const spec = blueprint().channels.find(c => c.key === key); if (!spec) return null;
-    return guild.channels.cache.find(c => c.type === ChannelType.GuildText && [spec.name, ...spec.legacy].includes(c.name)) || null;
+    const bp = buildBlueprint(), spec = [...bp.categories, ...bp.channels].find(c => c.key === key); if (!spec) return null;
+    return guild.channels.cache.find(c => c.type === spec.type && c.name === spec.name) || null;
   };
-  const roleIds = () => { const r = S().roleIds || {}, ids = (keys, extra) => [...keys.map(k => r[k]), ...(extra || '').split(',')].map(s => (s || '').trim()).filter(Boolean); return { admin: ids(SITE_ROLES.admin, env.ADMIN_ROLE_IDS), mod: ids(SITE_ROLES.mod, env.MOD_ROLE_IDS) }; };
-  const staffOverwrites = () => { const ids = [...roleIds().admin, ...roleIds().mod]; return [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, ...ids.filter(id => guild.roles.cache.has(id)).map(id => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }))]; };
+  // Права на сайте дают только роли, выбранные в панели (или в .env). Владелец сервера всегда админ: иначе роли некому выбрать.
+  const listIds = (list, extra) => [...(list || []), ...(extra || '').split(',')].map(s => String(s).trim()).filter(Boolean);
+  const roleIds = () => ({ admin: listIds(S().adminRoles, env.ADMIN_ROLE_IDS), mod: listIds(S().modRoles, env.MOD_ROLE_IDS) });
+  const staffIds = () => { const r = roleIds(); return [...new Set([...r.admin, ...r.mod])].filter(id => guild.roles.cache.has(id)); };
+  const staffOverwrites = () => [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, ...staffIds().map(id => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }))];
   const siteRow = (label = 'Открыть сайт', hash = '') => site ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(site + '/' + (hash ? '#' + hash : '')))] : [];
-  // персона: вебхук канала со своим именем и аватаркой. Нет прав на вебхуки — пишет сам бот.
-  const hookCache = new Map();
-  async function personaHook(c, persona) {
-    const k = c.id + ':' + persona; if (hookCache.has(k)) return hookCache.get(k);
-    const name = PERSONAS[persona], list = await c.fetchWebhooks();
-    const h = list.find(w => w.name === name && w.owner?.id === client.user.id) || await c.createWebhook({ name, avatar: path.join(AVATARS, persona + '.png'), reason: 'Mile High Club: персона' });
-    hookCache.set(k, h); return h;
-  }
-  const send = async (key, payload, persona) => {
-    const c = await channel(key); if (!c) return null;
-    const hook = persona && await personaHook(c, persona).catch(e => { console.error('Discord persona:', e.message); return null; });
-    return (hook ? hook.send(payload) : c.send(payload)).catch(e => { console.error('Discord send:', e.message); return null; });
-  };
+  const send = async (key, payload) => { const c = await channel(key); return c ? c.send(payload).catch(e => { console.error('Discord send:', e.message); return null; }) : null; };
 
   hooks.status = () => ({ connected: !!guild, guild: guild?.name || null, members: guild?.memberCount || 0, bot: client.user?.tag || null });
 
   hooks.resolveRole = async userId => {
+    if (userId === guild.ownerId) return 'admin';
     const m = await guild.members.fetch(userId).catch(() => null); if (!m) return 'guest';
-    const ids = roleIds(), names = S().roles || {};
-    const byName = n => n && m.roles.cache.some(r => r.name.toLowerCase().includes(String(n).toLowerCase()));
-    if (m.permissions.has(PermissionFlagsBits.Administrator) || ids.admin.some(id => m.roles.cache.has(id)) || byName(names.admin)) return 'admin';
-    if (ids.mod.some(id => m.roles.cache.has(id)) || byName(names.mod)) return 'mod';
-    return 'guest';
+    const ids = roleIds(), has = list => list.some(id => m.roles.cache.has(id));
+    return has(ids.admin) ? 'admin' : has(ids.mod) ? 'mod' : 'guest';
   };
 
   async function findMember(name, id) {
@@ -68,119 +54,144 @@ export async function startBot({ core, store, env, hooks }) {
 
   hooks.createTicketChannel = async t => {
     const m = await findMember(t.discord, t.discordId); if (!m) return null;
-    const cat = await channel('catTickets');
-    const ch = await guild.channels.create({ name: `тикет-${(m.user.username || 'гость').slice(0, 20)}-${t.id.slice(-4)}`, type: ChannelType.GuildText, parent: cat?.id, permissionOverwrites: [...staffOverwrites(), { id: m.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] }] });
-    await ch.send({ content: `<@${m.id}>, управляющие скоро ответят.`, embeds: [new EmbedBuilder().setColor(PINK).setTitle(t.topic).setDescription(t.text.slice(0, 3900)).addFields({ name: 'Имя', value: t.name || '—', inline: true }, { name: 'Discord', value: t.discord, inline: true }).setFooter({ text: 'Заявка с сайта Mile High Club' })] });
+    const cat = await channel('catDesk');
+    const ch = await guild.channels.create({ name: `🎫・${(m.user.username || 'гость').slice(0, 20)}-${t.id.slice(-4)}`, type: ChannelType.GuildText, parent: cat?.id, permissionOverwrites: [...staffOverwrites(), { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] }, { id: m.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] }] });
+    await ch.send({ content: `<@${m.id}>, управляющие скоро ответят.`, embeds: [new EmbedBuilder().setColor(PINK).setTitle(t.topic).setDescription(t.text.slice(0, 3900)).addFields({ name: 'Имя', value: t.name || '—', inline: true }, { name: 'Discord', value: t.discord, inline: true }).setFooter({ text: 'Mile High Club' })] });
     return ch.id;
   };
 
+  // уведомления персоналу: одна лента, подробности в панели сайта
   hooks.notify = async (kind, d) => {
-    if (kind === 'booking') {
-      await send('staffBookings', { embeds: [new EmbedBuilder().setColor(PINK).setTitle(`Новая бронь ${d.code}`).addFields({ name: 'Номер', value: d.typeName + (d.preferredRoom ? ` (просит ${d.preferredRoom})` : ''), inline: true }, { name: 'Заезд', value: `${d.date}, ${d.nights} ноч.`, inline: true }, { name: 'Гостей', value: String(d.guests), inline: true }, { name: 'Гость', value: d.name, inline: true }, { name: 'Discord', value: d.discord, inline: true }, { name: 'Сумма', value: money(d.total), inline: true }, ...(d.note ? [{ name: 'Пожелания', value: d.note.slice(0, 1000) }] : [])).setTimestamp()], components: siteRow('Открыть в панели', 'admin') }, 'reception');
-    }
+    if (kind === 'booking') await send(FEED, { embeds: [new EmbedBuilder().setColor(PINK).setTitle(`🛏️ Новая бронь ${d.code}`).setDescription(`${d.typeName}, ${d.date}, ${d.nights} ноч. · ${d.name} (${d.discord}) · ${money(d.total)}`)], components: siteRow('Открыть в панели', 'admin') });
     if (kind === 'booking_status') {
       const text = { confirmed: `Бронь ${d.code} подтверждена. Ваш номер ${d.room}, заезд ${d.date}.`, cancelled: `Бронь ${d.code} отменена. Если это ошибка, напишите управляющим.`, checkedin: `Добро пожаловать в Mile High Club! Номер ${d.room}.`, done: `Спасибо, что остановились у нас. Ждём снова.` }[d.status];
       const m = await findMember(d.discord, d.discordId); if (m && text) m.send(text).catch(() => {});
-      const resident = S().roleIds?.resident; // постоялец: роль живёт ровно столько, сколько гость в отеле
-      if (m && resident) { if (d.status === 'checkedin') m.roles.add(resident).catch(() => {}); if (['done', 'cancelled'].includes(d.status)) m.roles.remove(resident).catch(() => {}); }
-      await send('staffBookings', { content: `Бронь **${d.code}** → ${{ confirmed: 'подтверждена', cancelled: 'отменена', checkedin: 'заселение', done: 'выезд' }[d.status] || d.status}${d.room ? `, номер ${d.room}` : ''} (${d.handledBy || 'персонал'})` }, 'reception');
     }
-    if (kind === 'order') await send('staffOrders', { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`Заказ в номер ${d.room}`).setDescription(d.items.map(i => `${i.name} × ${i.qty}`).join('\n')).addFields({ name: 'Сумма', value: money(d.total), inline: true }, { name: 'Гость', value: d.name || '—', inline: true }, { name: 'Discord', value: d.discord || '—', inline: true }).setTimestamp()] }, 'ciel');
+    if (kind === 'order') await send(FEED, { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`🍽️ Заказ в номер ${d.room}`).setDescription(`${d.items.map(i => `${i.name} × ${i.qty}`).join(', ')} · ${money(d.total)}`)], components: siteRow('Открыть в панели', 'admin') });
     if (kind === 'order_status' && d.status === 'delivering') { const m = await findMember(d.discord); if (m) m.send(`Ваш заказ уже несут в номер ${d.room}.`).catch(() => {}); }
-    if (kind === 'ticket_site') await send('staffTickets', { embeds: [new EmbedBuilder().setColor(TEAL).setTitle('Новое обращение на сайте').setDescription(d.text.slice(0, 3900)).addFields({ name: 'Тема', value: d.topic, inline: true }, { name: 'Discord', value: d.discord, inline: true })], components: siteRow('Ответить в панели', 'admin') }, 'concierge');
-    if (kind === 'ticket_discord') await send('staffTickets', { content: `Открыт тикет для **${d.discord}**: ${d.topic}${d.channel ? ` → <#${d.channel}>` : ' (пользователь не найден на сервере)'}` });
-    if (kind === 'ticket_message') await send('staffTickets', { content: `Новое сообщение от **${d.discord}** в чате на сайте: «${d.messages.at(-1)?.text.slice(0, 300)}»` });
+    if (kind === 'ticket_site') await send(FEED, { embeds: [new EmbedBuilder().setColor(TEAL).setTitle('✉️ Новое обращение на сайте').setDescription(`**${d.topic}** · ${d.discord}\n${d.text.slice(0, 500)}`)], components: siteRow('Ответить в панели', 'admin') });
+    if (kind === 'ticket_discord') await send(FEED, { content: `🎫 Тикет для **${d.discord}**: ${d.topic}${d.channel ? ` → <#${d.channel}>` : ' (пользователя нет на сервере)'}`, allowedMentions: { parse: [] } });
+    if (kind === 'ticket_message') await send(FEED, { content: `💬 **${d.discord}** в чате на сайте: «${d.messages.at(-1)?.text.slice(0, 300)}»`, allowedMentions: { parse: [] } });
   };
 
-  hooks.post = async (key, text, by) => !!(await send(key, { embeds: [new EmbedBuilder().setColor(PINK).setDescription(text).setFooter({ text: `Mile High Club · ${by}` })], components: siteRow() }, 'concierge'));
-
-  // живые карточки: одно сообщение на канал, правится только при изменении данных
-  const saveBoard = (key, rec) => save({ boards: { ...(S().boards || {}), [key]: rec } });
-  async function publishBoard(key) {
-    const [persona, build] = BOARDS[key], payload = build(core.publicData(), site);
-    const hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex'), rec = S().boards?.[key];
-    if (rec?.hash === hash) return false;
-    const c = await channel(key); if (!c) return false;
-    const hook = await personaHook(c, persona).catch(() => null);
-    if (rec?.id) {
-      try { if (rec.via === 'hook' && hook) await hook.editMessage(rec.id, payload); else await (await c.messages.fetch(rec.id)).edit(payload); saveBoard(key, { ...rec, hash }); return true; }
-      catch { /* сообщение удалили: отправим заново */ }
-    }
-    const m = await (hook ? hook.send(payload) : c.send(payload));
-    saveBoard(key, { id: m.id, via: hook ? 'hook' : 'bot', hash }); return true;
+  // посты с сайта: вебхук канала с именем и аватаркой отправителя из панели
+  const hookCache = new Map();
+  const avatarOf = a => { if (!a) return undefined; if (/^https?:/.test(a)) return a; const p = a.replace(/^\//, ''); return p.startsWith('uploads/') ? path.resolve(ROOT, env.DATA_DIR || 'data', p) : path.join(ROOT, 'public', p); };
+  async function senderHook(c, sender) {
+    const k = [c.id, sender.id, sender.name, sender.avatar].join(':'); if (hookCache.has(k)) return hookCache.get(k);
+    const avatar = avatarOf(sender.avatar), reason = 'Mile High Club: отправитель из панели';
+    let h = (await c.fetchWebhooks()).find(w => w.owner?.id === client.user.id && w.name === sender.name);
+    if (!h) h = await c.createWebhook({ name: sender.name, avatar, reason });
+    else if (avatar) await h.edit({ avatar, reason }).catch(e => console.error('Discord avatar:', e.message));
+    hookCache.set(k, h); return h;
   }
-  async function refreshBoards(keys = Object.keys(BOARDS)) { let n = 0; for (const k of keys) { try { if (await publishBoard(k)) n++; } catch (e) { console.error(`Discord board ${k}:`, e.message); } } return n; }
-  const BOARD_COLS = { rooms: ['rooms'], types: ['rooms'], venues: ['venues'], events: ['venues', 'events'], menu: ['menu'], cigars: ['cigars'], offers: ['offers'], issues: ['journal'], team: ['team'], depts: ['team'], faq: ['faq'], settings: ['about'] };
-  let dirty = new Set(), boardT = null;
-  const touch = keys => { keys.forEach(k => dirty.add(k)); clearTimeout(boardT); boardT = setTimeout(() => { const list = [...dirty]; dirty = new Set(); refreshBoards(list); }, 2500); };
-  hooks.roomsChanged = () => touch(['rooms']);
-  const changed = hooks.changed; // сайт сообщает, какие коллекции поменялись
-  hooks.changed = cols => { changed?.(cols); if (guild) touch(cols.flatMap(c => BOARD_COLS[c] || [])); if (guild && cols.includes('log')) flushAudit(); };
+  hooks.sendPost = async ({ channel: id, sender, post, messageId }) => {
+    const c = await guild.channels.fetch(id).catch(() => null); if (!c) throw new Error('канал не найден');
+    const hook = await senderHook(c, sender), payload = postPayload(post, site);
+    if (messageId) { await hook.editMessage(messageId, payload); return { messageId, channelName: c.name }; }
+    const m = await hook.send(payload);
+    return { messageId: m.id, channelName: c.name };
+  };
 
-  // журнал действий персонала → канал руководства
-  let auditT = null;
-  function flushAudit() {
-    clearTimeout(auditT);
-    auditT = setTimeout(async () => {
-      const since = S().auditAt || Date.now(), fresh = store.all('log').filter(l => l.at > since && l.by).sort((a, b) => a.at - b.at).slice(0, 10);
-      if (!fresh.length) return;
-      save({ auditAt: fresh.at(-1).at });
-      await send('auditLog', { content: fresh.map(l => `**${l.by}** ${l.text}`).join('\n').slice(0, 1900), allowedMentions: { parse: [] } }, 'security');
-    }, 4000);
-  }
+  // что показать в панели: куда можно писать и какие роли есть
+  hooks.guildMeta = async () => {
+    await guild.channels.fetch(); await guild.roles.fetch();
+    const me = await guild.members.fetchMe(), need = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageWebhooks];
+    const list = [...guild.channels.cache.values()].filter(c => [ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(c.type) && c.permissionsFor(me).has(need)).sort((a, b) => (a.parent?.position ?? -1) - (b.parent?.position ?? -1) || a.position - b.position);
+    return {
+      channels: list.map(c => ({ id: c.id, name: c.name, parent: c.parent?.name || '' })),
+      roles: snapshotRoles(guild).sort((a, b) => b.position - a.position).map(r => ({ id: r.id, name: r.name, color: r.color ? '#' + r.color.toString(16).padStart(6, '0') : '' }))
+    };
+  };
 
-  // статус бота: свободные номера, что открыто, подсказка
-  let statusN = 0;
-  function rotateStatus() {
-    const sum = core.freeSummary(), d = core.publicData(), open = d.venues.filter(v => ['open', 'live', 'event'].includes(venueState(v, d.events).state));
-    const list = [`Свободно ${sum.free} из ${sum.total}`, open.length ? `Открыто: ${open.slice(0, 3).map(v => v.name).join(', ')}` : 'Отель над Лос-Сантосом', 'Команды: /номера /бронь /меню'];
-    client.user?.setActivity(list[statusN++ % list.length], { type: ActivityType.Watching });
+  // панель обращений: одно сообщение, правится только при изменении
+  async function publishHelpdesk() {
+    const payload = helpdeskBoard(), hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex'), rec = S().helpdeskBoard;
+    if (rec?.hash === hash) return;
+    const c = await channel('helpdesk'); if (!c) return;
+    if (rec?.id) { const m = await c.messages.fetch(rec.id).catch(() => null); if (m) { await m.edit(payload); save({ helpdeskBoard: { id: m.id, hash } }); return; } }
+    const old = S().boards?.helpdesk; // карточка прошлой версии: её отправлял вебхук, им и удаляем
+    if (old?.id) { const h = (await c.fetchWebhooks().catch(() => null))?.find(w => w.owner?.id === client.user.id); await h?.deleteMessage(old.id).catch(() => {}); }
+    const m = await c.send(payload);
+    save({ helpdeskBoard: { id: m.id, hash } });
   }
 
-  // события сервера → сайт
+  // события сервера → сайт и анонс в канал
   const mapEvent = ev => ({ id: 'dc-' + ev.id, name: ev.name, desc: ev.description || '', start: ev.scheduledStartTimestamp, end: ev.scheduledEndTimestamp || null, location: ev.entityMetadata?.location || ev.channel?.name || '', image: ev.coverImageURL?.({ size: 1024 }) || '', status: EVENT_STATUS[ev.status] || 'scheduled', url: ev.url });
+  const announceChannel = async () => {
+    const id = S().announceChannel, c = id && await guild.channels.fetch(id).catch(() => null);
+    return c || guild.channels.cache.find(x => x.type === ChannelType.GuildAnnouncement) || null;
+  };
+  async function announceNew() {
+    const fresh = store.all('events').filter(e => e.source === 'discord' && !e.announced);
+    const c = S().eventsAnnounceOn ? await announceChannel() : null;
+    for (const e of fresh) {
+      const due = c && e.status === 'scheduled' && e.start > Date.now();
+      if (due) await c.send(eventAnnouncement(e, site)).catch(err => console.error('Discord announce:', err.message));
+      store.put('events', e.id, { ...e, announced: true });
+    }
+    if (!S().eventsAnnounceOn) save({ eventsAnnounceOn: true }); // события, созданные до включения анонсов, не объявляем
+  }
   hooks.syncEvents = async () => {
     const evs = await guild.scheduledEvents.fetch({ withUserCount: false });
     const seen = new Set(); for (const ev of evs.values()) { const d = mapEvent(ev); seen.add(d.id); core.upsertEvent(d); }
     store.all('events').filter(e => e.source === 'discord' && !seen.has(e.id)).forEach(e => core.removeEvent(e.id));
+    await announceNew();
     return evs.size;
   };
-  client.on(Events.GuildScheduledEventCreate, ev => ev.guildId === env.GUILD_ID && core.upsertEvent(mapEvent(ev)));
+  client.on(Events.GuildScheduledEventCreate, ev => { if (ev.guildId === env.GUILD_ID) { core.upsertEvent(mapEvent(ev)); announceNew().catch(e => console.error('Discord announce:', e.message)); } });
   client.on(Events.GuildScheduledEventUpdate, (o, ev) => ev.guildId === env.GUILD_ID && core.upsertEvent(mapEvent(ev)));
   client.on(Events.GuildScheduledEventDelete, ev => ev.guildId === env.GUILD_ID && core.removeEvent('dc-' + ev.id));
 
-  // структура сервера: сначала план, потом выполнение. Ничего не удаляется.
+  // структура сервера: сначала план, потом выполнение
+  const savedState = () => { const s = S(); return { roleIds: s.roleIds || {}, channels: s.channels || {}, staffRoles: s.staffRolesApplied || [] }; };
   const plan = async () => {
     await guild.roles.fetch(); await guild.channels.fetch();
-    const s = S(), bp = blueprint();
-    return { bp, plan: planSetup(bp, snapshotGuild(guild, { roleIds: s.roleIds || {}, channels: s.channels || {} }, client.user.id)) };
+    return planSetup(buildBlueprint(), snapshotGuild(guild, savedState(), client.user.id, staffIds()));
   };
-  hooks.planGuild = async () => { const { plan: p } = await plan(); return { summary: p.summary, lines: p.lines }; };
-  hooks.setupGuild = async ({ branding = false } = {}) => {
-    const { bp, plan: p } = await plan();
-    const r = await applyPlan(guild, p, bp, { everyoneId: guild.roles.everyone.id, botId: client.user.id });
-    save({ roleIds: { ...(S().roleIds || {}), ...r.roleIds }, channels: { ...(S().channels || {}), ...r.channels } });
-    if (branding) {
-      await guild.setIcon(EMBLEM, 'Mile High Club: иконка сервера').catch(e => console.error('Discord icon:', e.message));
-      await client.user.setAvatar(EMBLEM).catch(e => console.error('Discord avatar:', e.message));
-    }
-    await refreshBoards();
-    return { made: r.made, updated: r.updated, skipped: r.skipped, channels: Object.keys(r.channels).length, roles: Object.keys(r.roleIds).length };
+  hooks.planGuild = async () => { const p = await plan(); return { summary: p.summary, lines: p.lines }; };
+  hooks.setupGuild = async () => {
+    const p = await plan();
+    const r = await applyPlan(guild, p, { everyoneId: guild.roles.everyone.id, botId: client.user.id, staffIds: staffIds() });
+    save({ channels: { ...(S().channels || {}), ...r.channels }, staffRolesApplied: staffIds() });
+    await publishHelpdesk();
+    return { made: r.made, updated: r.updated, skipped: r.skipped };
   };
 
-  const interact = createInteractions({ core, store, site, resolveRole: id => hooks.resolveRole(id), roleId: k => S().roleIds?.[k], post: send });
+  // лишнее от прошлой схемы: показываем список, удаляем только по кнопке администратора
+  async function cleanup() {
+    await guild.roles.fetch(); await guild.channels.fetch();
+    const snap = { channels: snapshotGuild(guild, {}, client.user.id).channels, roles: snapshotRoles(guild) }, bp = buildBlueprint(), saved = savedState();
+    const occupied = new Set();
+    for (const { id } of planCleanup(bp, saved, snap).channels) {
+      const c = guild.channels.cache.get(id);
+      if (c.members?.size && c.type === ChannelType.GuildVoice) { occupied.add(id); continue; }
+      if (!c.messages) continue;
+      const list = await c.messages.fetch({ limit: 50 }).catch(() => null);
+      if (!list || list.some(m => !m.author.bot && !m.webhookId && !m.system)) occupied.add(id);
+    }
+    return planCleanup(bp, saved, snap, occupied, [...roleIds().admin, ...roleIds().mod]);
+  }
+  hooks.planCleanup = async () => { const c = await cleanup(); return { channels: c.channels.map(x => x.name), categories: c.categories.map(x => x.name), roles: c.roles.map(x => x.name), kept: c.kept.map(x => x.name) }; };
+  hooks.cleanupGuild = async () => {
+    const c = await cleanup(), reason = 'Mile High Club: лишнее от прошлой схемы', channels = { ...(S().channels || {}) }, roles = { ...(S().roleIds || {}) };
+    for (const x of [...c.channels, ...c.categories]) { await guild.channels.cache.get(x.id)?.delete(reason); delete channels[x.key]; }
+    for (const x of c.roles) { await guild.roles.cache.get(x.id)?.delete(reason); delete roles[x.key]; }
+    save({ channels, roleIds: roles });
+    return { channels: c.channels.length, categories: c.categories.length, roles: c.roles.length, kept: c.kept.length };
+  };
+
+  const interact = createInteractions({ core, resolveRole: id => hooks.resolveRole(id) });
   client.on(Events.InteractionCreate, i => { if (i.guildId === env.GUILD_ID) interact(i); });
 
   await new Promise((resolve, reject) => { client.once(Events.ClientReady, resolve); client.login(env.DISCORD_BOT_TOKEN).catch(reject); });
   guild = await client.guilds.fetch(env.GUILD_ID);
-  if (!S().auditAt) save({ auditAt: Date.now() });
   await guild.roles.fetch().catch(() => {});
+  await guild.channels.fetch().catch(() => {});
   console.log(`Discord: бот ${client.user.tag} подключён к «${guild.name}»`);
   hooks.syncEvents().catch(e => console.error('events sync:', e.message));
   setInterval(() => hooks.syncEvents().catch(() => {}), 5 * 60e3);
-  await guild.commands.set(buildCommands(core.publicData().types)).catch(e => console.error('Discord commands:', e.message));
-  refreshBoards().catch(() => {});
-  setInterval(() => refreshBoards(['venues', 'events']).catch(() => {}), 5 * 60e3);
-  rotateStatus(); setInterval(rotateStatus, 60e3);
+  await guild.commands.set(buildCommands()).catch(e => console.error('Discord commands:', e.message));
+  client.user.setActivity(site && /^https:/.test(site) ? site.replace(/^https:\/\//, '') : 'Отель над Лос-Сантосом', { type: ActivityType.Watching });
   return client;
 }
