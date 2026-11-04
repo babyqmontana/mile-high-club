@@ -16,8 +16,19 @@ export function createInteractions({ core, resolveRole }) {
     return say(i, r.ticket.channel ? `Обращение открыто: <#${r.ticket.channel}>` : 'Обращение принято, управляющие ответят.');
   };
 
+  // закрывает только администрация: транскрипт и удаление канала делает core через бота
+  const closeTicket = async i => {
+    const role = await resolveRole(i.user.id);
+    if (role === 'guest') return i.reply({ content: 'Закрыть обращение может только администрация.', ephemeral: true });
+    const t = core.store.all('tickets').find(x => x.channel === i.channelId && x.status !== 'closed');
+    if (!t) return i.reply({ content: 'Это обращение уже закрыто.', ephemeral: true });
+    await i.deferReply({ ephemeral: true });
+    await core.handle('POST', `/admin/tickets/${t.id}/close`, { user: { id: i.user.id, username: i.member?.displayName || i.user.username, role } });
+  };
+
   return async function handle(i) {
     try {
+      if (i.isButton() && i.customId === 'mhc:close') return await closeTicket(i);
       if (i.isChatInputCommand() && i.commandName === 'обращение') return await i.showModal(ticketModal('mhc:ticket:send', 'Обращение', 'Тема'));
       if (i.isButton() && i.customId === 'mhc:ticket') return await i.showModal(ticketModal('mhc:ticket:send', 'Обращение', 'Тема'));
       if (i.isButton() && i.customId === 'mhc:job') return await i.showModal(ticketModal('mhc:job:send', 'Заявка на работу', 'Желаемая должность'));

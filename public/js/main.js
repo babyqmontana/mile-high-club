@@ -156,9 +156,9 @@ function flap(key, text) {
 const venueRoute = v => ({ restaurant: 'dining', club: 'cigars' }[v.kind] || 'leisure');
 // Шахта лифта: реальные этажи площадок (venue.floor) и номеров, сверху вниз, с живыми статусами
 function shaftHtml(p, latest) {
-  const rows = p.venues.map(v => { const n = parseInt((String(v.floor || '').match(/\d+/) || [])[0], 10), ok = Number.isFinite(n); return { n: ok ? n : 0.5, label: ok ? String(n) : 'A', name: v.name, sub: v.desc, href: '#' + venueRoute(v), venue: v.id, chip: stateChip(venueState(v, p.events)) }; });
+  const rows = p.venues.map(v => { const n = parseInt((String(v.floor || '').match(/\d+/) || [])[0], 10), ok = Number.isFinite(n); return { n: ok ? n : 0.5, label: ok ? String(n) : 'A', name: v.name, sub: [v.gameFloor, v.desc].filter(Boolean).join(' · '), href: '#' + venueRoute(v), venue: v.id, chip: stateChip(venueState(v, p.events)) }; });
   const fl = [...new Set(p.rooms.map(r => r.floor))].sort((a, b) => a - b);
-  if (fl.length) { const free = p.rooms.filter(r => r.status === 'free').length; rows.push({ n: fl.at(-1), label: fl.length > 1 ? `${fl[0]}–${fl.at(-1)}` : String(fl[0]), name: 'Номера и сюиты', sub: `${p.rooms.length} ${plural(p.rooms.length, 'номер', 'номера', 'номеров')} на ${fl.length} ${plural(fl.length, 'этаже', 'этажах', 'этажах')}`, href: '#stay', chip: `<span class="chip ${free ? 'ok' : 'bad'}"><span class="d"></span>Свободно ${free}</span>` }); }
+  if (fl.length) { const free = p.rooms.filter(r => r.status === 'free').length; rows.push({ n: fl.at(-1), label: fl.length > 1 ? `${fl[0]}–${fl.at(-1)}` : String(fl[0]), name: 'Номера и сюиты', sub: `Rooms Floor 1–6 · ${p.rooms.length} ${plural(p.rooms.length, 'номер', 'номера', 'номеров')} на ${fl.length} ${plural(fl.length, 'этаже', 'этажах', 'этажах')}`, href: '#stay', chip: `<span class="chip ${free ? 'ok' : 'bad'}"><span class="d"></span>Свободно ${free}</span>` }); }
   rows.push({ n: 0, label: 'Л', name: 'Лобби · Mile High Journal', sub: latest ? `Свежий выпуск: ${latest.number || ''} ${latest.title}` : 'Журнал отеля', href: latest ? '#issue-' + latest.id : '#journal', chip: '' });
   rows.sort((a, b) => b.n - a.n);
   return `<section class="shaft reveal" aria-labelledby="shaftH"><div class="head"><span class="eyebrow">Этажи отеля</span><h2 id="shaftH">Куда поднимемся?</h2></div>

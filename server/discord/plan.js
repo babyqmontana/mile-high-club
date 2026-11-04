@@ -19,7 +19,7 @@ export function planSetup(blueprint, snapshot) {
   const { channels = [], saved = {}, tiers = {}, everyoneId, botId } = snapshot;
   const actions = [], chanIds = {};
   // права старых ролей бота и снятых ролей уровней тоже наши: они убираются при обновлении
-  const managedIds = new Set([...Object.values(saved.roleIds || {}), ...(saved.staffRoles || []), ...allTiers(tiers), everyoneId, botId].filter(Boolean));
+  const managedIds = new Set([...Object.values(saved.roleIds || {}), ...(saved.staffRoles || []), ...allTiers(tiers), ...(tiers.dev || []), everyoneId, botId].filter(Boolean));
 
   // В своих разделах права ролей дополняем: что сервер уже разрешал этим ролям, остаётся
   const wanted = (spec, found) => overwritesFor(spec, tiers, everyoneId, botId).map(w => {
@@ -39,6 +39,7 @@ export function planSetup(blueprint, snapshot) {
     if (!found) { actions.push({ op: 'createChannel', key: spec.key, spec }); chanIds[spec.key] = 'new:' + spec.key; return; }
     chanIds[spec.key] = found.id;
     actions.push({ op: 'bindChannel', key: spec.key, id: found.id });
+    if (spec.external) return;
     update(found, { ...spec, keepExtra: spec.area || spec.access === 'staff' || spec.access === 'directors' });
   };
   blueprint.categories.forEach(place);
