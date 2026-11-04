@@ -8,7 +8,7 @@ import { helpdeskBoard, postPayload, eventAnnouncement } from '../server/discord
 import { buildCommands, createInteractions } from '../server/discord/commands.js';
 import { createCore, seed } from '../public/js/core.js';
 
-const EVERYONE = 'everyone', BOT = 'bot-user', STAFF = ['role-staff'];
+const EVERYONE = 'everyone', BOT = 'bot-user', STAFF = ['role-staff'], TIERS = { admin: ['role-admin'], director: ['role-dir'], staff: STAFF };
 
 function memoryStore() {
   const data = {}, col = c => (data[c] ??= {});
@@ -29,18 +29,17 @@ function fakeGuild() {
   };
   return { log, roles: { everyone: { id: EVERYONE }, cache: new Map() }, channels: { cache: channels, create: async o => makeChannel(o), fetch: async id => channels.get(id) } };
 }
-const opts = { everyoneId: EVERYONE, botId: BOT, staffIds: STAFF };
-const plan = (g, saved = {}) => planSetup(buildBlueprint(), snapshotGuild(g, saved, BOT, STAFF));
+const opts = { everyoneId: EVERYONE, botId: BOT, tiers: TIERS };
+const plan = (g, saved = {}) => planSetup(buildBlueprint(), snapshotGuild(g, saved, BOT, TIERS));
 const deploy = async (g, saved = {}) => { const p = plan(g, saved); return { plan: p, ...await applyPlan(g, p, opts) }; };
 const byName = (g, name) => [...g.channels.cache.values()].find(c => c.name === name);
 const ow = (ch, id) => { const o = ch.permissionOverwrites.cache.get(id); return { allow: o?.allow.toArray() ?? [], deny: o?.deny.toArray() ?? [] }; };
 
-test('схема лёгкая: одна категория, два текстовых канала, без голосовых и ролей', () => {
+test('схема лёгкая: три раздела, четыре канала, один голосовой', () => {
   const bp = buildBlueprint();
-  assert.equal(bp.categories.length, 1);
-  assert.equal(bp.channels.length, 2);
-  assert.ok(bp.channels.every(c => c.type === TEXT));
-  assert.equal(bp.roles, undefined);
+  assert.equal(bp.categories.length, 3);
+  assert.equal(bp.channels.length, 4);
+  assert.equal(bp.channels.filter(c => c.type === VOICE).length, 1);
 });
 
 test('имена со значком и подходят Discord', () => {
@@ -51,7 +50,7 @@ test('имена со значком и подходят Discord', () => {
 
 test('повторный запуск ничего не создаёт и не меняет', async () => {
   const g = fakeGuild(), first = await deploy(g);
-  assert.equal(first.made.length, 3);
+  assert.equal(first.made.length, 7);
   const again = plan(g, { channels: first.channels });
   assert.deepEqual(again.lines, []);
 });
@@ -80,8 +79,8 @@ test('ленту сайта видят только роли персонала 
 
 test('смена ролей персонала убирает доступ у снятой роли', async () => {
   const g = fakeGuild(), first = await deploy(g), feed = byName(g, '🛎️・лента-сайта');
-  const p = planSetup(buildBlueprint(), snapshotGuild(g, { channels: first.channels, staffRoles: STAFF }, BOT, ['role-new']));
-  await applyPlan(g, p, { ...opts, staffIds: ['role-new'] });
+  const p = planSetup(buildBlueprint(), snapshotGuild(g, { channels: first.channels, staffRoles: STAFF }, BOT, { ...TIERS, staff: ['role-new'] }));
+  await applyPlan(g, p, { ...opts, tiers: { ...TIERS, staff: ['role-new'] } });
   assert.equal(feed.permissionOverwrites.cache.has(STAFF[0]), false);
   assert.ok(ow(feed, 'role-new').allow.includes('ViewChannel'));
 });
@@ -92,10 +91,10 @@ test('прошлая схема: каналы бота переименовыв�
   const desk = await g.channels.create({ name: 'обращение', type: TEXT, parent: cat.id, permissionOverwrites: [{ id: 'friends', allow: ['ViewChannel'], deny: [] }] });
   const feed = await g.channels.create({ name: 'обращения', type: TEXT, parent: oldCat.id, permissionOverwrites: [{ id: 'old-role', allow: ['ViewChannel'], deny: [] }] });
   const r = await deploy(g, { channels: { catDesk: cat.id, helpdesk: desk.id, staffTickets: feed.id }, roleIds: { guest: 'old-role' } });
-  assert.equal(r.made.length, 0);
+  assert.equal(r.made.length, 4, 'новые только разделы персонала и дирекции с каналами');
   assert.equal(cat.name, '🎫・ОБРАЩЕНИЯ');
   assert.equal(desk.name, '🎫・написать-нам');
-  assert.equal(feed.parentId, cat.id);
+  assert.equal(feed.parentId, byName(g, '👥・ПЕРСОНАЛ').id);
   assert.ok(desk.permissionOverwrites.cache.has('friends'), 'чужие права остаются');
   assert.equal(feed.permissionOverwrites.cache.has('old-role'), false, 'права старой роли бота убраны');
 });
@@ -103,11 +102,11 @@ test('прошлая схема: каналы бота переименовыв�
 test('каналы сервера получают значки, тип учитывается, повтор не нужен', async () => {
   const g = fakeGuild();
   const news = await g.channels.create({ name: 'анонсы', type: ANNOUNCEMENT }), mine = await g.channels.create({ name: 'анонсы', type: TEXT });
-  const voice = await g.channels.create({ name: 'Voice', type: VOICE }), other = await g.channels.create({ name: 'мемы', type: TEXT });
+  const voice = await g.channels.create({ name: '🔊・лобби', type: VOICE }), other = await g.channels.create({ name: 'мемы', type: TEXT });
   await deploy(g);
   assert.equal(news.name, '📣・анонсы');
   assert.equal(mine.name, 'анонсы');
-  assert.equal(voice.name, '🔊・лобби');
+  assert.equal(voice.name, '🔊・голосовой');
   assert.equal(other.name, 'мемы');
   assert.equal(plan(g).summary.renames, 0);
 });
@@ -138,9 +137,41 @@ test('очистка удаляет пустую категорию бота', (
   assert.deepEqual(c.categories.map(x => x.id), ['k1']);
 });
 
+test('уровни: персонал не видит дирекцию, директора видят оба раздела, админ всё', async () => {
+  const g = fakeGuild(); await deploy(g);
+  const board = byName(g, '💼・дирекция'), feed = byName(g, '🛎️・лента-сайта'), sees = (c, id) => ow(c, id).allow.includes('ViewChannel');
+  assert.ok(ow(board, EVERYONE).deny.includes('ViewChannel'));
+  assert.equal(sees(board, 'role-staff'), false);
+  assert.ok(sees(board, 'role-dir') && sees(board, 'role-admin'));
+  assert.ok(sees(feed, 'role-staff') && sees(feed, 'role-dir') && sees(feed, 'role-admin'));
+});
+
+test('каналы в разделе персонала получают директоров, прежние права ролей сохраняются', async () => {
+  const g = fakeGuild(), cat = await g.channels.create({ name: '👥・ПЕРСОНАЛ', type: CATEGORY, permissionOverwrites: [{ id: EVERYONE, deny: ['ViewChannel'] }, { id: 'role-staff', allow: ['ViewChannel', 'ManageMessages'] }] });
+  const chat = await g.channels.create({ name: '🔒・staff-chat', type: TEXT, parent: cat.id, permissionOverwrites: [{ id: EVERYONE, deny: ['ViewChannel'] }, { id: 'role-staff', allow: ['ViewChannel', 'ManageMessages'] }] });
+  const voice = await g.channels.create({ name: '🔊・staff-voice-1', type: VOICE, parent: cat.id });
+  await deploy(g);
+  assert.ok(ow(chat, 'role-dir').allow.includes('ViewChannel'));
+  assert.ok(ow(chat, 'role-staff').allow.includes('ManageMessages'));
+  assert.ok(ow(voice, 'role-dir').allow.includes('Connect'));
+  assert.deepEqual(plan(g, {}).lines, []);
+});
+
+test('раздел разработки схема не трогает', async () => {
+  const g = fakeGuild(), cat = await g.channels.create({ name: '🛠️・РАЗРАБОТКА', type: CATEGORY, permissionOverwrites: [{ id: EVERYONE, deny: ['ViewChannel'] }, { id: 'role-dev', allow: ['ViewChannel'] }] });
+  await deploy(g);
+  assert.equal(cat.permissionOverwrites.cache.has('role-dir'), false);
+});
+
+test('очистка включает лишний голосовой, если он пуст', () => {
+  const ch = [{ id: 'v2', name: '🔊・staff-voice-2', type: VOICE, parentId: null }];
+  assert.deepEqual(planCleanup(buildBlueprint(), {}, { channels: ch, roles: [] }).channels.map(c => c.id), ['v2']);
+  assert.deepEqual(planCleanup(buildBlueprint(), {}, { channels: ch, roles: [] }, new Set(['v2'])).channels, []);
+});
+
 test('права бота есть во всех новых каналах', () => {
   const bp = buildBlueprint();
-  for (const s of [...bp.categories, ...bp.channels]) assert.ok(overwritesFor(s, STAFF, EVERYONE, BOT).some(o => o.id === BOT), s.name);
+  for (const s of [...bp.categories, ...bp.channels]) assert.ok(overwritesFor(s, TIERS, EVERYONE, BOT).some(o => o.id === BOT), s.name);
 });
 
 test('в Discord осталась только команда обращения', () => {
