@@ -6,7 +6,7 @@ import { buildBlueprint, overwritesFor, TEXT, VOICE, CATEGORY, ANNOUNCEMENT } fr
 import { planSetup, snapshotGuild, applyPlan, planCleanup } from '../server/discord/plan.js';
 import { helpdeskBoard, postPayload, eventAnnouncement, transcriptHtml, feedCard } from '../server/discord/embeds.js';
 import { buildCommands, createInteractions } from '../server/discord/commands.js';
-import { createCore, seed, roomGameFloor } from '../public/js/core.js';
+import { createCore, seed, roomGameFloor, weatherNow } from '../public/js/core.js';
 
 const EVERYONE = 'everyone', BOT = 'bot-user', STAFF = ['role-staff'], TIERS = { admin: ['role-admin'], director: ['role-dir'], staff: STAFF, dev: ['role-dev'] };
 
@@ -352,6 +352,23 @@ test('переписка и закрытие обновляют одну кар�
   await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'ответ' } });
   await core.handle('POST', `/admin/tickets/${t.id}/close`, { user: mod });
   assert.deepEqual(kinds, ['ticket_site', 'ticket_update', 'ticket_update', 'ticket_update']);
+});
+
+test('снег только в новогодней теме', () => {
+  const jan = Date.UTC(2027, 0, 1), kinds = new Set();
+  for (let h = 0; h < 24 * 90; h += 3) kinds.add(weatherNow({ weather: 'auto', theme: 'none' }, jan + h * 3600e3).kind);
+  assert.equal(kinds.has('snow'), false);
+  assert.notEqual(weatherNow({ weather: 'snow', theme: 'none' }, jan).kind, 'snow');
+  assert.equal(weatherNow({ weather: 'clear', theme: 'newyear' }, jan).kind, 'snow');
+});
+
+test('настройки музыки и персонала доступны сайту', async () => {
+  const { core } = makeCore();
+  assert.match(core.publicData().settings.deckUrl, /rkjSuky5vdk/);
+  assert.equal(core.publicData().settings.staffExtras, true);
+  await core.handle('PUT', '/admin/settings/main', { user: admin, body: { staffExtras: false, deckUrl: 'https://youtu.be/abcdefghijk' } });
+  assert.equal(core.publicData().settings.staffExtras, false);
+  assert.match(core.publicData().settings.deckUrl, /abcdefghijk/);
 });
 
 test('транскрипт экранирует разметку и содержит переписку', () => {

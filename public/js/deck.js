@@ -1,51 +1,32 @@
-// Вертушка диджея Sky Pool: пластинка крутится, тонарм опускается, играет тихий лаунж,
-// который синтезируется прямо в браузере. Пластинку можно схватить и поскрэтчить.
-import { audio, scratch, play, soundOn } from './sound.js';
+// Вертушка раздела «Отдых»: музыка с YouTube из настроек сайта. Каждый заход начинается со случайного места,
+// громкость плавно растёт при входе в раздел и плавно падает при уходе. Пластинку можно схватить и поскрэтчить.
+import { scratch, play, soundOn } from './sound.js';
+import { pref } from './api.js';
 import { unlock } from './achievements.js';
 
-const CHORDS = [ // ре-мажор: Dmaj9 · Bm9 · Gmaj9 · A6/9
-  [146.83, 220, 277.18, 329.63, 369.99], [123.47, 185, 220, 293.66, 277.18],
-  [98, 196, 246.94, 293.66, 369.99], [110, 220, 277.18, 329.63, 369.99]];
-const BASS = [73.42, 61.74, 49, 55];
-const MEL = [739.99, 659.25, 587.33, 554.37, 659.25, 739.99, 880, 739.99];
+const FADE_IN = 2600, FADE_OUT = 1500, PLAYING = 1, ENDED = 0;
+const idOf = url => (String(url || '').match(/(?:youtu\.be\/|[?&]v=|embed\/|shorts\/)([\w-]{11})/) || [])[1] || '';
 
-function engine() {
-  const A = audio(); if (!A) return null;
-  const { ctx, bus, rev } = A;
-  const out = ctx.createGain(); out.gain.value = 0; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400; lp.Q.value = 0.5;
-  const wet = ctx.createGain(); wet.gain.value = 0.35; out.connect(lp).connect(bus); lp.connect(wet).connect(rev);
-  const bpm = 92, beat = 60 / bpm; let step = 0, next = ctx.currentTime + 0.1, timer = 0, rate = 1;
-  const env = (g, t, v, a, d) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + d); };
-  function pad(f, t, d) { [-6, 6].forEach(det => { const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sawtooth'; o.frequency.value = f * rate; o.detune.value = det; o.connect(g).connect(out); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.018, t + 0.6); g.gain.linearRampToValueAtTime(0.0001, t + d); o.start(t); o.stop(t + d + 0.05); }); }
-  function bass(f, t) { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f * rate; o.connect(g).connect(out); env(g, t, 0.16, 0.01, beat * 1.6); o.start(t); o.stop(t + beat * 2); }
-  function kick(t) { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.18); o.connect(g).connect(out); env(g, t, 0.35, 0.003, 0.28); o.start(t); o.stop(t + 0.3); }
-  function hat(t, v) { const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = A.noiseBuf; f.type = 'highpass'; f.frequency.value = 7000; s.connect(f).connect(g).connect(out); env(g, t, v, 0.002, 0.05); s.start(t, Math.random() * .3); s.stop(t + 0.07); }
-  function keys(f, t) { const o = ctx.createOscillator(), m = ctx.createOscillator(), mg = ctx.createGain(), g = ctx.createGain(); o.frequency.value = f * rate; m.frequency.value = f * rate * 2; mg.gain.value = f * 0.6; m.connect(mg).connect(o.frequency); o.connect(g).connect(out); env(g, t, 0.035, 0.005, 1.1); o.start(t); m.start(t); o.stop(t + 1.2); m.stop(t + 1.2); }
-  function tick() {
-    while (next < ctx.currentTime + 0.25) {
-      const bar = Math.floor(step / 16) % 4, s16 = step % 16;
-      if (s16 === 0) { CHORDS[bar].forEach(f => pad(f, next, beat * 4)); }
-      if (s16 === 0 || s16 === 10) bass(BASS[bar], next);
-      if (s16 % 8 === 0) kick(next);
-      if (s16 % 4 === 2) hat(next, 0.05); else if (s16 % 2 === 1) hat(next, 0.018);
-      if ((step * 7) % 11 < 3 && s16 % 2 === 0) keys(MEL[(step >> 1) % MEL.length], next);
-      next += beat / 4; step++;
-    }
-  }
-  return {
-    start() { out.gain.cancelScheduledValues(ctx.currentTime); out.gain.setTargetAtTime(0.9, ctx.currentTime, 0.4); next = ctx.currentTime + 0.05; tick(); timer = setInterval(tick, 60); },
-    stop() { out.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.25); clearInterval(timer); },
-    duck(v) { out.gain.setTargetAtTime(v, ctx.currentTime, 0.03); lp.frequency.setTargetAtTime(v < .5 ? 700 : 2400, ctx.currentTime, 0.05); },
-  };
-}
+let api = null;
+const loadApi = () => api ||= new Promise(done => {
+  if (window.YT?.Player) return done(window.YT);
+  const prev = window.onYouTubeIframeAPIReady;
+  window.onYouTubeIframeAPIReady = () => { prev?.(); done(window.YT); };
+  const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api';
+  s.onerror = () => { api = null; done(null); };
+  document.head.append(s);
+});
 
-export function mountDeck(host) {
-  host.innerHTML = `<div class="deck"><div class="plat"><div class="rec" id="dkRec"><i class="lbl"><b>MHC</b><small>Sky Pool · Side A</small></i></div><div class="arm" id="dkArm"><i></i></div></div>
-    <div class="dkc"><span class="eyebrow">Диджей Sky Pool</span><h3>Поставьте пластинку</h3><p class="note">Нажмите «Играть», чтобы послушать лаунж бассейна. Схватите пластинку и потяните, чтобы поскрэтчить.</p>
-      <div class="row"><button class="btn sm" id="dkPlay" data-sfx="">Играть</button><span class="eqb" id="dkEq"><i></i><i></i><i></i><i></i><i></i></span></div>
-      <label class="dkv">Громкость<input type="range" id="dkVol" min="0" max="100" value="60"></label></div></div>`;
-  const rec = host.querySelector('#dkRec'), arm = host.querySelector('#dkArm'), btn = host.querySelector('#dkPlay'), deck = host.querySelector('.deck');
-  let scr = 0, eng = null, playing = false, ang = 0, vel = 0, raf = 0, drag = null, last = 0, vol = .6;
+export function mountDeck(host, url) {
+  host.innerHTML = `<div class="deck"><div class="plat"><div class="rec" id="dkRec"><svg class="lbl" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="dkG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0177a"/><stop offset=".55" stop-color="#ef5617"/><stop offset="1" stop-color="#f7b50a"/></linearGradient><path id="dkP" d="M50 50m-34 0a34 34 0 1 1 68 0a34 34 0 1 1 -68 0"/></defs><circle cx="50" cy="50" r="49" fill="url(#dkG)"/><text><textPath href="#dkP">MILE HIGH CLUB · SKY POOL · SIDE A ·</textPath></text><circle cx="50" cy="50" r="7" fill="#0b0708"/></svg></div><div class="arm" id="dkArm"><i></i></div></div>
+    <div class="dkc"><span class="eyebrow">Радио Sky Pool</span><h3 id="dkT">Лаунж у бассейна</h3><p class="note" id="dkN">Играет тихо на фоне, пока вы в этом разделе. Пластинку можно схватить и поскрэтчить.</p>
+      <div class="row"><button class="btn sm" id="dkPlay" data-sfx="">Играть</button><span class="eqb"><i></i><i></i><i></i><i></i><i></i></span></div>
+      <label class="dkv">Громкость<input type="range" id="dkVol" min="0" max="100"></label></div><div class="dkyt"><div id="dkYt"></div></div></div>`;
+  const $ = s => host.querySelector(s), rec = $('#dkRec'), btn = $('#dkPlay'), deck = $('.deck'), note = $('#dkN');
+  let id = idOf(url), player = null, ready = false, loading = false, playing = false, shown = false, level = 0, fadeT = 0, want = pref.get('mhc-deck') !== 'off';
+  let vol = Number(pref.get('mhc-deck-vol')) || 30, ang = 0, vel = 0, raf = 0, drag = null, last = 0, scr = 0, blockT = 0;
+  $('#dkVol').value = vol; deck.classList.toggle('none', !id);
+
   function loop(t) {
     raf = 0; const dt = Math.min(.05, last ? (t - last) / 1000 : .016); last = t;
     const target = playing && !drag ? 3.2 : 0; // 33⅓ об/мин ≈ 3.5 рад/с
@@ -54,19 +35,64 @@ export function mountDeck(host) {
     if (playing || Math.abs(vel) > .01 || drag) raf = requestAnimationFrame(loop); else last = 0;
   }
   const kick = () => { if (!raf) raf = requestAnimationFrame(loop); };
-  function set(on) {
-    if (on && !soundOn) { btn.textContent = 'Включите звук'; setTimeout(() => btn.textContent = 'Играть', 1500); return; }
-    playing = on; deck.classList.toggle('on', on); btn.textContent = on ? 'Стоп' : 'Играть';
-    if (on) { play('needle'); eng = eng || engine(); setTimeout(() => { if (playing) { eng?.start(); eng?.duck(vol); } }, 500); }
-    else eng?.stop();
-    kick();
+  const ui = on => { playing = on; deck.classList.toggle('on', on); btn.textContent = on ? 'Стоп' : 'Играть'; kick(); };
+  const fade = (to, ms, done) => {
+    clearInterval(fadeT); const from = level, t0 = performance.now();
+    fadeT = setInterval(() => {
+      const k = Math.min(1, (performance.now() - t0) / ms); level = from + (to - from) * k * k * (3 - 2 * k);
+      player?.setVolume?.(Math.round(level));
+      if (k === 1) { clearInterval(fadeT); done?.(); }
+    }, 50);
+  };
+  // случайное место: не первые и не последние секунды
+  function jump() { const d = player.getDuration?.() || 0; if (d > 90) player.seekTo(d * .04 + Math.random() * d * .86, true); }
+  function start() {
+    if (!id) return; if (!soundOn) { note.textContent = 'Включите звук сайта, чтобы слушать.'; return; }
+    if (!player) return create();
+    if (!ready) return;
+    clearInterval(fadeT); level = 0; player.setVolume(0); jump(); player.playVideo();
+    clearTimeout(blockT); blockT = setTimeout(() => { if (!playing) note.textContent = 'Браузер ждёт вашего нажатия: включите музыку кнопкой.'; }, 2000);
   }
-  btn.onclick = () => set(!playing);
-  host.querySelector('#dkVol').oninput = e => { vol = e.target.value / 100; if (playing) eng?.duck(vol); };
+  function halt() { clearTimeout(blockT); if (!playing) return; ui(false); fade(0, FADE_OUT, () => player?.pauseVideo?.()); }
+  async function create() {
+    if (loading) return; loading = true;
+    const YT = await loadApi(); if (!YT) { loading = false; note.textContent = 'Музыка сейчас недоступна.'; return; }
+    player = new YT.Player($('#dkYt'), {
+      width: '100%', height: '100%', videoId: id, host: 'https://www.youtube-nocookie.com',
+      playerVars: { controls: 0, disablekb: 1, fs: 0, rel: 0, playsinline: 1, iv_load_policy: 3, origin: location.origin },
+      events: {
+        onReady() { ready = true; loading = false; const t = player.getVideoData?.().title; if (t) $('#dkT').textContent = t; if (shown && want) start(); },
+        onStateChange(e) {
+          if (e.data === PLAYING && !playing && shown && want) { ui(true); clearTimeout(blockT); note.textContent = 'Играет тихо на фоне, пока вы в этом разделе. Пластинку можно схватить и поскрэтчить.'; fade(vol, FADE_IN); }
+          if (e.data === ENDED) { jump(); player.playVideo(); }
+        },
+        onError() { loading = false; note.textContent = 'Это видео нельзя воспроизвести. Замените ссылку в настройках сайта.'; }
+      }
+    });
+  }
+  btn.onclick = () => {
+    want = !playing; pref.set('mhc-deck', want ? 'on' : 'off'); play('needle');
+    if (want) start(); else halt();
+  };
+  $('#dkVol').oninput = e => { vol = +e.target.value; pref.set('mhc-deck-vol', String(vol)); if (playing && !drag) { clearInterval(fadeT); level = vol; player?.setVolume?.(vol); } };
+
   const angleAt = e => { const r = rec.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)); };
-  rec.addEventListener('pointerdown', e => { e.preventDefault(); rec.setPointerCapture(e.pointerId); drag = { a: angleAt(e), t: performance.now() }; vel = 0; if (playing) eng?.duck(vol * .25); kick(); });
-  rec.addEventListener('pointermove', e => { if (!drag) return; const a = angleAt(e), now = performance.now(); let d = a - drag.a; d = Math.atan2(Math.sin(d), Math.cos(d)); const dt = Math.max(8, now - drag.t) / 1000; ang += d; vel = d / dt; drag.a = a; drag.t = now; if (Math.abs(d) > .02) scratch(vel / 25); scr += Math.abs(d); if (scr > 12) unlock('scratch'); });
-  const up = () => { if (!drag) return; drag = null; if (playing) eng?.duck(vol); kick(); };
+  rec.addEventListener('pointerdown', e => { e.preventDefault(); rec.setPointerCapture(e.pointerId); drag = { a: angleAt(e), t: performance.now() }; vel = 0; if (playing) fade(vol * .25, 200); kick(); });
+  rec.addEventListener('pointermove', e => {
+    if (!drag) return; const a = angleAt(e), now = performance.now(); let d = a - drag.a; d = Math.atan2(Math.sin(d), Math.cos(d));
+    const dt = Math.max(8, now - drag.t) / 1000; ang += d; vel = d / dt; drag.a = a; drag.t = now; rec.style.transform = `rotate(${ang}rad)`;
+    if (Math.abs(vel) > 2) { scratch(Math.min(1, Math.abs(vel) / 30)); if (++scr > 40) unlock('dj'); }
+  });
+  const up = () => { if (!drag) return; drag = null; if (playing) fade(vol, 400); kick(); };
   rec.addEventListener('pointerup', up); rec.addEventListener('pointercancel', up);
-  return { stop() { if (playing) set(false); } };
+
+  return {
+    active(on) { shown = on; if (on && want) start(); else if (!on) halt(); },
+    sound() { if (!soundOn) halt(); else if (shown && want) start(); },
+    url(next) {
+      const n = idOf(next); if (n === id) return; id = n; deck.classList.toggle('none', !id);
+      if (!id) { halt(); return; }
+      if (player && ready) { halt(); player.cueVideoById(id); setTimeout(() => { const t = player.getVideoData?.().title; if (t) $('#dkT').textContent = t; if (shown && want) start(); }, FADE_OUT + 300); }
+    }
+  };
 }

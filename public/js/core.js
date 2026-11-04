@@ -8,15 +8,16 @@ export const MSK_OFFSET = 3 * 3600e3;
 export const mskDate = (t = Date.now()) => new Date(t + MSK_OFFSET);
 export const mskMinutes = (t = Date.now()) => { const d = mskDate(t); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
 // Погода над отелем. «Авто» меняется каждые 3 часа по московскому времени и одинакова у всех гостей:
-// зимой бывает снег, летом — дождь и туман. Новогодняя тема всегда включает снег.
+// ясно, дождь или туман. Снег идёт только в новогодней теме и никогда сам по себе.
 export const WEATHER = { clear: 'Ясно', rain: 'Дождь', fog: 'Туман', snow: 'Снег' };
 export function weatherNow(s = {}, t = Date.now()) {
   const d = mskDate(t), mon = d.getUTCMonth(), winter = mon >= 10 || mon <= 2, h = d.getUTCHours();
   let kind = s.weather && s.weather !== 'auto' ? s.weather : null;
+  if (kind === 'snow') kind = null;
   if (s.theme === 'newyear') kind = 'snow';
   if (!kind) {
     const block = Math.floor((t + MSK_OFFSET) / (3 * 3600e3)); let x = (block * 2654435761) >>> 0; x ^= x >>> 15; x = (x * 2246822519) >>> 0; x ^= x >>> 13; const r = (x % 1000) / 1000;
-    kind = winter ? (r < .38 ? 'snow' : r < .62 ? 'clear' : r < .82 ? 'fog' : 'rain') : (r < .55 ? 'clear' : r < .78 ? 'rain' : 'fog');
+    kind = winter ? (r < .5 ? 'clear' : r < .78 ? 'fog' : 'rain') : (r < .55 ? 'clear' : r < .78 ? 'rain' : 'fog');
   }
   const base = [-6, -5, 0, 8, 15, 20, 23, 21, 15, 8, 1, -4][mon], daily = Math.round(Math.sin((h - 9) / 24 * Math.PI * 2) * 3);
   const temp = kind === 'snow' ? Math.min(-1, base + daily) : kind === 'rain' ? Math.max(2, base + daily - 2) : base + daily;
@@ -35,7 +36,7 @@ const EDITABLE = {
 };
 // Отправители постов в Discord: имя и аватарка вебхука
 const DEFAULT_SENDERS = [['concierge', '🛎️ Консьерж MHC', '#F7B50A'], ['reception', '🔑 Ресепшен MHC', '#F0177A'], ['manager', '🥂 Управляющий MHC', '#EF5617'], ['journal', '📰 Журнал «Высота»', '#F4D9A0']].map(([id, name, color], order) => ({ id, name, color, avatar: `img/discord/${id}.png`, order }));
-const PUBLIC_SETTINGS = ['weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer'];
+const PUBLIC_SETTINGS = ['deckUrl', 'staffExtras', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer'];
 
 export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const bad = m => { throw new HttpError(400, m); };
@@ -306,7 +307,7 @@ export function createCore(store, hooks = {}) {
     if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', S(400)); pick('date', N); pick('published', B); pick('accent', S(9)); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: str(p.image, 400), cat: str(p.cat, 30) })); }
     if (col === 'events') { pick('name', S(100)); pick('desc', S(1000)); pick('start', N); pick('end', N); pick('location', S(100)); pick('venueId', S(40)); pick('image', S(400)); pick('status', v => ['scheduled', 'active', 'completed', 'cancelled'].includes(v) ? v : 'scheduled'); if (!('source' in o)) o.source = 'manual'; }
     if (col === 'senders') { pick('name', S(80)); pick('avatar', S(400)); pick('color', v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : '#F0177A'); pick('order', N); }
-    if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'address', 'footer']) pick(k, S(400)); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
+    if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'address', 'footer', 'deckUrl']) pick(k, S(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
     return o;
   }
   const label = c => ({ types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие', senders: 'отправителя' }[c] || c);
@@ -366,7 +367,8 @@ function hideDemoEvents(store) { for (const id of ['e-demo1', 'e-demo2']) { cons
 // Кнопка лифта в игре для этажа номеров: снизу вверх, верхние этажи сверх шести идут на Rooms Floor 6
 export function roomGameFloor(rooms, floor) { const list = [...new Set(rooms.map(r => r.floor))].sort((a, b) => a - b), i = list.indexOf(floor); return i < 0 ? '' : `Rooms Floor ${Math.min(i + 1, 6)}`; }
 
-export function seed(store) { const fresh = seedBase(store); floorsV1(store); hideDemoEvents(store); return fresh; }
+export function seed(store) { const fresh = seedBase(store); floorsV1(store); hideDemoEvents(store); siteV3(store); return fresh; }
+function siteV3(store) { const s = store.get('settings', 'main'); if (s.siteV3) return; store.put('settings', 'main', { ...s, siteV3: true, deckUrl: s.deckUrl ?? 'https://youtu.be/rkjSuky5vdk', staffExtras: s.staffExtras ?? true, weather: s.weather === 'snow' ? 'auto' : s.weather }); }
 function seedBase(store) {
   if (store.get('settings', 'main')) { seedV2(store); return false; }
   const put = (c, d) => store.put(c, d.id, d);
