@@ -81,3 +81,5 @@ node promo/render.cjs promo-out/a2 --page ad2.html        # 600 кадров; м
 python3 promo/sfx.py promo-out/a2/cues.json promo-out/a2/sfx.wav
 ffmpeg -framerate 30 -i promo-out/a2/f%04d.png -i promo-out/a2/sfx.wav -c:v libx264 -crf 17 -pix_fmt yuv420p -c:a aac -b:a 256k -shortest -movflags +faststart mhc-promo-v2.mp4
 ```
+
+Горизонтальная версия 16:9 (1920×1080): тот же сценарий, тайминги и звук, другая раскладка сцен. Рендер: `node promo/render.cjs promo-out/a2w --page ad2-wide.html`.
