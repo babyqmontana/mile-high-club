@@ -3,7 +3,7 @@ import { api, subscribe, authConfig, login, logout, DEMO, pref } from './api.js'
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
 import { unlock, burst, openCabinet, count as achCount, LIST as ACH, onChange as onAch } from './achievements.js';
-import { venueState, mskMinutes, weatherNow, ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, minutesOf, inSpan } from './core.js';
+import { venueState, mskMinutes, weatherNow, ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, minutesOf, inSpan, roomGameFloor } from './core.js';
 
 document.documentElement.classList.add('js');
 const ROUTES = [['home', 'Главная'], ['stay', 'Номера'], ['leisure', 'Отдых'], ['dining', 'Le Ciel'], ['cigars', 'Сигары'], ['journal', 'Журнал'], ['staff', 'Персонал'], ['contact', 'Заявка']];
@@ -203,7 +203,7 @@ function renderHome() {
   </div>
   <div class="wrap sec">
     <div class="row reveal" style="justify-content:space-between;margin-bottom:1.2rem"><div class="head" style="margin:0"><span class="eyebrow">Афиша</span><h2>События отеля</h2></div>${s.discordInvite ? `<a class="btn ghost sm" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} События в Discord</a>` : ''}</div>
-    ${evs.length ? `<div class="events reveal">${evs.map(evCard).join('')}</div>` : '<div class="empty reveal">Событий пока нет. Создайте событие на Discord-сервере, и оно появится здесь.</div>'}
+    ${evs.length ? `<div class="events reveal">${evs.map(evCard).join('')}</div>` : '<div class="empty reveal">Событий пока нет. Следите за анонсами на сервере.</div>'}
   </div>
   ${(p.offers || []).length ? `<div class="wrap sec" style="padding-top:0">
     <div class="head reveal"><span class="eyebrow">Предложения</span><h2>Пакеты отеля</h2></div>
@@ -409,7 +409,7 @@ function insertKey(then) {
 }
 function roomPanel(r, t) {
   return `<div class="card pad rpanel">${keyCard(r, t)}${t?.image ? `<div class="img cover" style="background-image:url('${esc(t.image)}')"></div>` : ''}<div class="stack" style="gap:.5rem"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.3rem">Номер ${esc(r.id)}</h3><span class="chip ${r.status === 'free' ? 'ok' : 'm'}">${ROOM_STATUS[r.status]}</span></div>
-    <span class="mut">${esc(t?.name || '')} · ${r.floor} этаж · <b class="num" style="color:var(--fg)">${money(t?.price)}</b> за ночь</span><p class="note">${esc(t?.desc || '')}</p>
+    <span class="mut">${esc(t?.name || '')} · ${r.floor} этаж · ${roomGameFloor(S.pub.rooms, r.floor)} · <b class="num" style="color:var(--fg)">${money(t?.price)}</b> за ночь</span><p class="note">${esc(t?.desc || '')}</p>
     ${r.status === 'free' ? `<div><button class="btn" id="bookRoom" data-sfx="open">Забронировать ${esc(r.id)}</button></div>` : `<div><button class="btn ghost" onclick="location.hash='#contact'">Номер занят, оставить заявку</button></div>`}</div></div>`;
 }
 

@@ -358,8 +358,13 @@ function floorsV1(store) {
   for (const d of DEFAULT_SENDERS) { const x = store.get('senders', d.id); if (x) store.put('senders', d.id, { ...x, name: d.name, color: x.color || d.color }); }
   store.put('settings', 'main', { ...s, floorsV1: true });
 }
+// Примеры событий из первой версии не должны попасть к гостям. В панели они остаются отменёнными.
+function hideDemoEvents(store) { for (const id of ['e-demo1', 'e-demo2']) { const e = store.get('events', id); if (e && e.status !== 'cancelled') store.put('events', id, { ...e, status: 'cancelled' }); } }
 
-export function seed(store) { const fresh = seedBase(store); floorsV1(store); return fresh; }
+// Кнопка лифта в игре для этажа номеров: снизу вверх, верхние этажи сверх шести идут на Rooms Floor 6
+export function roomGameFloor(rooms, floor) { const list = [...new Set(rooms.map(r => r.floor))].sort((a, b) => a - b), i = list.indexOf(floor); return i < 0 ? '' : `Rooms Floor ${Math.min(i + 1, 6)}`; }
+
+export function seed(store) { const fresh = seedBase(store); floorsV1(store); hideDemoEvents(store); return fresh; }
 function seedBase(store) {
   if (store.get('settings', 'main')) { seedV2(store); return false; }
   const put = (c, d) => store.put(c, d.id, d);
@@ -410,7 +415,5 @@ function seedBase(store) {
   const day = 864e5, base = Date.now();
   put('issues', { id: 'i1', title: 'Высота', number: '№ 01', publisher: 'Mile High Media', desc: 'Первый выпуск: ночь в атриуме, бархат и неон, хьюмидор и кухня Le Ciel. Тестовый выпуск, страницы меняются в панели.', date: base - 2 * day, published: true, accent: '#F0177A', cover: 'img/journal/p1.webp',
     pages: [1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ kind: 'image', image: `img/journal/p${n}.webp`, title: '', text: '' })) });
-  put('events', { id: 'e-demo1', name: 'Neon Night: открытие сезона', desc: 'Резиденты The Hot Times, неоновая вода и шампанское до утра.', start: base + 2 * 3600e3, end: base + 7 * 3600e3, location: 'Night Pool, 40 этаж', venueId: 'night', image: '', status: 'scheduled', source: 'manual' });
-  put('events', { id: 'e-demo2', name: 'Дегустация сигар', desc: 'Три сигары дома отеля и коньяк. Двенадцать мест.', start: base + day + 3600e3 * 3, end: base + day + 3600e3 * 6, location: 'Сигарный клуб', venueId: 'cigar', image: '', status: 'scheduled', source: 'manual' });
   return true;
 }

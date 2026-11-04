@@ -6,7 +6,7 @@ import { buildBlueprint, overwritesFor, TEXT, VOICE, CATEGORY, ANNOUNCEMENT } fr
 import { planSetup, snapshotGuild, applyPlan, planCleanup } from '../server/discord/plan.js';
 import { helpdeskBoard, postPayload, eventAnnouncement, transcriptHtml } from '../server/discord/embeds.js';
 import { buildCommands, createInteractions } from '../server/discord/commands.js';
-import { createCore, seed } from '../public/js/core.js';
+import { createCore, seed, roomGameFloor } from '../public/js/core.js';
 
 const EVERYONE = 'everyone', BOT = 'bot-user', STAFF = ['role-staff'], TIERS = { admin: ['role-admin'], director: ['role-dir'], staff: STAFF, dev: ['role-dev'] };
 
@@ -312,6 +312,15 @@ test('удалить можно только закрытые обращения
   const open = await ticket(core);
   assert.equal((await core.handle('POST', '/admin/tickets/purge', { user: admin })).deleted, 1);
   assert.deepEqual(store.all('tickets').map(x => x.id), [open.id]);
+});
+
+test('демо-событий нет у гостей, этажи номеров совпадают с лифтом', () => {
+  const { core } = makeCore();
+  assert.equal(core.publicData().events.some(e => e.id.startsWith('e-demo')), false);
+  const rooms = [20, 21, 22, 23, 24, 25, 26].map(floor => ({ floor }));
+  assert.equal(roomGameFloor(rooms, 20), 'Rooms Floor 1');
+  assert.equal(roomGameFloor(rooms, 25), 'Rooms Floor 6');
+  assert.equal(roomGameFloor(rooms, 26), 'Rooms Floor 6');
 });
 
 test('транскрипт экранирует разметку и содержит переписку', () => {

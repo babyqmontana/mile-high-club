@@ -19,6 +19,7 @@ const list = await hooks.planCleanup();
 console.log(`Будет удалено: каналов ${list.channels.length}, категорий ${list.categories.length}, ролей ${list.roles.length}.`);
 if (list.kept.length) console.log('Останутся, там писали люди:', list.kept.join(', '));
 const r = await hooks.cleanupGuild();
-console.log(`Готово. Удалено каналов: ${r.channels}, категорий: ${r.categories}, ролей: ${r.roles}.`);
+const traces = await hooks.clearTestTraces();
+console.log(`Готово. Удалено каналов: ${r.channels}, категорий: ${r.categories}, ролей: ${r.roles}, сообщений проверок: ${traces}.`);
 await client.destroy();
 process.exit(0);
