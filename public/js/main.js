@@ -37,7 +37,7 @@ function shell() {
   $('#drawerX').onclick = closeDrawer;
   $$('#drawer a').forEach(a => a.addEventListener('click', closeDrawer));
   // звук и день/ночь: в шапке, а на узких экранах — в меню (те же действия)
-  $('#sndBtn').onclick = $('#dSnd').onclick = () => { setSound(!soundOn); paintNav(); burst('dj', 8, 20000); };
+  $('#sndBtn').onclick = $('#dSnd').onclick = () => { setSound(!soundOn); paintNav(); mods.deck?.sound(); burst('dj', 8, 20000); };
   $('#modeBtn').onclick = $('#dMode').onclick = () => { manualMode = mode() === 'day' ? 'night' : 'day'; play(manualMode); applyMode(); burst('sunmoon', 6, 60000); };
   // логотип: с каждым кликом подрагивает сильнее — намёк, что что-то будет
   { let n = 0, tmr = 0; $('.brand').addEventListener('click', () => { clearTimeout(tmr); tmr = setTimeout(() => { n = 0; $('.brand').style.removeProperty('--wob'); }, 2500); n++; const b = $('.brand'); b.style.setProperty('--wob', Math.min(n, 7)); b.classList.remove('wob'); void b.offsetWidth; b.classList.add('wob'); if (n >= 7) { n = 0; unlock('logo'); } }); }
@@ -129,7 +129,7 @@ function doRoute() {
   if (changed) { scrollTo({ top: 0 }); play('whoosh'); }
   updFab();
 }
-const viewMod = h => ({ stay: 'tower', cigars: 'hum', staff: 'staff', issue: 'book' }[h]);
+const viewMod = h => ({ stay: 'tower', cigars: 'hum', staff: 'staff', issue: 'book', leisure: 'deck' }[h]);
 function render(h = current) {
   if (!S.pub) return;
   try { ({ home: renderHome, stay: renderStay, leisure: renderLeisure, dining: renderDining, cigars: renderCigars, journal: renderJournal, issue: renderIssue, staff: renderStaff, contact: renderContact, me: renderMe, admin: renderAdmin, lost: renderLost }[h] || renderHome)(); }
@@ -184,7 +184,7 @@ function renderHome() {
   const heroHtml = `
   <section class="dive" id="dive"><div class="stick">
     <div class="bg" style="background-image:url('${esc(m === 'day' ? s.heroDay : s.heroNight)}')"></div><canvas id="heroGl" aria-hidden="true"></canvas><canvas class="wxc" id="heroWx" aria-hidden="true"></canvas>
-    <div class="wrap dv dv1" id="dv1"><img class="logo" id="heroLogo" src="img/logo.webp?v=2" alt="${esc(s.hotelName)}" width="300" height="300">
+    <div class="wrap dv dv1" id="dv1"><img class="logo" id="heroLogo" src="img/logo.webp?v=3" alt="${esc(s.hotelName)}" width="500" height="300">
       <h1>${nowrapHyphens(esc(s.tagline || 'Отель над Лос-Сантосом'))}. <span class="serif">${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</span></h1>
       <div class="row"><a class="btn" href="#stay">Забронировать номер</a><a class="btn ghost" href="#leisure">Что сейчас открыто</a></div></div>
     <div class="wrap dv dv2" id="dv2"><span class="eyebrow">Вы в атриуме</span><h2>Сорок этажей стекла, латуни и неона</h2><p>Лифт поднимет в номера с 20 этажа, бассейны ждут на 38 и 40, Le Ciel на 30.</p><div class="row"><a class="btn" href="#stay">Выбрать номер</a><a class="btn ghost" href="#cigars">Сигарный клуб</a></div></div>
@@ -493,8 +493,9 @@ function renderLeisure() {
   if (!lv.querySelector('#venuesList')) {
     lv.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Отдых</span><h2>Что сейчас открыто</h2><p>Статусы обновляются по расписанию и по событиям из Discord. Время — московское. Днём работает Sky Pool, ночью Night Pool и The Hot Times.</p></div>
       <div id="deckHost" class="reveal"></div><section class="hday reveal" id="hday" aria-label="Сутки отеля"></section><div class="venues" id="venuesList"></div></div>`;
-    import('./deck.js').then(d => { mods.deck = { ...d.mountDeck($('#deckHost')), active(on) { if (!on) this.stop(); } }; });
+    import('./deck.js').then(d => { mods.deck = d.mountDeck($('#deckHost'), S.pub.settings.deckUrl); mods.deck.active(current === 'leisure'); });
   }
+  mods.deck?.url(p.settings.deckUrl);
   const cards = p.venues.map(v => { const st = venueState(v, p.events), evs = p.events.filter(e => e.venueId === v.id && (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 3);
     const visual = v.image ? `<div class="img cover" style="background-image:url('${esc(v.image)}')">` : v.kind === 'pool' ? `<div class="img"><div class="water ${v.id === 'night' || /night|ноч/i.test(v.name) ? 'n' : ''} ${st.state === 'live' || st.state === 'event' ? 'live' : ''}"><div class="sky"></div><div class="pl"></div></div>` : `<div ${bg('', v.name, v.accent || '#F0177A', '#F7B50A', 'img')}>`;
     return `<article class="venue reveal" data-venue="${esc(v.id)}">${visual}${stateChip(st)}</div><div class="body"><div class="row" style="justify-content:space-between"><h3>${esc(v.name)}</h3><span class="note">${esc(KIND_LABEL[v.kind] || '')}${v.floor ? ' · ' + esc(v.floor) : ''}</span></div>
@@ -720,6 +721,8 @@ function loadStaff3d() {
   import('./staff3d.js').then(m => { mods.staff = m.mountStaff($('#stage'), () => $('#stLoad')?.remove(), () => { const l = $('#stLoad'); if (l) l.textContent = '3D-манекен не загрузился. Форму отдела можно посмотреть во вкладке «Униформа 360°».'; }); mods.staff.active(current === 'staff' && staffMode === 'model'); paintStaff(); }).catch(e => { console.error(e); $('#stLoad').textContent = '3D-просмотр не загрузился.'; });
 }
 function paintStaff() {
+  const extras = S.pub.settings.staffExtras !== false; if (!extras) staffMode = 'team'; // в настройках можно оставить только команду
+  $('.staffhead .seg').style.display = extras ? '' : 'none';
   const T = { team: ['Команда отеля', 'Люди, которые держат Mile High Club на высоте. Нажмите на карточку, чтобы узнать о сотруднике.'], outfit: ['Униформа по отделам', 'Каждая вещь формы крутится на 360°. Пока это заглушки в цветах отдела, фото подставим, когда будут готовы.'], model: ['Форма на манекене', 'Покрутите манекен мышью или пальцем. Цвета берутся из формы отдела.'] }[staffMode];
   $('#stH').textContent = T[0]; $('#stP').textContent = T[1];
   $$('#main [data-sm]').forEach(b => b.setAttribute('aria-pressed', b.dataset.sm === staffMode));
@@ -814,7 +817,7 @@ function renderMe() {
 }
 export async function openLogin(next = 'admin') {
   authCfg = await authConfig();
-  modal(`<div class="stack" style="justify-items:center;text-align:center"><img src="img/logo.webp?v=2" alt="" width="90" height="90"><h3>Вход</h3><p class="mut">Персонал входит через Discord. Если у вас роль администратора или модератора на нашем сервере, откроется панель.</p>
+  modal(`<div class="stack" style="justify-items:center;text-align:center"><img src="img/logo.webp?v=3" alt="" width="150" height="90"><h3>Вход</h3><p class="mut">Персонал входит через Discord. Если у вас роль администратора или модератора на нашем сервере, откроется панель.</p>
     ${authCfg.oauth ? `<button class="btn discord" data-close="discord">${I.discord} Войти через Discord</button>` : ''}
     ${authCfg.demo ? `<div class="stack" style="width:100%"><span class="lbl">${authCfg.oauth ? 'Или демо-вход' : 'Демо-вход'}</span><div class="row" style="justify-content:center"><button class="btn sm" data-close="admin">Администратор</button><button class="btn sm ghost" data-close="mod">Модератор</button><button class="btn sm ghost" data-close="guest">Гость</button></div>${!authCfg.oauth ? '<p class="note">Вход через Discord включится, когда на сервере будут указаны ключи Discord-приложения.</p>' : ''}</div>` : ''}
     ${!authCfg.oauth && !authCfg.demo ? '<p class="note">Вход через Discord ещё не настроен на сервере.</p>' : ''}<button class="btn ghost sm" data-close="">Отмена</button></div>`).then(r => { if (!r) return; login(r === 'discord' ? 'admin' : r, next); });
@@ -824,7 +827,7 @@ export async function openLogin(next = 'admin') {
 function renderAdmin() {
   const v = view('admin');
   if (!S.me || S.me.role === 'guest') {
-    v.innerHTML = `<div class="gate"><img src="img/logo.webp?v=2" alt="" width="110" height="110"><h2 style="font-size:1.8rem">Вход для персонала</h2><p class="mut">${S.me ? `Вы вошли как ${esc(S.me.username)}, но у вас нет роли администратора или модератора на Discord-сервере отеля.` : 'Войдите через Discord. Доступ дают роли администратора и модератора на нашем сервере.'}</p><div class="row" style="justify-content:center">${S.me ? `<button class="btn ghost" id="gOut">${I.out} Выйти</button>` : ''}<button class="btn discord" id="gIn">${I.discord} Войти через Discord</button></div></div>`;
+    v.innerHTML = `<div class="gate"><img src="img/logo.webp?v=3" alt="" width="183" height="110"><h2 style="font-size:1.8rem">Вход для персонала</h2><p class="mut">${S.me ? `Вы вошли как ${esc(S.me.username)}, но у вас нет роли администратора или модератора на Discord-сервере отеля.` : 'Войдите через Discord. Доступ дают роли администратора и модератора на нашем сервере.'}</p><div class="row" style="justify-content:center">${S.me ? `<button class="btn ghost" id="gOut">${I.out} Выйти</button>` : ''}<button class="btn discord" id="gIn">${I.discord} Войти через Discord</button></div></div>`;
     $('#gIn').onclick = () => openLogin('admin'); $('#gOut') && ($('#gOut').onclick = () => logout()); return;
   }
   import('./admin.js').then(m => { mods.admin = m; m.mountAdmin(v, { reloadPublic: loadPublic, logout, openLogin }); }).catch(e => { console.error(e); v.innerHTML = '<div class="gate">Панель не загрузилась. Обновите страницу.</div>'; });
@@ -869,7 +872,7 @@ async function boot() {
     try { await Promise.all([loadPublic(), loadMe()]); } catch (e) { failed = e; return; }
     set(45);
     const s = S.pub.settings, m = mode(), hero = m === 'day' ? s.heroDay : s.heroNight;
-    let done = 0; const jobs = [document.fonts?.ready, preload('img/logo.webp?v=2'), preload(hero), heroLayers(hero)].map(p => Promise.resolve(p).catch(() => {}).then(() => set(45 + (++done / 4) * 50)));
+    let done = 0; const jobs = [document.fonts?.ready, preload('img/logo.webp?v=3'), preload(hero), heroLayers(hero)].map(p => Promise.resolve(p).catch(() => {}).then(() => set(45 + (++done / 4) * 50)));
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов
     if (hasWebGL()) ((location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')).catch(() => {});
     await Promise.all(jobs);
