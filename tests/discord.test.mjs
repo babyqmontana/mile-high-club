@@ -4,11 +4,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildBlueprint, overwritesFor, TEXT, VOICE, CATEGORY, ANNOUNCEMENT } from '../server/discord/layout.js';
 import { planSetup, snapshotGuild, applyPlan, planCleanup } from '../server/discord/plan.js';
-import { helpdeskBoard, postPayload, eventAnnouncement } from '../server/discord/embeds.js';
+import { helpdeskBoard, postPayload, eventAnnouncement, transcriptHtml } from '../server/discord/embeds.js';
 import { buildCommands, createInteractions } from '../server/discord/commands.js';
 import { createCore, seed } from '../public/js/core.js';
 
-const EVERYONE = 'everyone', BOT = 'bot-user', STAFF = ['role-staff'], TIERS = { admin: ['role-admin'], director: ['role-dir'], staff: STAFF };
+const EVERYONE = 'everyone', BOT = 'bot-user', STAFF = ['role-staff'], TIERS = { admin: ['role-admin'], director: ['role-dir'], staff: STAFF, dev: ['role-dev'] };
 
 function memoryStore() {
   const data = {}, col = c => (data[c] ??= {});
@@ -35,10 +35,10 @@ const deploy = async (g, saved = {}) => { const p = plan(g, saved); return { pla
 const byName = (g, name) => [...g.channels.cache.values()].find(c => c.name === name);
 const ow = (ch, id) => { const o = ch.permissionOverwrites.cache.get(id); return { allow: o?.allow.toArray() ?? [], deny: o?.deny.toArray() ?? [] }; };
 
-test('схема лёгкая: три раздела, четыре канала, один голосовой', () => {
+test('схема лёгкая: один голосовой, тестовый канал и архив на месте', () => {
   const bp = buildBlueprint();
-  assert.equal(bp.categories.length, 3);
-  assert.equal(bp.channels.length, 4);
+  assert.equal(bp.categories.length, 4);
+  assert.equal(bp.channels.length, 6);
   assert.equal(bp.channels.filter(c => c.type === VOICE).length, 1);
 });
 
@@ -50,7 +50,7 @@ test('имена со значком и подходят Discord', () => {
 
 test('повторный запуск ничего не создаёт и не меняет', async () => {
   const g = fakeGuild(), first = await deploy(g);
-  assert.equal(first.made.length, 7);
+  assert.equal(first.made.length, 10);
   const again = plan(g, { channels: first.channels });
   assert.deepEqual(again.lines, []);
 });
@@ -91,7 +91,7 @@ test('прошлая схема: каналы бота переименовыв�
   const desk = await g.channels.create({ name: 'обращение', type: TEXT, parent: cat.id, permissionOverwrites: [{ id: 'friends', allow: ['ViewChannel'], deny: [] }] });
   const feed = await g.channels.create({ name: 'обращения', type: TEXT, parent: oldCat.id, permissionOverwrites: [{ id: 'old-role', allow: ['ViewChannel'], deny: [] }] });
   const r = await deploy(g, { channels: { catDesk: cat.id, helpdesk: desk.id, staffTickets: feed.id }, roleIds: { guest: 'old-role' } });
-  assert.equal(r.made.length, 4, 'новые только разделы персонала и дирекции с каналами');
+  assert.equal(r.made.length, 7, 'новые только служебные разделы с каналами');
   assert.equal(cat.name, '🎫・ОБРАЩЕНИЯ');
   assert.equal(desk.name, '🎫・написать-нам');
   assert.equal(feed.parentId, byName(g, '👥・ПЕРСОНАЛ').id);
@@ -206,7 +206,7 @@ test('панель отправляет пост через вебхук и пр
   const sent = [], { core, store } = makeCore({ sendPost: async a => { sent.push(a); return { messageId: a.messageId || 'msg1', channelName: '📣・анонсы' }; } });
   await core.handle('GET', '/admin/all', { user: mod });
   const { doc } = await core.handle('POST', '/admin/discord/send', { user: mod, body: { channel: '123', sender: 'reception', post: { title: 'Открытие' } } });
-  assert.equal(sent[0].sender.name, 'Ресепшен');
+  assert.match(sent[0].sender.name, /Ресепшен/);
   assert.equal(doc.messageId, 'msg1');
   await core.handle('POST', '/admin/discord/send', { user: mod, body: { id: doc.id, post: { title: 'Открытие сезона' } } });
   assert.equal(sent[1].messageId, 'msg1');
@@ -247,6 +247,96 @@ function fakeModal(customId, fields) {
   i.deferReply = async () => { i.deferred = true; }; i.editReply = async p => { i.replies.push(p); }; i.reply = async p => { i.replies.push(p); };
   return i;
 }
+
+test('тестовый канал видят только администраторы и разработчики', async () => {
+  const g = fakeGuild(); await deploy(g);
+  const c = byName(g, '🧪・тест-бота');
+  assert.ok(ow(c, EVERYONE).deny.includes('ViewChannel'));
+  assert.ok(ow(c, 'role-admin').allow.includes('ViewChannel') && ow(c, 'role-dev').allow.includes('ViewChannel'));
+  assert.equal(c.permissionOverwrites.cache.has('role-dir'), false);
+  assert.equal(c.permissionOverwrites.cache.has(STAFF[0]), false);
+});
+
+test('архив тикетов не виден персоналу и закрыт для записи', async () => {
+  const g = fakeGuild(); await deploy(g);
+  const c = byName(g, '🗄️・архив-тикетов');
+  assert.equal(c.permissionOverwrites.cache.has(STAFF[0]), false);
+  assert.ok(ow(c, 'role-dir').deny.includes('SendMessages'));
+});
+
+const ticket = async (core, hooks = {}) => { const { ticket: t } = await core.handle('POST', '/tickets', { user: { id: 'u1', username: 'guest1', role: 'guest' }, body: { name: 'Джон', topic: 'Вопрос', text: 'Помогите' } }); await core.handle('POST', `/tickets/${t.id}/mode`, { user: { id: 'u1', username: 'guest1', role: 'guest' }, body: { mode: 'discord' } }); return t; };
+
+function fakeButton(channelId, userId = 'u1') {
+  const i = { customId: 'mhc:close', channelId, user: { id: userId, username: 'x' }, replies: [], isChatInputCommand: () => false, isButton: () => true, isModalSubmit: () => false };
+  i.deferReply = async () => { i.deferred = true; }; i.editReply = async p => { i.replies.push(p); }; i.reply = async p => { i.replies.push(p); };
+  return i;
+}
+
+test('кнопку закрытия отклоняет гость и принимает администрация', async () => {
+  let closed = 0; const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan1', closeTicketChannel: async () => { closed++; return [{ from: 'guest', by: 'Джон', text: 'Привет', at: 1 }, { from: 'bot', by: 'бот', text: 'карточка', at: 2 }]; } });
+  const t = await ticket(core);
+  const guest = fakeButton('chan1'); await createInteractions({ core, resolveRole: async () => 'guest' })(guest);
+  assert.equal(closed, 0);
+  assert.match(guest.replies[0].content, /только администрация/);
+  await createInteractions({ core, resolveRole: async () => 'mod' })(fakeButton('chan1', 'staff1'));
+  const doc = store.get('tickets', t.id);
+  assert.equal(closed, 1);
+  assert.equal(doc.status, 'closed');
+  assert.equal(doc.channel, null);
+  assert.deepEqual(doc.messages.map(m => m.text), ['Помогите', 'Привет'], 'история сохранена на сайте без служебных карточек');
+});
+
+test('если транскрипт не сохранился, обращение не закрывается', async () => {
+  const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan1', closeTicketChannel: async () => { throw new Error('нет архива'); } });
+  const t = await ticket(core);
+  await assert.rejects(core.handle('POST', `/admin/tickets/${t.id}/close`, { user: mod }), /нет архива/);
+  assert.equal(store.get('tickets', t.id).status, 'open');
+  assert.equal(store.get('tickets', t.id).channel, 'chan1');
+});
+
+test('сообщения тикета видны в панели, ответ из панели уходит в канал', async () => {
+  const sent = [], { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan1', ticketReply: async (t, text) => { sent.push(text); } });
+  const t = await ticket(core);
+  core.ticketMessage(t.id, { from: 'guest', by: 'Джон', text: 'Есть кто?', at: 5 });
+  await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'Да, слушаю' } });
+  assert.deepEqual(store.get('tickets', t.id).messages.map(m => m.text), ['Есть кто?', 'Да, слушаю']);
+  assert.deepEqual(sent, ['Да, слушаю']);
+});
+
+test('удалить можно только закрытые обращения и только администратору', async () => {
+  const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => null });
+  const t = await ticket(core);
+  await assert.rejects(core.handle('DELETE', `/admin/tickets/${t.id}`, { user: admin }), /Сначала закройте/);
+  await core.handle('POST', `/admin/tickets/${t.id}/close`, { user: mod });
+  await assert.rejects(core.handle('DELETE', `/admin/tickets/${t.id}`, { user: mod }), /прав/);
+  const open = await ticket(core);
+  assert.equal((await core.handle('POST', '/admin/tickets/purge', { user: admin })).deleted, 1);
+  assert.deepEqual(store.all('tickets').map(x => x.id), [open.id]);
+});
+
+test('транскрипт экранирует разметку и содержит переписку', () => {
+  const h = transcriptHtml({ id: 't1', topic: 'Тема', discord: 'guest1', createdAt: 1 }, [{ from: 'guest', by: 'Джон', text: '<script>x</script>', files: ['https://cdn/a.png?x=1'], at: 2 }], 'admin');
+  assert.ok(!h.includes('<script>'));
+  assert.ok(h.includes('&lt;script&gt;') && h.includes('a.png'));
+});
+
+test('завершённое событие исчезает с сайта сразу', () => {
+  const { core } = makeCore();
+  const ev = { id: 'dc-2', name: 'Вечер', desc: '', start: Date.now() - 600e3, end: Date.now() + 3600e3, location: '', status: 'active', image: '', url: '' };
+  core.upsertEvent(ev);
+  assert.ok(core.publicData().events.some(e => e.id === 'dc-2'));
+  core.upsertEvent({ ...ev, status: 'completed' });
+  assert.equal(core.publicData().events.some(e => e.id === 'dc-2'), false);
+});
+
+test('служебный этаж скрыт на сайте и виден в панели, этажи лифта на месте', async () => {
+  const { core } = makeCore();
+  const pub = core.publicData().venues, all = (await core.handle('GET', '/admin/all', { user: mod })).venues;
+  assert.equal(pub.some(v => v.id === 'yusuf'), false);
+  assert.ok(all.some(v => v.id === 'yusuf' && v.gameFloor === "Yusuf's Office"));
+  assert.ok(pub.some(v => v.id === 'assmosphere'));
+  assert.equal(pub.find(v => v.id === 'ciel').gameFloor, 'French Restaurant');
+});
 
 test('обращение открывает тикет через core', async () => {
   const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan1' });

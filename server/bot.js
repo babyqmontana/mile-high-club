@@ -4,11 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildBlueprint, allTiers, DIRECTOR_ROLE } from './discord/layout.js';
 import { planSetup, snapshotGuild, snapshotRoles, applyPlan, planCleanup } from './discord/plan.js';
-import { helpdeskBoard, postPayload, eventAnnouncement } from './discord/embeds.js';
+import { helpdeskBoard, postPayload, eventAnnouncement, ticketOpened, archiveCard, transcriptHtml, PALETTE } from './discord/embeds.js';
+import { applyProfile } from './discord/profile.js';
 import { buildCommands, createInteractions } from './discord/commands.js';
 
 // Discord-бот обслуживает сайт: вход и роли, тикеты, уведомления персоналу, посты из панели, события сервера → сайт.
-const PINK = 0xF0177A, GOLD = 0xF7B50A, TEAL = 0x3FD3C6;
 const EVENT_STATUS = { 1: 'scheduled', 2: 'active', 3: 'completed', 4: 'cancelled' };
 const FEED = 'staffTickets';
 const money = n => '$' + Number(n || 0).toLocaleString('ru-RU');
@@ -16,7 +16,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export async function startBot({ core, store, env, hooks }) {
   if (!env.DISCORD_BOT_TOKEN || !env.GUILD_ID) return null;
-  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildScheduledEvents] });
+  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildScheduledEvents, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
   let guild = null;
   const site = (env.PUBLIC_URL || '').replace(/\/$/, '');
   const S = () => core.settings();
@@ -30,10 +30,10 @@ export async function startBot({ core, store, env, hooks }) {
   // Права на сайте дают только роли, выбранные в панели (или в .env). Владелец сервера всегда админ: иначе роли некому выбрать.
   const listIds = (list, extra) => [...(list || []), ...(extra || '').split(',')].map(s => String(s).trim()).filter(Boolean);
   const known = list => list.filter(id => guild.roles.cache.has(id));
-  const tiers = () => ({ admin: known(listIds(S().adminRoles, env.ADMIN_ROLE_IDS)), director: known(listIds(S().directorRoles)), staff: known(listIds(S().modRoles, env.MOD_ROLE_IDS)) });
+  const tiers = () => ({ admin: known(listIds(S().adminRoles, env.ADMIN_ROLE_IDS)), director: known(listIds(S().directorRoles)), staff: known(listIds(S().modRoles, env.MOD_ROLE_IDS)), dev: known(S().devRoles?.length ? S().devRoles : guild.roles.cache.filter(r => r.name === 'Dev').map(r => r.id)) });
   const staffIds = () => allTiers(tiers());
   const staffOverwrites = () => [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, ...staffIds().map(id => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }))];
-  const siteRow = (label = 'Открыть сайт', hash = '') => site ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(site + '/' + (hash ? '#' + hash : '')))] : [];
+  const links = list => { const b = list.filter(([, url]) => url).map(([label, url]) => new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(url)); return b.length ? [new ActionRowBuilder().addComponents(b)] : []; };
   const send = async (key, payload) => { const c = await channel(key); return c ? c.send(payload).catch(e => { console.error('Discord send:', e.message); return null; }) : null; };
 
   hooks.status = () => ({ connected: !!guild, guild: guild?.name || null, members: guild?.memberCount || 0, bot: client.user?.tag || null });
@@ -56,23 +56,57 @@ export async function startBot({ core, store, env, hooks }) {
   hooks.createTicketChannel = async t => {
     const m = await findMember(t.discord, t.discordId); if (!m) return null;
     const cat = await channel('catDesk');
+    t.discordId = m.id; // сообщения из канала разделяются на гостя и персонал по этому id
     const ch = await guild.channels.create({ name: `🎫・${(m.user.username || 'гость').slice(0, 20)}-${t.id.slice(-4)}`, type: ChannelType.GuildText, parent: cat?.id, permissionOverwrites: [...staffOverwrites(), { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] }, { id: m.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] }] });
-    await ch.send({ content: `<@${m.id}>, управляющие скоро ответят.`, embeds: [new EmbedBuilder().setColor(PINK).setTitle(t.topic).setDescription(t.text.slice(0, 3900)).addFields({ name: 'Имя', value: t.name || '—', inline: true }, { name: 'Discord', value: t.discord, inline: true }).setFooter({ text: 'Mile High Club' })] });
+    await ch.send(ticketOpened(t, m.id));
     return ch.id;
   };
 
-  // уведомления персоналу: одна лента, подробности в панели сайта
+  async function allMessages(c) {
+    const out = []; let before;
+    for (let n = 0; n < 20; n++) { const page = await c.messages.fetch({ limit: 100, before }); if (!page.size) break; out.push(...page.values()); before = page.last().id; if (page.size < 100) break; }
+    return out.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+  }
+  const textOf = m => [m.content, ...m.embeds.map(e => [e.title, e.description].filter(Boolean).join(': '))].filter(Boolean).join('\n');
+  const fromSite = m => m.author.id === client.user.id && /^\*\*(.+?)\*\* \(с сайта\): ([\s\S]*)$/.exec(m.content);
+  const authorKind = (t, m) => (fromSite(m) ? 'staff' : m.author.bot ? 'bot' : m.author.id === t.discordId ? 'guest' : 'staff');
+  // Закрытие: сначала архив, потом удаление канала. Не сохранился транскрипт — канал остаётся.
+  hooks.closeTicketChannel = async (t, by) => {
+    const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) return [];
+    const log = (await allMessages(c)).filter(m => !m.system).map(m => ({ from: authorKind(t, m), by: fromSite(m)?.[1] || m.member?.displayName || m.author.username, text: fromSite(m)?.[2] || textOf(m), files: [...m.attachments.values()].map(a => a.url), at: m.createdTimestamp }));
+    const sent = await send('ticketArchive', { ...archiveCard(t, log, by, t.discordId), files: [{ attachment: Buffer.from(transcriptHtml(t, log, by), 'utf8'), name: `ticket-${t.id}.html` }] });
+    if (!sent) throw new Error('не удалось сохранить транскрипт');
+    const m = t.discordId && await guild.members.fetch(t.discordId).catch(() => null);
+    if (m) m.send(`Ваше обращение «${t.topic}» закрыто. Если вопрос остался, откройте новое.`).catch(() => {});
+    await c.delete(`Обращение закрыл ${by}`);
+    return log;
+  };
+  // ответ из панели сайта уходит в тикет-канал
+  hooks.ticketReply = async (t, text, by) => { const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) throw new Error('канал тикета не найден'); await c.send({ content: `**${by}** (с сайта): ${text}`, allowedMentions: { parse: [] } }); };
+  client.on(Events.MessageCreate, m => {
+    if (m.guildId !== env.GUILD_ID || m.author.bot || m.system) return;
+    const t = store.all('tickets').find(x => x.channel === m.channelId && x.status !== 'closed');
+    if (t) core.ticketMessage(t.id, { from: authorKind(t, m), by: m.member?.displayName || m.author.username, text: textOf(m) || 'вложение', at: m.createdTimestamp });
+  });
+
+  // уведомления персоналу: одна лента. Гость на сервере — кликабельный профиль, иначе только имя
+  const who = async d => { const m = await findMember(d.discord, d.discordId); return m ? { text: `<@${m.id}> · ${m.user.username}`, url: `https://discord.com/users/${m.id}` } : { text: `${d.discord || '—'} · нет на сервере`, url: null }; };
+  const panel = site ? site + '/#admin' : null;
+  const feed = async (d, color, title, description, fields = []) => {
+    const w = await who(d);
+    return send(FEED, { embeds: [new EmbedBuilder().setColor(color).setTitle(title).setDescription(description).addFields({ name: 'Гость', value: w.text, inline: true }, ...fields).setTimestamp()], components: links([['Открыть в панели', panel], ['Профиль в Discord', w.url]]), allowedMentions: { parse: [] } });
+  };
   hooks.notify = async (kind, d) => {
-    if (kind === 'booking') await send(FEED, { embeds: [new EmbedBuilder().setColor(PINK).setTitle(`🛏️ Новая бронь ${d.code}`).setDescription(`${d.typeName}, ${d.date}, ${d.nights} ноч. · ${d.name} (${d.discord}) · ${money(d.total)}`)], components: siteRow('Открыть в панели', 'admin') });
+    if (kind === 'booking') await feed(d, PALETTE.pink, `🛏️ Новая бронь ${d.code}`, `${d.typeName}, ${d.date}, ${d.nights} ноч.`, [{ name: 'Имя', value: d.name, inline: true }, { name: 'Сумма', value: money(d.total), inline: true }, ...(d.note ? [{ name: 'Пожелания', value: d.note.slice(0, 500) }] : [])]);
     if (kind === 'booking_status') {
       const text = { confirmed: `Бронь ${d.code} подтверждена. Ваш номер ${d.room}, заезд ${d.date}.`, cancelled: `Бронь ${d.code} отменена. Если это ошибка, напишите управляющим.`, checkedin: `Добро пожаловать в Mile High Club! Номер ${d.room}.`, done: `Спасибо, что остановились у нас. Ждём снова.` }[d.status];
       const m = await findMember(d.discord, d.discordId); if (m && text) m.send(text).catch(() => {});
     }
-    if (kind === 'order') await send(FEED, { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`🍽️ Заказ в номер ${d.room}`).setDescription(`${d.items.map(i => `${i.name} × ${i.qty}`).join(', ')} · ${money(d.total)}`)], components: siteRow('Открыть в панели', 'admin') });
+    if (kind === 'order') await feed(d, PALETTE.gold, `🍽️ Заказ в номер ${d.room}`, d.items.map(i => `${i.name} × ${i.qty}`).join(', '), [{ name: 'Сумма', value: money(d.total), inline: true }]);
     if (kind === 'order_status' && d.status === 'delivering') { const m = await findMember(d.discord); if (m) m.send(`Ваш заказ уже несут в номер ${d.room}.`).catch(() => {}); }
-    if (kind === 'ticket_site') await send(FEED, { embeds: [new EmbedBuilder().setColor(TEAL).setTitle('✉️ Новое обращение на сайте').setDescription(`**${d.topic}** · ${d.discord}\n${d.text.slice(0, 500)}`)], components: siteRow('Ответить в панели', 'admin') });
-    if (kind === 'ticket_discord') await send(FEED, { content: `🎫 Тикет для **${d.discord}**: ${d.topic}${d.channel ? ` → <#${d.channel}>` : ' (пользователя нет на сервере)'}`, allowedMentions: { parse: [] } });
-    if (kind === 'ticket_message') await send(FEED, { content: `💬 **${d.discord}** в чате на сайте: «${d.messages.at(-1)?.text.slice(0, 300)}»`, allowedMentions: { parse: [] } });
+    if (kind === 'ticket_site') await feed(d, PALETTE.sand, '✉️ Новое обращение на сайте', `**${d.topic}**\n${d.text.slice(0, 500)}`);
+    if (kind === 'ticket_discord') await feed(d, PALETTE.flame, '🎫 Открыт тикет', `**${d.topic}**${d.channel ? `\nКанал: <#${d.channel}>` : '\nГостя нет на сервере, тикет-канал не создан.'}`);
+    if (kind === 'ticket_message') await feed(d, PALETTE.sand, '💬 Сообщение в чате на сайте', `«${d.messages.at(-1)?.text.slice(0, 300)}»`);
   };
 
   // посты с сайта: вебхук канала с именем и аватаркой отправителя из панели
@@ -187,6 +221,7 @@ export async function startBot({ core, store, env, hooks }) {
     const inUse = snap.roles.filter(r => !members || members.some(m => !m.user.bot && m.roles.cache.has(r.id))).map(r => r.id);
     return planCleanup(bp, saved, snap, occupied, [...staffIds(), ...inUse]);
   }
+  hooks.applyProfile = () => applyProfile({ guild, client, root: ROOT });
   hooks.planCleanup = async () => { const c = await cleanup(); return { channels: c.channels.map(x => x.name), categories: c.categories.map(x => x.name), roles: c.roles.map(x => x.name), kept: c.kept.map(x => x.name) }; };
   hooks.cleanupGuild = async () => {
     const c = await cleanup(), reason = 'Mile High Club: лишнее от прошлой схемы', channels = { ...(S().channels || {}) }, roles = { ...(S().roleIds || {}) };
