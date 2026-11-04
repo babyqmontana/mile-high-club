@@ -69,3 +69,15 @@ ffmpeg -framerate 30 -i promo-out/n/f%04d.png -i promo-out/n/mix.wav \
 ```
 
 Порядок и длительность кадров задаются массивом `SHOTS` в `nostalgia.html`, длительности указаны в долях такта.
+
+---
+
+# Ролик v2 (вертикальный 9:16, 20 с)
+
+Стиль первого референса: продуктовое промо с вкладками, списком, раскрытием карточки, кинетической типографикой, глитчем и раскрытием логотипа. Внутри настоящие экраны сайта (`promo/assets/site-*.webp`, снято с демо-сервера с мобильным разрешением), новый верблюд (`brand/emblem.png`) и переливающаяся надпись (`brand/mhc-wordmark.svg`). Все цифры взяты из стартовых данных сайта.
+
+```bash
+node promo/render.cjs promo-out/a2 --page ad2.html        # 600 кадров; можно делить --from/--to на несколько процессов
+python3 promo/sfx.py promo-out/a2/cues.json promo-out/a2/sfx.wav
+ffmpeg -framerate 30 -i promo-out/a2/f%04d.png -i promo-out/a2/sfx.wav -c:v libx264 -crf 17 -pix_fmt yuv420p -c:a aac -b:a 256k -shortest -movflags +faststart mhc-promo-v2.mp4
+```
