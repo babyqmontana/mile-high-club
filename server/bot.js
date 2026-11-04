@@ -165,7 +165,7 @@ export async function startBot({ core, store, env, hooks }) {
       await client.user.setAvatar(EMBLEM).catch(e => console.error('Discord avatar:', e.message));
     }
     await refreshBoards();
-    return { made: r.made, updated: r.updated, channels: Object.keys(r.channels).length, roles: Object.keys(r.roleIds).length };
+    return { made: r.made, updated: r.updated, skipped: r.skipped, channels: Object.keys(r.channels).length, roles: Object.keys(r.roleIds).length };
   };
 
   const interact = createInteractions({ core, store, site, resolveRole: id => hooks.resolveRole(id), roleId: k => S().roleIds?.[k], post: send });

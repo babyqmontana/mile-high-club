@@ -134,6 +134,17 @@ test('старый сервер: каналы привязываются, пер
   assert.ok(g.roles.cache.has(foreignRole.id));
 });
 
+test('старый канал без прав на правку пропускается, остальное создаётся', async () => {
+  const g = fakeGuild();
+  const rules = await g.channels.create({ name: 'правила', type: TEXT });
+  rules.edit = async () => { throw Object.assign(new Error('Missing Permissions'), { code: 50013 }); };
+  const r = await deploy(g);
+  assert.deepEqual(r.skipped, ['правила']);
+  assert.equal(r.channels.rules, undefined, 'бот не пишет в пропущенный канал');
+  assert.ok(byName(g, 'номера'));
+  assert.equal(g.log.deleted, 0);
+});
+
 test('ключи старой схемы сохранены', () => {
   const bp = buildBlueprint({ depts: [] }), keys = [...bp.channels, ...bp.categories].map(c => c.key), roles = bp.roles.map(r => r.key);
   for (const k of ['main', 'announcements', 'rooms', 'journal', 'chat', 'staffBookings', 'staffOrders', 'staffTickets', 'staffGeneral', 'catMain', 'catStaff', 'catTickets']) assert.ok(keys.includes(k), k);
