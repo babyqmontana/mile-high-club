@@ -260,7 +260,7 @@ export function createCore(store, hooks = {}) {
   const roleList = l => (Array.isArray(l) ? l : []).map(x => str(x, 30)).filter(x => /^\d+$/.test(x)).slice(0, 20);
   on('POST', '/admin/discord/access', async ({ body, user }) => {
     need(user, 'admin');
-    store.put('settings', 'main', { ...settings(), adminRoles: roleList(body.admin), modRoles: roleList(body.mod), announceChannel: /^\d+$/.test(body.announceChannel || '') ? str(body.announceChannel, 30) : '' });
+    store.put('settings', 'main', { ...settings(), adminRoles: roleList(body.admin), directorRoles: roleList(body.director), modRoles: roleList(body.mod), announceChannel: /^\d+$/.test(body.announceChannel || '') ? str(body.announceChannel, 30) : '' });
     log(`${user.username} изменил доступ к панели и канал анонсов`, 'discord', user.username);
     await call('setupGuild'); emit(['settings', 'log']); return { ok: true };
   });

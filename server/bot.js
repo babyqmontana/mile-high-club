@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits, Events, ChannelType, PermissionFlagsBits, Em
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildBlueprint } from './discord/layout.js';
+import { buildBlueprint, allTiers, DIRECTOR_ROLE } from './discord/layout.js';
 import { planSetup, snapshotGuild, snapshotRoles, applyPlan, planCleanup } from './discord/plan.js';
 import { helpdeskBoard, postPayload, eventAnnouncement } from './discord/embeds.js';
 import { buildCommands, createInteractions } from './discord/commands.js';
@@ -29,8 +29,9 @@ export async function startBot({ core, store, env, hooks }) {
   };
   // Права на сайте дают только роли, выбранные в панели (или в .env). Владелец сервера всегда админ: иначе роли некому выбрать.
   const listIds = (list, extra) => [...(list || []), ...(extra || '').split(',')].map(s => String(s).trim()).filter(Boolean);
-  const roleIds = () => ({ admin: listIds(S().adminRoles, env.ADMIN_ROLE_IDS), mod: listIds(S().modRoles, env.MOD_ROLE_IDS) });
-  const staffIds = () => { const r = roleIds(); return [...new Set([...r.admin, ...r.mod])].filter(id => guild.roles.cache.has(id)); };
+  const known = list => list.filter(id => guild.roles.cache.has(id));
+  const tiers = () => ({ admin: known(listIds(S().adminRoles, env.ADMIN_ROLE_IDS)), director: known(listIds(S().directorRoles)), staff: known(listIds(S().modRoles, env.MOD_ROLE_IDS)) });
+  const staffIds = () => allTiers(tiers());
   const staffOverwrites = () => [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, ...staffIds().map(id => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }))];
   const siteRow = (label = 'Открыть сайт', hash = '') => site ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(site + '/' + (hash ? '#' + hash : '')))] : [];
   const send = async (key, payload) => { const c = await channel(key); return c ? c.send(payload).catch(e => { console.error('Discord send:', e.message); return null; }) : null; };
@@ -40,8 +41,8 @@ export async function startBot({ core, store, env, hooks }) {
   hooks.resolveRole = async userId => {
     if (userId === guild.ownerId) return 'admin';
     const m = await guild.members.fetch(userId).catch(() => null); if (!m) return 'guest';
-    const ids = roleIds(), has = list => list.some(id => m.roles.cache.has(id));
-    return has(ids.admin) ? 'admin' : has(ids.mod) ? 'mod' : 'guest';
+    const t = tiers(), has = list => list.some(id => m.roles.cache.has(id));
+    return has(t.admin) ? 'admin' : has(t.director) || has(t.staff) ? 'mod' : 'guest';
   };
 
   async function findMember(name, id) {
@@ -147,18 +148,27 @@ export async function startBot({ core, store, env, hooks }) {
   const savedState = () => { const s = S(); return { roleIds: s.roleIds || {}, channels: s.channels || {}, staffRoles: s.staffRolesApplied || [] }; };
   const plan = async () => {
     await guild.roles.fetch(); await guild.channels.fetch();
-    return planSetup(buildBlueprint(), snapshotGuild(guild, savedState(), client.user.id, staffIds()));
+    return planSetup(buildBlueprint(), snapshotGuild(guild, savedState(), client.user.id, tiers()));
   };
-  hooks.planGuild = async () => { const p = await plan(); return { summary: p.summary, lines: p.lines }; };
+  // роль директоров создаётся один раз. Дальше её можно заменить в панели
+  async function ensureDirector() {
+    if (S().directorRoles?.length) return;
+    await guild.roles.fetch();
+    const r = guild.roles.cache.find(x => x.name === DIRECTOR_ROLE.name) || await guild.roles.create({ ...DIRECTOR_ROLE, reason: 'Mile High Club: уровень доступа' });
+    save({ directorRoles: [r.id] });
+  }
+  hooks.planGuild = async () => { await ensureDirector(); const p = await plan(); return { summary: p.summary, lines: p.lines }; };
   hooks.setupGuild = async () => {
+    await ensureDirector();
     const p = await plan();
-    const r = await applyPlan(guild, p, { everyoneId: guild.roles.everyone.id, botId: client.user.id, staffIds: staffIds() });
+    const r = await applyPlan(guild, p, { everyoneId: guild.roles.everyone.id, botId: client.user.id, tiers: tiers() });
     save({ channels: { ...(S().channels || {}), ...r.channels }, staffRolesApplied: staffIds() });
     await publishHelpdesk();
     return { made: r.made, updated: r.updated, skipped: r.skipped };
   };
 
   // лишнее от прошлой схемы: показываем список, удаляем только по кнопке администратора
+  let membersAt = 0;
   async function cleanup() {
     await guild.roles.fetch(); await guild.channels.fetch();
     const snap = { channels: snapshotGuild(guild, {}, client.user.id).channels, roles: snapshotRoles(guild) }, bp = buildBlueprint(), saved = savedState();
@@ -170,7 +180,12 @@ export async function startBot({ core, store, env, hooks }) {
       const list = await c.messages.fetch({ limit: 50 }).catch(() => null);
       if (!list || list.some(m => !m.author.bot && !m.webhookId && !m.system)) occupied.add(id);
     }
-    return planCleanup(bp, saved, snap, occupied, [...roleIds().admin, ...roleIds().mod]);
+    // роль, выданную людям, не трогаем: значит, ей пользуются
+    // Discord не отвечает на частые запросы всех участников: второй подряд берёт уже загруженных. Нет списка — роли не трогаем
+    const fresh = Date.now() - membersAt < 5 * 60e3, members = fresh ? guild.members.cache : await guild.members.fetch({ time: 60e3 }).catch(() => null);
+    if (members && !fresh) membersAt = Date.now();
+    const inUse = snap.roles.filter(r => !members || members.some(m => !m.user.bot && m.roles.cache.has(r.id))).map(r => r.id);
+    return planCleanup(bp, saved, snap, occupied, [...staffIds(), ...inUse]);
   }
   hooks.planCleanup = async () => { const c = await cleanup(); return { channels: c.channels.map(x => x.name), categories: c.categories.map(x => x.name), roles: c.roles.map(x => x.name), kept: c.kept.map(x => x.name) }; };
   hooks.cleanupGuild = async () => {
