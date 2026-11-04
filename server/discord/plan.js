@@ -82,7 +82,7 @@ export function snapshotGuild(guild, saved, botId) {
 // Выполняет план. Возвращает итоговые id и список сделанного.
 export async function applyPlan(guild, plan, blueprint, { everyoneId, botId, reason = 'Mile High Club: структура сервера' }) {
   const ow = overwritesFor;
-  const roleIds = {}, chanIds = {}, made = [], updated = [];
+  const roleIds = {}, chanIds = {}, made = [], updated = [], skipped = [];
   for (const a of plan.actions) {
     if (a.op === 'bindRole') roleIds[a.key] = a.id;
     if (a.op === 'createRole') {
@@ -107,8 +107,10 @@ export async function applyPlan(guild, plan, blueprint, { everyoneId, botId, rea
         const current = [...(c.permissionOverwrites?.cache?.values() ?? [])].map(o => ({ id: o.id, type: o.type, allow: o.allow.toArray(), deny: o.deny.toArray() }));
         edit.permissionOverwrites = mergeOverwrites(current, ow(s, roleIds, everyoneId, botId), managed);
       }
-      await c.edit(edit); updated.push(s.name);
+      // Чужой канал с запретами, которые боту не снять, остаётся как есть: бот в него не пишет, развёртывание идёт дальше
+      try { await c.edit(edit); updated.push(s.name); }
+      catch (e) { if (e.code !== 50013) throw e; delete chanIds[a.key]; skipped.push(s.name); }
     }
   }
-  return { roleIds, channels: chanIds, made, updated };
+  return { roleIds, channels: chanIds, made, updated, skipped };
 }
