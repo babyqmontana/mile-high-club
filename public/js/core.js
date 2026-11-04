@@ -158,7 +158,7 @@ export function createCore(store, hooks = {}) {
     if (t.messages.length > 300) t.messages = t.messages.slice(-300);
     t.lastAt = Date.now(); t.lastFrom = staff ? 'staff' : 'guest'; store.put('tickets', t.id, t); emit(['tickets']);
     if (staff && t.mode === 'discord' && t.channel) call('ticketReply', t, text, user.username);
-    if (!staff) call('notify', 'ticket_message', t);
+    call('notify', 'ticket_update', t);
     return { ticket: t };
   });
 
@@ -237,7 +237,7 @@ export function createCore(store, hooks = {}) {
   on('POST', '/admin/tickets/:id/close', async ({ params, user }) => { need(user, 'mod'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения');
     if (t.status === 'closed') return { ticket: t };
     if (t.channel && hooks.closeTicketChannel) { let history; try { history = await hooks.closeTicketChannel(t, user.username); } catch (e) { bad('Обращение не закрыто: ' + e.message); } if (history.length) t.messages = [{ from: 'guest', by: t.name || t.discord, text: t.text, at: t.createdAt }, ...history.filter(m => m.from !== 'bot')].slice(-300); t.channel = null; }
-    t.status = 'closed'; t.closedBy = user.username; t.lastAt = Date.now(); store.put('tickets', t.id, t); log(`${user.username} закрыл обращение ${t.discord}`, 'ticket', user.username); emit(['tickets', 'log']); return { ticket: t }; });
+    t.status = 'closed'; t.closedBy = user.username; t.lastAt = Date.now(); store.put('tickets', t.id, t); log(`${user.username} закрыл обращение ${t.discord}`, 'ticket', user.username); emit(['tickets', 'log']); call('notify', 'ticket_update', t); return { ticket: t }; });
 
   // события
   on('POST', '/admin/events/sync', async ({ user }) => { need(user, 'mod'); const r = await call('syncEvents'); emit(['events']); return { synced: r ?? 0, connected: !!hooks.syncEvents }; });
@@ -322,7 +322,7 @@ export function createCore(store, hooks = {}) {
   function matchVenue(text) { const t = String(text || '').toLowerCase(); return store.all('venues').find(v => [v.name, ...(String(v.keywords || '').split(','))].map(x => x.trim().toLowerCase()).filter(Boolean).some(k => t.includes(k)))?.id || null; }
   function upsertEvent(e) { const prev = store.get('events', e.id) || {}; const doc = { ...prev, ...e, venueId: e.venueId ?? matchVenue(`${e.location} ${e.name}`), source: 'discord', updatedAt: Date.now() }; store.put('events', doc.id, doc); emit(['events']); return doc; }
   // сообщение из тикет-канала Discord: копия для панели сайта
-  function ticketMessage(id, m) { const t = store.get('tickets', id); if (!t) return; t.messages.push(m); if (t.messages.length > 300) t.messages = t.messages.slice(-300); t.lastAt = m.at; t.lastFrom = m.from; store.put('tickets', t.id, t); emit(['tickets']); }
+  function ticketMessage(id, m) { const t = store.get('tickets', id); if (!t) return; t.messages.push(m); if (t.messages.length > 300) t.messages = t.messages.slice(-300); t.lastAt = m.at; t.lastFrom = m.from; store.put('tickets', t.id, t); emit(['tickets']); call('notify', 'ticket_update', t); }
   function removeEvent(id) { store.del('events', id); emit(['events']); }
 
   return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store };
