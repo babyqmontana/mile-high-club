@@ -156,8 +156,8 @@ main{view-transition-name:floor}
 :root.vt-route::view-transition-new(floor){animation:floor-in var(--d-floor) var(--ease-in-out) both}
 :root:not(.vt-route)::view-transition-old(floor),:root:not(.vt-route)::view-transition-new(floor){animation:none}
 /* общий элемент: обложка журнала, фото сотрудника */
-::view-transition-group(issue-cover),::view-transition-group(member-photo){animation-duration:var(--d-panel);animation-timing-function:var(--ease-out)}
-::view-transition-old(issue-cover),::view-transition-new(issue-cover),::view-transition-old(member-photo),::view-transition-new(member-photo){height:100%;object-fit:cover}
+::view-transition-group(issue-cover){animation-duration:var(--d-panel);animation-timing-function:var(--ease-out)}
+::view-transition-old(issue-cover),::view-transition-new(issue-cover){height:100%;object-fit:cover}
 @keyframes floor-out{to{opacity:0;transform:translateY(var(--vt-out,14vh));filter:brightness(.4)}}
 @keyframes floor-in{from{opacity:0;transform:translateY(var(--vt-in,-14vh));filter:brightness(.4)}}
 :root[data-dir="down"]{--vt-out:-14vh;--vt-in:14vh}

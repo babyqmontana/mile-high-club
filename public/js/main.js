@@ -16,7 +16,7 @@ function shell() {
   $('#app').innerHTML = `
   <canvas class="wxbg" id="wxBg" aria-hidden="true"></canvas>
   <header class="nav"><div class="garland" aria-hidden="true">${Array.from({ length: 34 }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</div><div class="wrap">
-    <a class="brand" href="#home" aria-label="На главную"><img src="img/emblem.webp" alt="" width="42" height="42"><b>MILE HIGH<br>CLUB</b></a>
+    <a class="brand" href="#home" aria-label="На главную"><img src="img/emblem.webp?v=2" alt="" width="42" height="42"><b>MILE HIGH<br>CLUB</b></a>
     <nav class="links" aria-label="Разделы">${ROUTES.map(([id, n]) => `<a href="#${id}" data-r="${id}"><span class="rl"><span data-t="${n}">${n}</span></span></a>`).join('')}</nav>
     <div class="navr">
       <span class="pill wxp" id="wxChip" title="Погода и время над отелем (Москва)"></span>
@@ -184,7 +184,7 @@ function renderHome() {
   const heroHtml = `
   <section class="dive" id="dive"><div class="stick">
     <div class="bg" style="background-image:url('${esc(m === 'day' ? s.heroDay : s.heroNight)}')"></div><canvas id="heroGl" aria-hidden="true"></canvas><canvas class="wxc" id="heroWx" aria-hidden="true"></canvas>
-    <div class="wrap dv dv1" id="dv1"><img class="logo" id="heroLogo" src="img/logo.webp" alt="${esc(s.hotelName)}" width="300" height="300">
+    <div class="wrap dv dv1" id="dv1"><img class="logo" id="heroLogo" src="img/logo.webp?v=2" alt="${esc(s.hotelName)}" width="300" height="300">
       <h1>${nowrapHyphens(esc(s.tagline || 'Отель над Лос-Сантосом'))}. <span class="serif">${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</span></h1>
       <div class="row"><a class="btn" href="#stay">Забронировать номер</a><a class="btn ghost" href="#leisure">Что сейчас открыто</a></div></div>
     <div class="wrap dv dv2" id="dv2"><span class="eyebrow">Вы в атриуме</span><h2>Сорок этажей стекла, латуни и неона</h2><p>Лифт поднимет в номера с 20 этажа, бассейны ждут на 38 и 40, Le Ciel на 30.</p><div class="row"><a class="btn" href="#stay">Выбрать номер</a><a class="btn ghost" href="#cigars">Сигарный клуб</a></div></div>
@@ -388,7 +388,7 @@ function paintCompare() {
 }
 function keyCard(r, t) {
   return `<div class="kc" id="keyCard" tabindex="0" role="button" aria-label="Ключ-карта номера ${esc(r.id)}, нажмите, чтобы перевернуть"><div class="kci">
-    <div class="kf"><img src="img/emblem.webp" alt=""><span class="kn num">${esc(r.id)}</span><span class="kt">${esc(t?.name || 'Номер')} · ${r.floor} этаж</span><span class="kl">MILE HIGH CLUB · ROOM KEY</span><i class="chip2"></i></div>
+    <div class="kf"><img src="img/emblem.webp?v=2" alt=""><span class="kn num">${esc(r.id)}</span><span class="kt">${esc(t?.name || 'Номер')} · ${r.floor} этаж</span><span class="kl">MILE HIGH CLUB · ROOM KEY</span><i class="chip2"></i></div>
     <div class="kb"><i class="stripe"></i><span>Заезд с 14:00 · Выезд до 12:00</span><span>Приложите к замку двери ${esc(r.id)}</span><small>При потере обратитесь на ресепшен, 20 этаж</small></div></div></div>`;
 }
 function wireKeyCard() {
@@ -703,16 +703,8 @@ function paintTeam() {
   $$('#teamV [data-t]').forEach(b => b.onclick = () => openMember(all.find(t => t.id === b.dataset.t)));
 }
 const seenTeam = new Set();
-// фото с карточки «перетекает» в окно анкеты (View Transitions); без поддержки — обычное открытие
+// Анкета открывается сразу. View Transition здесь держал снимок страницы поверх окна на всё время анимации.
 function openMember(t) {
-  const card = t && $(`#teamV .tcard[data-t="${CSS.escape(t.id)}"] .tph`);
-  if (!VT || !card || matchMedia('(prefers-reduced-motion: reduce)').matches) return openMemberNow(t);
-  card.style.viewTransitionName = 'member-photo';
-  const vt = document.startViewTransition(() => { card.style.viewTransitionName = ''; openMemberNow(t); const ph = $('.modal .member .tph'); if (ph) ph.style.viewTransitionName = 'member-photo'; });
-  vt.ready.catch(() => {}); vt.updateCallbackDone.catch(e => console.error(e));
-  vt.finished.finally(() => { card.style.viewTransitionName = ''; const ph = $('.modal .member .tph'); if (ph) ph.style.viewTransitionName = ''; });
-}
-function openMemberNow(t) {
   if (!t) return; seenTeam.add(t.id); if ((S.pub.team || []).length > 1 && S.pub.team.every(x => seenTeam.has(x.id))) setTimeout(() => unlock('team'), 600); const d = S.pub.depts.find(x => x.id === t.dept);
   modal(`<div class="member" style="--ac:${esc(d?.accent || '#F7B50A')}"><div class="tph ${t.photo ? '' : 'none'}" ${t.photo ? `style="background-image:url('${esc(t.photo)}')"` : ''}>${t.photo ? '' : `<b>${esc(initials(t.name))}</b>`}</div>
     <div class="stack"><div><span class="eyebrow">${esc(d?.name || 'Mile High Club')}</span><h3>${esc(t.name)}</h3><p class="mut">${esc(t.position || '')}</p></div>
@@ -822,7 +814,7 @@ function renderMe() {
 }
 export async function openLogin(next = 'admin') {
   authCfg = await authConfig();
-  modal(`<div class="stack" style="justify-items:center;text-align:center"><img src="img/logo.webp" alt="" width="90" height="90"><h3>Вход</h3><p class="mut">Персонал входит через Discord. Если у вас роль администратора или модератора на нашем сервере, откроется панель.</p>
+  modal(`<div class="stack" style="justify-items:center;text-align:center"><img src="img/logo.webp?v=2" alt="" width="90" height="90"><h3>Вход</h3><p class="mut">Персонал входит через Discord. Если у вас роль администратора или модератора на нашем сервере, откроется панель.</p>
     ${authCfg.oauth ? `<button class="btn discord" data-close="discord">${I.discord} Войти через Discord</button>` : ''}
     ${authCfg.demo ? `<div class="stack" style="width:100%"><span class="lbl">${authCfg.oauth ? 'Или демо-вход' : 'Демо-вход'}</span><div class="row" style="justify-content:center"><button class="btn sm" data-close="admin">Администратор</button><button class="btn sm ghost" data-close="mod">Модератор</button><button class="btn sm ghost" data-close="guest">Гость</button></div>${!authCfg.oauth ? '<p class="note">Вход через Discord включится, когда на сервере будут указаны ключи Discord-приложения.</p>' : ''}</div>` : ''}
     ${!authCfg.oauth && !authCfg.demo ? '<p class="note">Вход через Discord ещё не настроен на сервере.</p>' : ''}<button class="btn ghost sm" data-close="">Отмена</button></div>`).then(r => { if (!r) return; login(r === 'discord' ? 'admin' : r, next); });
@@ -832,7 +824,7 @@ export async function openLogin(next = 'admin') {
 function renderAdmin() {
   const v = view('admin');
   if (!S.me || S.me.role === 'guest') {
-    v.innerHTML = `<div class="gate"><img src="img/logo.webp" alt="" width="110" height="110"><h2 style="font-size:1.8rem">Вход для персонала</h2><p class="mut">${S.me ? `Вы вошли как ${esc(S.me.username)}, но у вас нет роли администратора или модератора на Discord-сервере отеля.` : 'Войдите через Discord. Доступ дают роли администратора и модератора на нашем сервере.'}</p><div class="row" style="justify-content:center">${S.me ? `<button class="btn ghost" id="gOut">${I.out} Выйти</button>` : ''}<button class="btn discord" id="gIn">${I.discord} Войти через Discord</button></div></div>`;
+    v.innerHTML = `<div class="gate"><img src="img/logo.webp?v=2" alt="" width="110" height="110"><h2 style="font-size:1.8rem">Вход для персонала</h2><p class="mut">${S.me ? `Вы вошли как ${esc(S.me.username)}, но у вас нет роли администратора или модератора на Discord-сервере отеля.` : 'Войдите через Discord. Доступ дают роли администратора и модератора на нашем сервере.'}</p><div class="row" style="justify-content:center">${S.me ? `<button class="btn ghost" id="gOut">${I.out} Выйти</button>` : ''}<button class="btn discord" id="gIn">${I.discord} Войти через Discord</button></div></div>`;
     $('#gIn').onclick = () => openLogin('admin'); $('#gOut') && ($('#gOut').onclick = () => logout()); return;
   }
   import('./admin.js').then(m => { mods.admin = m; m.mountAdmin(v, { reloadPublic: loadPublic, logout, openLogin }); }).catch(e => { console.error(e); v.innerHTML = '<div class="gate">Панель не загрузилась. Обновите страницу.</div>'; });
@@ -877,7 +869,7 @@ async function boot() {
     try { await Promise.all([loadPublic(), loadMe()]); } catch (e) { failed = e; return; }
     set(45);
     const s = S.pub.settings, m = mode(), hero = m === 'day' ? s.heroDay : s.heroNight;
-    let done = 0; const jobs = [document.fonts?.ready, preload('img/logo.webp'), preload(hero), heroLayers(hero)].map(p => Promise.resolve(p).catch(() => {}).then(() => set(45 + (++done / 4) * 50)));
+    let done = 0; const jobs = [document.fonts?.ready, preload('img/logo.webp?v=2'), preload(hero), heroLayers(hero)].map(p => Promise.resolve(p).catch(() => {}).then(() => set(45 + (++done / 4) * 50)));
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов
     if (hasWebGL()) ((location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')).catch(() => {});
     await Promise.all(jobs);
