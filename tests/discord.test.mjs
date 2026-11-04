@@ -1,302 +1,232 @@
-// Discord без сети: схема, план, права, карточки и команды на имитации сервера.
+// Discord без сети: схема, план, очистка, посты с сайта, доступ и обращения на имитации сервера.
 // Запуск: npm run test:discord
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBlueprint, overwritesFor, slug, TEXT, CATEGORY, VOICE } from '../server/discord/layout.js';
-import { planSetup, snapshotGuild, applyPlan } from '../server/discord/plan.js';
-import { BOARDS } from '../server/discord/embeds.js';
+import { buildBlueprint, overwritesFor, TEXT, VOICE, CATEGORY, ANNOUNCEMENT } from '../server/discord/layout.js';
+import { planSetup, snapshotGuild, applyPlan, planCleanup } from '../server/discord/plan.js';
+import { helpdeskBoard, postPayload, eventAnnouncement } from '../server/discord/embeds.js';
 import { buildCommands, createInteractions } from '../server/discord/commands.js';
 import { createCore, seed } from '../public/js/core.js';
 
-const EVERYONE = 'everyone', BOT = 'bot-user';
+const EVERYONE = 'everyone', BOT = 'bot-user', STAFF = ['role-staff'];
 
 function memoryStore() {
-  const db = new Map(), col = c => db.get(c) || db.set(c, new Map()).get(c);
-  return { get: (c, id) => col(c).get(id) ?? null, put: (c, id, d) => { col(c).set(id, d); }, del: (c, id) => { col(c).delete(id); }, all: c => [...col(c).values()] };
+  const data = {}, col = c => (data[c] ??= {});
+  return { all: c => Object.values(col(c)).map(x => structuredClone(x)), get: (c, id) => (col(c)[id] ? structuredClone(col(c)[id]) : null), put: (c, id, d) => { col(c)[id] = structuredClone(d); }, del: (c, id) => { delete col(c)[id]; }, clear: c => { data[c] = {}; } };
 }
-function makeCore() { const store = memoryStore(); seed(store); return { store, core: createCore(store, {}) }; }
+function makeCore(hooks = {}) { const store = memoryStore(); seed(store); return { store, hooks, core: createCore(store, hooks) }; }
 
 function fakeGuild() {
-  let n = 1; const next = () => 'id' + n++;
+  let n = 1;
   const perms = list => ({ toArray: () => [...list] });
-  const wrap = o => ({ id: o.id, type: o.type, allow: perms(o.allow || []), deny: perms(o.deny || []) });
-  const setOw = (ch, list) => { ch.permissionOverwrites = { cache: new Map((list || []).map(o => [o.id, wrap(o)])) }; };
-  const channels = new Map(), roles = new Map([[EVERYONE, { id: EVERYONE, name: '@everyone' }]]);
-  const log = { deleted: 0 };
+  const setOw = (ch, list) => { ch.permissionOverwrites = { cache: new Map((list || []).map(o => [o.id, { id: o.id, type: o.type, allow: perms(o.allow || []), deny: perms(o.deny || []) }])) }; };
+  const channels = new Map(), log = { deleted: 0 };
   const makeChannel = o => {
-    const ch = { id: next(), name: o.name, type: o.type, parentId: o.parent ?? null, topic: o.topic ?? '' };
+    const ch = { id: 'id' + n++, name: o.name, type: o.type, parentId: o.parent ?? null, topic: o.topic ?? '' };
     setOw(ch, o.permissionOverwrites);
     ch.edit = async e => { if (e.name) ch.name = e.name; if (e.parent) ch.parentId = e.parent; if (e.topic) ch.topic = e.topic; if (e.permissionOverwrites) setOw(ch, e.permissionOverwrites); return ch; };
-    ch.delete = async () => { log.deleted++; channels.delete(ch.id); };
     channels.set(ch.id, ch); return ch;
   };
-  return {
-    log,
-    roles: { everyone: roles.get(EVERYONE), cache: roles, create: async o => { const r = { id: next(), ...o }; roles.set(r.id, r); return r; } },
-    channels: { cache: channels, create: async o => makeChannel(o), fetch: async id => channels.get(id) }
-  };
+  return { log, roles: { everyone: { id: EVERYONE }, cache: new Map() }, channels: { cache: channels, create: async o => makeChannel(o), fetch: async id => channels.get(id) } };
 }
-
-const depts = () => makeCore().core.publicData().depts;
-async function deploy(guild, saved = {}, ds = depts()) {
-  const bp = buildBlueprint({ depts: ds });
-  const plan = planSetup(bp, snapshotGuild(guild, saved, BOT));
-  const r = await applyPlan(guild, plan, bp, { everyoneId: EVERYONE, botId: BOT });
-  return { bp, plan, ...r };
-}
-
-// Как Discord считает права: @everyone, затем все роли (deny, потом allow)
-function can(ch, roleIds, perm) {
-  const ow = ch.permissionOverwrites.cache;
-  let ok = perm === 'ViewChannel' || perm === 'SendMessages';
-  const e = ow.get(EVERYONE);
-  if (e?.deny.toArray().includes(perm)) ok = false;
-  if (e?.allow.toArray().includes(perm)) ok = true;
-  const mine = roleIds.map(id => ow.get(id)).filter(Boolean);
-  if (mine.some(o => o.deny.toArray().includes(perm))) ok = false;
-  if (mine.some(o => o.allow.toArray().includes(perm))) ok = true;
-  return ok;
-}
+const opts = { everyoneId: EVERYONE, botId: BOT, staffIds: STAFF };
+const plan = (g, saved = {}) => planSetup(buildBlueprint(), snapshotGuild(g, saved, BOT, STAFF));
+const deploy = async (g, saved = {}) => { const p = plan(g, saved); return { plan: p, ...await applyPlan(g, p, opts) }; };
 const byName = (g, name) => [...g.channels.cache.values()].find(c => c.name === name);
+const ow = (ch, id) => { const o = ch.permissionOverwrites.cache.get(id); return { allow: o?.allow.toArray() ?? [], deny: o?.deny.toArray() ?? [] }; };
+
+test('схема лёгкая: одна категория, два текстовых канала, без голосовых и ролей', () => {
+  const bp = buildBlueprint();
+  assert.equal(bp.categories.length, 1);
+  assert.equal(bp.channels.length, 2);
+  assert.ok(bp.channels.every(c => c.type === TEXT));
+  assert.equal(bp.roles, undefined);
+});
+
+test('имена со значком и подходят Discord', () => {
+  const bp = buildBlueprint();
+  for (const c of [...bp.categories, ...bp.channels]) { assert.match(c.name, /\p{Extended_Pictographic}/u, c.name); assert.ok(c.name.length <= 100); }
+  for (const r of bp.renames) assert.match(r.to, /\p{Extended_Pictographic}/u, r.to);
+});
 
 test('повторный запуск ничего не создаёт и не меняет', async () => {
   const g = fakeGuild(), first = await deploy(g);
-  assert.ok(first.made.length > 40);
-  const saved = { roleIds: first.roleIds, channels: first.channels };
-  const again = planSetup(first.bp, snapshotGuild(g, saved, BOT));
-  assert.deepEqual(again.summary, { createRoles: 0, createChannels: 0, updateChannels: 0, keep: again.summary.keep });
-  assert.equal(again.lines.length, 0);
+  assert.equal(first.made.length, 3);
+  const again = plan(g, { channels: first.channels });
+  assert.deepEqual(again.lines, []);
 });
 
 test('без сохранённых id находит всё по именам', async () => {
   const g = fakeGuild(); await deploy(g);
-  const again = planSetup(buildBlueprint({ depts: depts() }), snapshotGuild(g, {}, BOT));
-  assert.equal(again.summary.createRoles + again.summary.createChannels + again.summary.updateChannels, 0);
+  assert.equal(plan(g).summary.createChannels, 0);
 });
 
-test('@everyone видит только лобби', async () => {
-  const g = fakeGuild(), { bp } = await deploy(g);
-  for (const c of bp.channels) {
-    const ch = byName(g, c.name), lobby = c.parent === 'catLobby';
-    assert.equal(can(ch, [], 'ViewChannel'), lobby, c.name);
-    if (lobby) assert.equal(can(ch, [], 'SendMessages'), false, c.name);
-  }
+test('панель обращений видна всем, писать может только бот', async () => {
+  const g = fakeGuild(); await deploy(g);
+  const c = byName(g, '🎫・написать-нам');
+  assert.ok(ow(c, EVERYONE).allow.includes('ViewChannel'));
+  assert.ok(ow(c, EVERYONE).deny.includes('SendMessages'));
+  assert.ok(ow(c, BOT).allow.includes('SendMessages'));
 });
 
-test('гость видит отель и гостиную, но не служебное и не отделы', async () => {
-  const g = fakeGuild(), { roleIds, bp } = await deploy(g), guest = [roleIds.guest];
-  assert.ok(can(byName(g, 'номера'), guest, 'ViewChannel'));
-  assert.equal(can(byName(g, 'номера'), guest, 'SendMessages'), false);
-  assert.ok(can(byName(g, 'общение'), guest, 'SendMessages'));
-  for (const c of bp.channels.filter(x => ['catStaff', 'catDepts', 'catMgmt', 'catPress', 'catResidents', 'catCigar'].includes(x.parent)))
-    assert.equal(can(byName(g, c.name), guest, 'ViewChannel'), false, c.name);
+test('ленту сайта видят только роли персонала и бот', async () => {
+  const g = fakeGuild(); await deploy(g);
+  const c = byName(g, '🛎️・лента-сайта');
+  assert.ok(ow(c, EVERYONE).deny.includes('ViewChannel'));
+  assert.ok(ow(c, STAFF[0]).allow.includes('ViewChannel'));
+  assert.ok(ow(c, STAFF[0]).deny.includes('SendMessages'));
+  assert.ok(ow(c, BOT).allow.includes('ViewChannel'));
 });
 
-test('отдел видит только свой канал, стажёр не видит руководство', async () => {
-  const ds = depts(), g = fakeGuild(), { roleIds } = await deploy(g, {}, ds);
-  const [a, b] = ds, chA = byName(g, slug(a.name)), chB = byName(g, slug(b.name));
-  assert.ok(can(chA, [roleIds['dept_' + a.id]], 'SendMessages'));
-  assert.equal(can(chB, [roleIds['dept_' + a.id]], 'ViewChannel'), false);
-  assert.equal(can(byName(g, 'руководство'), [roleIds.intern], 'ViewChannel'), false);
-  assert.ok(can(byName(g, 'стафф-общий'), [roleIds.intern], 'SendMessages'));
-  assert.ok(can(byName(g, 'руководство'), [roleIds.gm], 'SendMessages'));
+test('смена ролей персонала убирает доступ у снятой роли', async () => {
+  const g = fakeGuild(), first = await deploy(g), feed = byName(g, '🛎️・лента-сайта');
+  const p = planSetup(buildBlueprint(), snapshotGuild(g, { channels: first.channels, staffRoles: STAFF }, BOT, ['role-new']));
+  await applyPlan(g, p, { ...opts, staffIds: ['role-new'] });
+  assert.equal(feed.permissionOverwrites.cache.has(STAFF[0]), false);
+  assert.ok(ow(feed, 'role-new').allow.includes('ViewChannel'));
 });
 
-test('лента только для бота: персонал читает, но не пишет', async () => {
-  const g = fakeGuild(), { roleIds } = await deploy(g), ch = byName(g, 'брони');
-  assert.ok(can(ch, [roleIds.employee], 'ViewChannel'));
-  assert.equal(can(ch, [roleIds.employee], 'SendMessages'), false);
-  assert.ok(can(ch, [BOT], 'SendMessages'));
-});
-
-test('постоялец и член клуба получают свои разделы; сотрудник клуба тоже', async () => {
-  const ds = depts(), g = fakeGuild(), { roleIds } = await deploy(g, {}, ds), club = ds.find(d => /сигар/i.test(d.name));
-  assert.ok(can(byName(g, 'постояльцы'), [roleIds.resident], 'SendMessages'));
-  assert.ok(can(byName(g, 'курительная'), [roleIds.cigarMember], 'SendMessages'));
-  assert.ok(can(byName(g, 'курительная'), [roleIds['dept_' + club.id]], 'ViewChannel'));
-  assert.equal(can(byName(g, 'курительная'), [roleIds.resident], 'ViewChannel'), false);
-});
-
-test('старый сервер: каналы привязываются, переезжают, ничего не удаляется, чужое на месте', async () => {
+test('прошлая схема: каналы бота переименовываются и переезжают, чужие права на месте', async () => {
   const g = fakeGuild();
-  const foreignRole = await g.roles.create({ name: 'Друзья' });
-  const oldCat = await g.channels.create({ name: 'MILE HIGH CLUB', type: CATEGORY });
-  const oldRooms = await g.channels.create({ name: 'свободные-номера', type: TEXT, parent: oldCat.id, permissionOverwrites: [{ id: foreignRole.id, allow: ['ViewChannel'], deny: [] }] });
-  const foreign = await g.channels.create({ name: 'мемы', type: TEXT });
-  const r = await deploy(g, { channels: { rooms: oldRooms.id, catMain: oldCat.id } });
-  assert.equal(r.channels.rooms, oldRooms.id);
-  assert.equal(oldRooms.name, 'номера');
-  assert.equal(oldCat.name, 'ОТЕЛЬ');
-  assert.ok(oldRooms.permissionOverwrites.cache.has(foreignRole.id), 'чужие права остаются');
-  assert.equal(foreign.name, 'мемы');
-  assert.equal(g.channels.cache.get(foreign.id).parentId, null);
-  assert.equal(g.log.deleted, 0);
-  assert.ok(g.roles.cache.has(foreignRole.id));
+  const cat = await g.channels.create({ name: 'ОБРАЩЕНИЯ', type: CATEGORY }), oldCat = await g.channels.create({ name: 'СЛУЖЕБНОЕ', type: CATEGORY });
+  const desk = await g.channels.create({ name: 'обращение', type: TEXT, parent: cat.id, permissionOverwrites: [{ id: 'friends', allow: ['ViewChannel'], deny: [] }] });
+  const feed = await g.channels.create({ name: 'обращения', type: TEXT, parent: oldCat.id, permissionOverwrites: [{ id: 'old-role', allow: ['ViewChannel'], deny: [] }] });
+  const r = await deploy(g, { channels: { catDesk: cat.id, helpdesk: desk.id, staffTickets: feed.id }, roleIds: { guest: 'old-role' } });
+  assert.equal(r.made.length, 0);
+  assert.equal(cat.name, '🎫・ОБРАЩЕНИЯ');
+  assert.equal(desk.name, '🎫・написать-нам');
+  assert.equal(feed.parentId, cat.id);
+  assert.ok(desk.permissionOverwrites.cache.has('friends'), 'чужие права остаются');
+  assert.equal(feed.permissionOverwrites.cache.has('old-role'), false, 'права старой роли бота убраны');
 });
 
-test('старый канал без прав на правку пропускается, остальное создаётся', async () => {
+test('каналы сервера получают значки, тип учитывается, повтор не нужен', async () => {
   const g = fakeGuild();
-  const rules = await g.channels.create({ name: 'правила', type: TEXT });
+  const news = await g.channels.create({ name: 'анонсы', type: ANNOUNCEMENT }), mine = await g.channels.create({ name: 'анонсы', type: TEXT });
+  const voice = await g.channels.create({ name: 'Voice', type: VOICE }), other = await g.channels.create({ name: 'мемы', type: TEXT });
+  await deploy(g);
+  assert.equal(news.name, '📣・анонсы');
+  assert.equal(mine.name, 'анонсы');
+  assert.equal(voice.name, '🔊・лобби');
+  assert.equal(other.name, 'мемы');
+  assert.equal(plan(g).summary.renames, 0);
+});
+
+test('канал, который бот не может изменить, пропускается, остальное выполняется', async () => {
+  const g = fakeGuild(), rules = await g.channels.create({ name: 'правила', type: TEXT });
   rules.edit = async () => { throw Object.assign(new Error('Missing Permissions'), { code: 50013 }); };
   const r = await deploy(g);
-  assert.deepEqual(r.skipped, ['правила']);
-  assert.equal(r.channels.rules, undefined, 'бот не пишет в пропущенный канал');
-  assert.ok(byName(g, 'номера'));
-  assert.equal(g.log.deleted, 0);
+  assert.deepEqual(r.skipped, ['📜・правила']);
+  assert.ok(byName(g, '🎫・написать-нам'));
 });
 
-test('ключи старой схемы сохранены', () => {
-  const bp = buildBlueprint({ depts: [] }), keys = [...bp.channels, ...bp.categories].map(c => c.key), roles = bp.roles.map(r => r.key);
-  for (const k of ['main', 'announcements', 'rooms', 'journal', 'chat', 'staffBookings', 'staffOrders', 'staffTickets', 'staffGeneral', 'catMain', 'catStaff', 'catTickets']) assert.ok(keys.includes(k), k);
-  for (const k of ['admin', 'mod', 'staff']) assert.ok(roles.includes(k), k);
-});
-
-test('имена уникальны и подходят Discord', () => {
-  const bp = buildBlueprint({ depts: depts() });
-  const names = bp.channels.filter(c => c.type === TEXT).map(c => c.name);
-  assert.equal(new Set(names).size, names.length);
-  for (const n of names) assert.match(n, /^[\p{L}\p{N}-]{1,100}$/u);
-  assert.equal(new Set(bp.roles.map(r => r.name)).size, bp.roles.length);
-  assert.ok(bp.channels.filter(c => c.parent === 'catLounge').length <= 50);
-  assert.ok(bp.channels.some(c => c.type === VOICE));
-  assert.ok(bp.roles.every(r => r.color >= 0 && r.color <= 0xFFFFFF));
-});
-
-test('бот есть в правах каждого канала', () => {
-  const bp = buildBlueprint({ depts: depts() }), ids = Object.fromEntries(bp.roles.map(r => [r.key, 'r-' + r.key]));
-  for (const c of [...bp.categories, ...bp.channels]) assert.ok(overwritesFor(c, ids, EVERYONE, BOT).some(o => o.id === BOT && o.allow.includes('SendMessages')), c.name);
-});
-
-function validPayload(key, p) {
-  assert.ok((p.embeds?.length ?? 0) <= 10, key);
-  let total = 0;
-  for (const e of p.embeds || []) {
-    assert.ok((e.title?.length ?? 0) <= 256, key);
-    assert.ok((e.description?.length ?? 0) <= 4096, key);
-    assert.ok((e.fields?.length ?? 0) <= 25, key);
-    total += (e.title?.length ?? 0) + (e.description?.length ?? 0);
-    for (const f of e.fields || []) { assert.ok(f.name && f.name.length <= 256, key + ' name'); assert.ok(f.value && f.value.length <= 1024, key + ' value: ' + f.name); total += f.name.length + f.value.length; }
-  }
-  assert.ok(total <= 6000, key + ' total ' + total);
-  for (const r of p.components || []) { assert.equal(r.type, 1); assert.ok(r.components.length >= 1 && r.components.length <= 5, key); }
-}
-
-test('все карточки укладываются в лимиты Discord', () => {
-  const { core } = makeCore(), d = core.publicData();
-  for (const [key, [, build]] of Object.entries(BOARDS)) { validPayload(key, build(d, 'https://mhc.example.com')); validPayload(key, build(d, '')); }
-});
-
-test('карточки не падают на пустых данных', () => {
-  const d = { settings: {}, types: [], rooms: [], venues: [], menu: [], cigars: [], depts: [], team: [], offers: [], faq: [], issues: [], events: [] };
-  for (const [key, [, build]] of Object.entries(BOARDS)) assert.doesNotThrow(() => build(d, ''), key);
-});
-
-test('схема команд подходит Discord', () => {
-  const { core } = makeCore(), list = buildCommands(core.publicData().types);
-  assert.ok(list.length <= 100);
-  for (const c of list) { assert.match(c.name, /^[-_\p{Ll}\p{N}]{1,32}$/u); assert.ok(c.description.length >= 1 && c.description.length <= 100); }
-  assert.ok(list.find(c => c.name === 'бронь').options[0].choices.length >= 1);
-});
-
-function fakeInteraction({ command, button, modal, options = {}, fields = {}, user = { id: 'u1', username: 'guest1' }, roles = new Set() }) {
-  const i = {
-    user, commandName: command, customId: button || modal, replies: [], modals: [], deferred: false, replied: false,
-    member: { displayName: 'Тони', roles: { cache: { has: id => roles.has(id) }, add: async id => { roles.add(id); }, remove: async id => { roles.delete(id); } } },
-    options: { getString: n => options[n] ?? null }, fields: { getTextInputValue: n => fields[n] ?? '' },
-    isChatInputCommand: () => !!command, isButton: () => !!button, isModalSubmit: () => !!modal,
-    reply: async p => { i.replied = true; i.replies.push(p); }, editReply: async p => { i.replies.push(p); }, deferReply: async () => { i.deferred = true; }, showModal: async m => { i.modals.push(m); }
+test('очистка: только своё, чужое и занятое остаётся', () => {
+  const saved = { channels: { helpdesk: 'keep', rooms: 'c1', chat: 'c2', catMain: 'k1', catLounge: 'k2' }, roleIds: { guest: 'r1', subNews: 'r2' } };
+  const snap = {
+    channels: [{ id: 'keep', type: TEXT, parentId: null }, { id: 'c1', name: 'номера', type: TEXT, parentId: 'k1' }, { id: 'c2', name: 'общение', type: TEXT, parentId: 'k2' }, { id: 'k1', name: 'ОТЕЛЬ', type: CATEGORY, parentId: null }, { id: 'k2', name: 'ГОСТИНАЯ', type: CATEGORY, parentId: null }, { id: 'mine', name: 'мемы', type: TEXT, parentId: 'k1' }],
+    roles: [{ id: 'r1', name: 'Гость отеля' }, { id: 'r2', name: 'Подписка' }, { id: 'foreign', name: 'Dev' }]
   };
+  const c = planCleanup(buildBlueprint(), saved, snap, new Set(['c2']), ['r2']);
+  assert.deepEqual(c.channels.map(x => x.id), ['c1']);
+  assert.deepEqual(c.kept.map(x => x.id), ['c2']);
+  assert.deepEqual(c.categories, [], 'в ОТЕЛЕ лежит чужой канал, в ГОСТИНОЙ остаётся занятый');
+  assert.deepEqual(c.roles.map(x => x.id), ['r1']);
+});
+
+test('очистка удаляет пустую категорию бота', () => {
+  const c = planCleanup(buildBlueprint(), { channels: { rooms: 'c1', catMain: 'k1' } }, { channels: [{ id: 'c1', type: TEXT, parentId: 'k1' }, { id: 'k1', type: CATEGORY, parentId: null }], roles: [] });
+  assert.deepEqual(c.categories.map(x => x.id), ['k1']);
+});
+
+test('права бота есть во всех новых каналах', () => {
+  const bp = buildBlueprint();
+  for (const s of [...bp.categories, ...bp.channels]) assert.ok(overwritesFor(s, STAFF, EVERYONE, BOT).some(o => o.id === BOT), s.name);
+});
+
+test('в Discord осталась только команда обращения', () => {
+  assert.deepEqual(buildCommands().map(c => c.name), ['обращение']);
+  const { components } = helpdeskBoard();
+  assert.deepEqual(components[0].components.map(b => b.custom_id), ['mhc:ticket', 'mhc:job']);
+});
+
+test('пост с сайта собирается в эмбед и не упоминает никого', () => {
+  const p = postPayload({ content: '@everyone привет', title: 'Заголовок', description: 'Текст', color: '#F0177A', image: 'uploads/a.png', footer: 'Отель', fields: [{ name: 'Когда', value: 'Сегодня', inline: true }], button: { label: 'Сайт', url: 'https://mhc.example.com' } }, 'https://mhc.example.com');
+  assert.equal(p.embeds[0].color, 0xF0177A);
+  assert.equal(p.embeds[0].image.url, 'https://mhc.example.com/uploads/a.png');
+  assert.equal(p.components[0].components[0].url, 'https://mhc.example.com');
+  assert.deepEqual(p.allowedMentions, { parse: [] });
+});
+
+test('пост без карточки и локальная картинка не ломают сообщение', () => {
+  assert.deepEqual(postPayload({ content: 'Просто текст' }).embeds, []);
+  assert.equal(postPayload({ title: 'x', image: 'uploads/a.png' }, 'http://localhost:3000').embeds[0].image, undefined);
+});
+
+test('анонс события содержит время и ссылку', () => {
+  const p = eventAnnouncement({ name: 'Neon Night', start: 1800000000000, location: 'Night Pool', desc: 'Вечеринка', url: 'https://discord.com/events/1/2' }, 'https://mhc.example.com');
+  assert.match(p.embeds[0].description, /<t:1800000000:f>/);
+  assert.equal(p.embeds[0].url, 'https://discord.com/events/1/2');
+  assert.ok(p.components.length);
+});
+
+const admin = { id: 'a1', username: 'admin', role: 'admin' }, mod = { id: 'm1', username: 'mod', role: 'mod' };
+
+test('панель отправляет пост через вебхук и правит то же сообщение', async () => {
+  const sent = [], { core, store } = makeCore({ sendPost: async a => { sent.push(a); return { messageId: a.messageId || 'msg1', channelName: '📣・анонсы' }; } });
+  await core.handle('GET', '/admin/all', { user: mod });
+  const { doc } = await core.handle('POST', '/admin/discord/send', { user: mod, body: { channel: '123', sender: 'reception', post: { title: 'Открытие' } } });
+  assert.equal(sent[0].sender.name, 'Ресепшен');
+  assert.equal(doc.messageId, 'msg1');
+  await core.handle('POST', '/admin/discord/send', { user: mod, body: { id: doc.id, post: { title: 'Открытие сезона' } } });
+  assert.equal(sent[1].messageId, 'msg1');
+  assert.equal(sent[1].channel, '123');
+  assert.equal(store.all('posts').length, 1);
+  assert.equal(store.get('posts', doc.id).post.title, 'Открытие сезона');
+});
+
+test('пустой пост и гость не проходят', async () => {
+  const { core } = makeCore({ sendPost: async () => ({ messageId: '1', channelName: 'x' }) });
+  await assert.rejects(core.handle('POST', '/admin/discord/send', { user: mod, body: { channel: '123', post: {} } }), /Заполните/);
+  await assert.rejects(core.handle('POST', '/admin/discord/send', { user: { id: 'g', username: 'g', role: 'guest' }, body: { channel: '123', post: { title: 'x' } } }), /прав/);
+});
+
+test('доступ к панели меняет только администратор', async () => {
+  let setups = 0; const { core } = makeCore({ setupGuild: async () => { setups++; return {}; } });
+  await assert.rejects(core.handle('POST', '/admin/discord/access', { user: mod, body: { admin: ['1'] } }), /прав/);
+  await core.handle('POST', '/admin/discord/access', { user: admin, body: { admin: ['111', 'bad'], mod: ['222'], announceChannel: '333' } });
+  const s = core.settings();
+  assert.deepEqual(s.adminRoles, ['111']);
+  assert.deepEqual(s.modRoles, ['222']);
+  assert.equal(s.announceChannel, '333');
+  assert.equal(setups, 1);
+});
+
+test('событие из Discord попадает в афишу сайта и исчезает при удалении', () => {
+  const { core } = makeCore();
+  core.upsertEvent({ id: 'dc-1', name: 'Вечер в Night Pool', desc: '', start: Date.now() + 3600e3, end: null, location: 'Night Pool', status: 'scheduled', image: '', url: 'https://discord.com/events/1/1' });
+  const ev = core.publicData().events.find(e => e.id === 'dc-1');
+  assert.equal(ev.source, 'discord');
+  assert.ok(ev.venueId);
+  core.removeEvent('dc-1');
+  assert.equal(core.publicData().events.some(e => e.id === 'dc-1'), false);
+});
+
+function fakeModal(customId, fields) {
+  const i = { customId, user: { id: 'u1', username: 'guest1' }, replies: [], isChatInputCommand: () => false, isButton: () => false, isModalSubmit: () => true, fields: { getTextInputValue: k => fields[k] ?? '' } };
+  i.deferReply = async () => { i.deferred = true; }; i.editReply = async p => { i.replies.push(p); }; i.reply = async p => { i.replies.push(p); };
   return i;
 }
-const text = i => i.replies.at(-1)?.content ?? '';
-
-function interactions(role = 'guest') {
-  const { core, store } = makeCore(), posts = [];
-  const handle = createInteractions({ core, store, site: '', resolveRole: async () => role, roleId: k => 'role-' + k, post: async (...a) => posts.push(a) });
-  return { core, store, handle, posts };
-}
-
-test('/бронь: модалка создаёт бронь в core', async () => {
-  const { store, handle } = interactions();
-  const open = fakeInteraction({ command: 'бронь', options: { 'тип': 'std' } });
-  await handle(open);
-  assert.equal(open.modals[0].components.length, 5);
-  const send = fakeInteraction({ modal: open.modals[0].custom_id, fields: { name: 'Тони', date: '2026-12-01', nights: '2', guests: '2', note: '' } });
-  await handle(send);
-  const b = store.all('bookings')[0];
-  assert.equal(b.type, 'std');
-  assert.equal(b.discordId, 'u1');
-  assert.ok(text(send).includes(b.code));
-});
-
-test('неверная дата в модалке возвращает понятную ошибку', async () => {
-  const { handle } = interactions();
-  const i = fakeInteraction({ modal: 'mhc:book:std', fields: { name: 'Тони', date: 'завтра', nights: '1', guests: '1' } });
-  await handle(i);
-  assert.match(text(i), /дату заезда/);
-});
-
-test('гость не может подтвердить бронь, персонал может и номер выбирается сам', async () => {
-  const guest = interactions('guest');
-  await guest.core.handle('POST', '/bookings', { body: { type: 'std', name: 'Тони', discord: 'tony', date: '2026-12-01' } });
-  const c = guest.store.all('bookings')[0].code;
-  const denied = fakeInteraction({ command: 'подтвердить', options: { 'код': c } });
-  await guest.handle(denied);
-  assert.match(text(denied), /Недостаточно прав/);
-  assert.equal(guest.store.all('bookings')[0].status, 'new');
-
-  const staff = interactions('mod');
-  await staff.core.handle('POST', '/bookings', { body: { type: 'std', name: 'Тони', discord: 'tony', date: '2026-12-01' } });
-  const code = staff.store.all('bookings')[0].code.toLowerCase();
-  const ok = fakeInteraction({ command: 'подтвердить', options: { 'код': code } });
-  await staff.handle(ok);
-  const b = staff.store.all('bookings')[0];
-  assert.equal(b.status, 'confirmed');
-  assert.ok(b.room);
-  const inn = fakeInteraction({ command: 'заселить', options: { 'код': code } });
-  await staff.handle(inn);
-  assert.equal(staff.store.all('bookings')[0].status, 'checkedin');
-  await staff.handle(fakeInteraction({ command: 'выселить', options: { 'код': code } }));
-  assert.equal(staff.store.all('bookings')[0].status, 'done');
-});
-
-test('кнопка входа выдаёт роль гостя один раз', async () => {
-  const { handle } = interactions(), roles = new Set();
-  const a = fakeInteraction({ button: 'mhc:accept', roles });
-  await handle(a);
-  assert.ok(roles.has('role-guest'));
-  const b = fakeInteraction({ button: 'mhc:accept', roles });
-  await handle(b);
-  assert.match(text(b), /уже гость/);
-});
-
-test('подписка включается и снимается', async () => {
-  const { handle } = interactions(), roles = new Set();
-  await handle(fakeInteraction({ button: 'mhc:sub:subParty', roles }));
-  assert.ok(roles.has('role-subParty'));
-  await handle(fakeInteraction({ button: 'mhc:sub:subParty', roles }));
-  assert.equal(roles.has('role-subParty'), false);
-  const bad = fakeInteraction({ button: 'mhc:sub:admin', roles });
-  await handle(bad);
-  assert.equal(roles.has('role-admin'), false, 'через кнопку нельзя получить служебную роль');
-});
-
-test('/смена только для персонала', async () => {
-  const g = interactions('guest'), gi = fakeInteraction({ command: 'смена' });
-  await g.handle(gi);
-  assert.match(text(gi), /только для персонала/);
-  const s = interactions('mod'), roles = new Set();
-  await s.handle(fakeInteraction({ command: 'смена', roles }));
-  assert.ok(roles.has('role-onShift'));
-  assert.equal(s.posts[0][0], 'shifts');
-});
 
 test('обращение открывает тикет через core', async () => {
-  const { store, handle } = interactions();
-  const i = fakeInteraction({ modal: 'mhc:job:send', fields: { name: 'Тони', topic: 'Бармен', text: 'Хочу работать' } });
-  await handle(i);
-  const t = store.all('tickets')[0];
-  assert.equal(t.topic, 'Трудоустройство: Бармен');
-  assert.equal(t.mode, 'discord');
-  assert.equal(t.status, 'open');
+  const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan1' });
+  await createInteractions({ core, resolveRole: async () => 'guest' })(fakeModal('mhc:ticket:send', { name: 'Джон', topic: 'Вопрос', text: 'Помогите' }));
+  assert.equal(store.all('tickets')[0].channel, 'chan1');
+});
+
+test('заявка на работу помечена темой', async () => {
+  const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan2' });
+  const i = fakeModal('mhc:job:send', { name: 'Джон', topic: 'Бармен', text: 'Хочу работать' });
+  await createInteractions({ core, resolveRole: async () => 'guest' })(i);
+  assert.match(store.all('tickets')[0].topic, /Трудоустройство: Бармен/);
+  assert.match(i.replies[0].content, /<#chan2>/);
 });

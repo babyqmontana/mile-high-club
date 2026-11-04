@@ -8,10 +8,9 @@ const SECTIONS = [
   ['Работа', [['bookings', 'Брони', 'mod'], ['board', 'Доска номеров', 'mod'], ['tickets', 'Обращения', 'mod'], ['orders', 'Заказы', 'mod']]],
   ['Контент', [['events', 'События', 'mod'], ['journal', 'Журнал', 'mod'], ['offers', 'Предложения', 'admin'], ['faq', 'Вопросы и ответы', 'admin'], ['media', 'Картинки', 'mod']]],
   ['Отель', [['structure', 'Этажи и номера', 'admin'], ['types', 'Типы и цены', 'admin'], ['venues', 'Площадки', 'admin'], ['menu', 'Меню Le Ciel', 'admin'], ['cigars', 'Сигары', 'admin'], ['team', 'Анкеты сотрудников', 'admin'], ['depts', 'Униформа отделов', 'admin']]],
-  ['Система', [['discord', 'Discord', 'mod'], ['settings', 'Настройки', 'admin'], ['danger', 'Сброс данных', 'admin']]]
+  ['Система', [['discord', 'Discord', 'mod'], ['senders', 'Отправители', 'admin'], ['settings', 'Настройки', 'admin'], ['danger', 'Сброс данных', 'admin']]]
 ];
 const BUILTIN_IMG = ['img/atrium-night.webp', 'img/atrium-day.webp', 'img/reception.webp', 'img/library.webp', ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => `img/journal/p${n}.webp`)];
-const CH_LABELS = { main: '#главная', announcements: '#анонсы', rooms: '#номера', journal: '#журнал', chat: '#общение', staffBookings: '#брони', staffOrders: '#заказы', staffTickets: '#обращения', staffGeneral: '#стафф-общий' };
 const BCHIP = { new: 'p', confirmed: 'ok', checkedin: 'v', done: 'm', cancelled: 'bad' };
 let A = null, root = null, sec = 'overview', ctx = {}, sel = {}, bFilter = 'active', bq = '', aTicket = null;
 const isAdmin = () => S.me?.role === 'admin';
@@ -46,7 +45,7 @@ function paintAside() {
 function head(title, actions = '', sub = '') { return `<div class="atop"><div class="stack" style="gap:.3rem"><h2>${title}</h2>${sub ? `<p class="note">${sub}</p>` : ''}</div><div class="row">${actions}</div></div>`; }
 function paint() {
   const m = $('#amain'); if (!m || !A) return;
-  try { ({ overview, bookings, board, tickets, orders, events, journal, media, structure, types, venues, menu, cigars, depts, team, offers, faq, discord, settings, danger }[sec] || overview)(m); }
+  try { ({ overview, bookings, board, tickets, orders, events, journal, media, structure, types, venues, menu, cigars, depts, team, offers, faq, discord, senders, settings, danger }[sec] || overview)(m); }
   catch (e) { console.error(e); m.innerHTML = `<div class="empty">Ошибка раздела: ${esc(e.message)}</div>`; }
 }
 const run = async (fn, ok) => { try { const r = await fn(); if (ok) { toast(ok); play('success'); } return r; } catch (e) { fail(e); return null; } };
@@ -324,26 +323,71 @@ function faq(m) {
 }
 
 /* ---------- система ---------- */
+/* Discord: сайт управляет сервером. Посты собираются здесь и уходят через вебхук в выбранный канал. */
+const POST0 = () => ({ content: '', title: '', url: '', description: '', color: '#7A1E26', image: '', thumbnail: '', footer: '', fields: [], button: { label: '', url: '' } });
+let dMeta = null, dPost = POST0(), dEdit = null, dChannel = '', dSender = '';
+const PF = [{ k: 'title', label: 'Заголовок' }, { k: 'url', label: 'Ссылка заголовка' }, { k: 'description', label: 'Текст', type: 'textarea' }, { k: 'color', label: 'Цвет полосы', type: 'color' }, { k: 'footer', label: 'Подпись снизу' }, { k: 'image', label: 'Картинка', type: 'image' }, { k: 'thumbnail', label: 'Миниатюра', type: 'image' }];
+function postPreview(p) {
+  const sender = A.senders?.find(x => x.id === (dEdit?.sender || dSender)) || A.senders?.[0], img = u => (u ? `<img src="${esc(u)}" alt="" style="max-width:100%;border-radius:.4rem;margin-top:.5rem">` : '');
+  const box = p.title || p.description || p.image || p.fields.length;
+  return `<div class="row" style="gap:.6rem;align-items:flex-start;flex-wrap:nowrap"><img src="${esc(sender?.avatar || '')}" alt="" style="width:2.5rem;height:2.5rem;border-radius:50%;flex:none;background:var(--bg2)"><div class="stack" style="gap:.3rem;min-width:0;flex:1">
+    <div class="row" style="gap:.4rem"><b>${esc(sender?.name || 'Отправитель')}</b><span class="chip m">Вебхук</span></div>${p.content ? `<div style="white-space:pre-wrap">${esc(p.content)}</div>` : ''}
+    ${box ? `<div style="border-left:4px solid ${esc(p.color)};background:var(--bg2);border-radius:.3rem;padding:.7rem .8rem;overflow-wrap:anywhere">${p.title ? `<b>${esc(p.title)}</b>` : ''}${p.description ? `<div style="white-space:pre-wrap;font-size:.9rem;margin-top:.25rem">${esc(p.description)}</div>` : ''}${p.fields.map(f => `<div style="margin-top:.45rem;font-size:.88rem"><b>${esc(f.name)}</b><div>${esc(f.value)}</div></div>`).join('')}${img(p.image)}${p.footer ? `<div class="note" style="margin-top:.45rem">${esc(p.footer)}</div>` : ''}</div>` : ''}
+    ${p.button.label ? `<div><span class="btn ghost sm">${esc(p.button.label)}</span></div>` : ''}</div></div>`;
+}
 function discord(m) {
-  const dc = A.discord || {}, s = A.settingsFull || {}, ch = s.channels || {};
-  m.innerHTML = head('Discord', '', 'Сайт и сервер связаны ботом: события, свободные номера, уведомления о бронях и заказах, тикеты, проверка ролей при входе.') + `
+  const dc = A.discord || {}, s = A.settingsFull || {}, admin = isAdmin();
+  if (!dMeta) { dMeta = { channels: [], roles: [] }; if (dc.connected) api('GET', '/admin/discord/meta').then(r => { dMeta = r; paint(); }).catch(fail); }
+  const chOpts = sel => dMeta.channels.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${c.parent ? esc(c.parent) + ' / ' : ''}${esc(c.name)}</option>`).join('');
+  const roleBox = (id, on) => `<div class="stack" id="${id}" style="gap:.35rem;max-height:13rem;overflow:auto">${dMeta.roles.map(r => `<label class="check"><input type="checkbox" value="${esc(r.id)}" ${on?.includes(r.id) ? 'checked' : ''}><span style="color:${esc(r.color || 'inherit')}">${esc(r.name)}</span></label>`).join('') || '<span class="note">Роли появятся, когда бот будет онлайн.</span>'}</div>`;
+  m.innerHTML = head('Discord', '', 'Сайт главный: посты, вебхуки и доступ настраиваются здесь. Сервер получает посты, уведомления персоналу и тикеты, а события с сервера появляются в афише на сайте.') + `
     <div class="g2" style="align-items:start">
-      <div class="card pad stack"><h3 style="font-size:1rem">Состояние</h3><div class="row"><span class="chip ${dc.connected ? 'ok' : 'm'}"><span class="d"></span>${dc.connected ? 'Бот онлайн' : 'Бот не подключён'}</span>${dc.connected ? `<span class="note">${esc(dc.bot || '')} · ${esc(dc.guild || '')}</span>` : ''}</div>
-        ${dc.connected ? '' : `<p class="note">${DEMO || dc.demo ? 'Это демо-версия: бот работает только на вашем сервере.' : 'Укажите DISCORD_BOT_TOKEN и GUILD_ID в файле .env на сервере и перезапустите сайт.'}</p>`}
-        ${isAdmin() ? `<div class="stack" style="gap:.4rem"><button class="btn" id="dSetup" ${dc.connected ? '' : 'disabled'}>Развернуть структуру сервера</button><label class="row" style="gap:.5rem;font-size:.86rem"><input type="checkbox" id="dBrand"> Поставить иконку сервера и аватар бота из эмблемы</label><p class="note">Сначала бот покажет план: какие роли и каналы создаст и что обновит. Ничего не удаляет, чужие роли и каналы не трогает.</p></div>` : ''}
-        ${Object.keys(ch).length ? `<div class="stack" style="gap:.3rem"><span class="lbl">Каналы</span>${Object.entries(CH_LABELS).filter(([k]) => ch[k]).map(([k, l]) => `<div class="row" style="justify-content:space-between;font-size:.86rem"><span>${l}</span><span class="note num">${esc(ch[k])}</span></div>`).join('')}</div>` : ''}</div>
-      <form class="card pad stack" id="dPost"><h3 style="font-size:1rem">Пост в Discord</h3><label class="field"><span>Канал</span><select id="dCh">${Object.entries(CH_LABELS).map(([k, l]) => `<option value="${k}" ${k === 'announcements' ? 'selected' : ''}>${l}</option>`).join('')}</select></label><label class="field"><span>Текст</span><textarea id="dText" placeholder="Сегодня в Night Pool резидент The Hot Times с 22:00"></textarea></label><button class="btn" ${dc.connected ? '' : 'disabled'}>Опубликовать</button>${dc.connected ? '' : '<p class="note">Публикация заработает, когда бот будет подключён.</p>'}</form></div>`;
-  $('#dSetup') && ($('#dSetup').onclick = async () => { const p = await run(() => api('POST', '/admin/discord/plan')); if (!p) return; const n = p.summary, text = p.lines.length ? `Ролей: ${n.createRoles}, новых каналов: ${n.createChannels}, обновить: ${n.updateChannels}. ${p.lines.slice(0, 12).join('; ')}${p.lines.length > 12 ? ` и ещё ${p.lines.length - 12}` : ''}.` : 'Структура уже на месте. Бот только обновит карточки.'; if (!await confirmBox('Развернуть структуру?', text, 'Развернуть')) return; const r = await run(() => api('POST', '/admin/discord/setup', { branding: !!$('#dBrand')?.checked })); if (r) { toast(r.made.length || r.updated.length ? `Создано: ${r.made.length}, обновлено: ${r.updated.length}` : 'Всё уже на месте'); play('success'); await load(); paint(); } });
-  $('#dPost').onsubmit = async e => { e.preventDefault(); const r = await run(() => api('POST', '/admin/discord/post', { channel: $('#dCh').value, text: $('#dText').value })); if (r) { toast(r.ok ? 'Опубликовано' : 'Бот не смог отправить пост', r.ok ? '' : 'err'); if (r.ok) $('#dText').value = ''; } };
+      <form class="card pad stack" id="dForm"><h3 style="font-size:1rem">${dEdit ? 'Правка поста' : 'Новый пост'}</h3>
+        ${dEdit ? `<p class="note">Канал ${esc(dEdit.channelName)}, отправитель ${esc(dEdit.senderName)}. Они не меняются при правке.</p>` : `<div class="g2"><label class="field"><span>Канал</span><select id="dCh"><option value="">Выберите канал</option>${chOpts(dChannel)}</select></label><label class="field"><span>Отправитель</span><select id="dSn">${(A.senders || []).map(x => `<option value="${esc(x.id)}" ${x.id === dSender ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label></div>`}
+        <label class="field"><span>Сообщение над карточкой</span><textarea id="f_content">${esc(dPost.content)}</textarea></label>
+        <div class="g2">${PF.map(f => field(f, dPost[f.k])).join('')}</div>
+        <div class="stack" style="gap:.4rem"><span class="lbl">Поля</span><div class="stack" id="dFields" style="gap:.4rem">${dPost.fields.map((f, i) => `<div class="row" data-i="${i}"><input class="inp grow" data-k="name" placeholder="Название" value="${esc(f.name)}"><input class="inp grow" data-k="value" placeholder="Значение" value="${esc(f.value)}"><label class="check"><input type="checkbox" data-k="inline" ${f.inline ? 'checked' : ''}>В ряд</label><button type="button" class="btn ghost sm" data-del="${i}" aria-label="Убрать поле">${I.trash}</button></div>`).join('')}</div><div><button type="button" class="btn ghost sm" id="dAddF">${I.plus} Добавить поле</button></div></div>
+        <div class="g2"><label class="field"><span>Текст кнопки-ссылки</span><input id="dBl" value="${esc(dPost.button.label)}"></label><label class="field"><span>Адрес кнопки</span><input id="dBu" value="${esc(dPost.button.url)}" placeholder="https://"></label></div>
+        <div class="row"><button class="btn" ${dc.connected ? '' : 'disabled'}>${dEdit ? 'Сохранить правку' : 'Отправить'}</button>${dEdit ? '<button type="button" class="btn ghost" id="dCancel">Отменить</button>' : '<button type="button" class="btn ghost" id="dClear">Очистить</button>'}</div>
+        ${dc.connected ? '<p class="note">Картинки видны в Discord, только если сайт открыт по публичному https-адресу.</p>' : `<p class="note">${DEMO || dc.demo ? 'Это демо-версия: отправка работает только на вашем сервере.' : 'Отправка заработает, когда бот будет подключён.'}</p>`}</form>
+      <div class="stack" style="gap:1rem"><div class="card pad stack"><h3 style="font-size:1rem">Как это будет выглядеть</h3><div id="dPrev">${postPreview(dPost)}</div></div>
+        <div class="card pad stack"><h3 style="font-size:1rem">Отправленные</h3>${(A.posts || []).length ? `<div class="stack" style="gap:.3rem">${A.posts.map(p => `<div class="row" style="justify-content:space-between;flex-wrap:nowrap"><span class="note" style="min-width:0;overflow-wrap:anywhere"><b>${esc(p.post.title || p.post.content.slice(0, 50) || 'Без заголовка')}</b><br>${esc(p.channelName)} · ${esc(p.senderName)} · ${when(p.at)}</span><button type="button" class="btn ghost sm" data-edit="${esc(p.id)}">Изменить</button></div>`).join('')}</div>` : '<span class="note">Постов ещё не было.</span>'}</div>
+        <div class="card pad stack"><h3 style="font-size:1rem">Состояние</h3><div class="row"><span class="chip ${dc.connected ? 'ok' : 'm'}"><span class="d"></span>${dc.connected ? 'Бот онлайн' : 'Бот не подключён'}</span>${dc.connected ? `<span class="note">${esc(dc.bot || '')} · ${esc(dc.guild || '')}</span>` : ''}</div>
+          ${admin ? `<div class="row"><button type="button" class="btn ghost sm" id="dSetup" ${dc.connected ? '' : 'disabled'}>Обновить структуру</button><button type="button" class="btn ghost sm" id="dClean" ${dc.connected ? '' : 'disabled'}>Убрать лишнее</button></div><p class="note">Перед каждым действием бот покажет список изменений.</p>` : ''}</div></div></div>
+    ${admin ? `<form class="card pad stack" id="dAcc" style="margin-top:1rem"><h3 style="font-size:1rem">Доступ и анонсы</h3><div class="g2"><div class="field"><span>Администраторы панели</span>${roleBox('dAdm', s.adminRoles)}</div><div class="field"><span>Модераторы панели</span>${roleBox('dMod', s.modRoles)}</div></div>
+      <label class="field"><span>Канал для анонсов событий с сервера</span><select id="dAnn"><option value="">Первый канал объявлений</option>${chOpts(s.announceChannel)}</select></label>
+      <p class="note">Права дают только отмеченные роли. Владелец сервера всегда администратор. Эти же роли видят ленту сайта и тикеты.</p><div><button class="btn" ${dc.connected ? '' : 'disabled'}>Сохранить</button></div></form>` : ''}`;
+  wirePickers($('#dForm'));
+  const read = () => {
+    const o = readFields(PF); dPost = { ...dPost, ...o, content: $('#f_content').value, button: { label: $('#dBl').value, url: $('#dBu').value },
+      fields: $$('#dFields [data-i]').map(r => ({ name: r.querySelector('[data-k=name]').value, value: r.querySelector('[data-k=value]').value, inline: r.querySelector('[data-k=inline]').checked })) };
+    if ($('#dCh')) { dChannel = $('#dCh').value; dSender = $('#dSn').value; }
+    $('#dPrev').innerHTML = postPreview(dPost);
+  };
+  $('#dForm').oninput = read; $('#dForm').onchange = read;
+  $('#dAddF').onclick = () => { read(); dPost.fields.push({ name: '', value: '', inline: false }); paint(); };
+  $$('#dFields [data-del]').forEach(b => b.onclick = () => { read(); dPost.fields.splice(+b.dataset.del, 1); paint(); });
+  $('#dClear') && ($('#dClear').onclick = () => { dPost = POST0(); paint(); });
+  $('#dCancel') && ($('#dCancel').onclick = () => { dEdit = null; dPost = POST0(); paint(); });
+  $$('[data-edit]').forEach(b => b.onclick = () => { dEdit = A.posts.find(p => p.id === b.dataset.edit); dPost = { ...POST0(), ...structuredClone(dEdit.post) }; paint(); });
+  $('#dForm').onsubmit = async e => { e.preventDefault(); read(); const r = await run(() => api('POST', '/admin/discord/send', { id: dEdit?.id, channel: dChannel, sender: dSender || A.senders?.[0]?.id, post: dPost }), dEdit ? 'Пост изменён' : 'Отправлено'); if (r) { dEdit = null; dPost = POST0(); await load(); paint(); } };
+  const checked = id => $$(`#${id} input:checked`).map(i => i.value);
+  $('#dAcc') && ($('#dAcc').onsubmit = async e => { e.preventDefault(); if (await run(() => api('POST', '/admin/discord/access', { admin: checked('dAdm'), mod: checked('dMod'), announceChannel: $('#dAnn').value }), 'Доступ сохранён')) { await load(); paint(); } });
+  $('#dSetup') && ($('#dSetup').onclick = async () => { const p = await run(() => api('POST', '/admin/discord/plan')); if (!p) return; if (!p.lines.length) return toast('Структура уже на месте'); if (!await confirmBox('Обновить структуру?', p.lines.join('; ') + '.', 'Обновить')) return; const r = await run(() => api('POST', '/admin/discord/setup')); if (r) { toast(r.skipped.length ? `Готово. Пропущено: ${r.skipped.join(', ')}` : 'Структура обновлена'); play('success'); await load(); paint(); } });
+  $('#dClean') && ($('#dClean').onclick = async () => { const p = await run(() => api('POST', '/admin/discord/cleanup-plan')); if (!p) return; const n = p.channels.length + p.categories.length + p.roles.length; if (!n) return toast(p.kept.length ? `Удалять нечего. Оставлены каналы с сообщениями: ${p.kept.join(', ')}` : 'Лишнего нет'); const list = [p.channels.length && `Каналы (${p.channels.length}): ${p.channels.join(', ')}`, p.categories.length && `Категории (${p.categories.length}): ${p.categories.join(', ')}`, p.roles.length && `Роли (${p.roles.length}): ${p.roles.join(', ')}`, p.kept.length && `Останутся, там писали люди: ${p.kept.join(', ')}`].filter(Boolean).join('. '); if (!await confirmBox('Удалить с сервера?', `Удаляется только то, что создал бот. Вернуть нельзя. ${list}.`, 'Удалить', true)) return; const r = await run(() => api('POST', '/admin/discord/cleanup')); if (r) { toast(`Удалено каналов: ${r.channels}, категорий: ${r.categories}, ролей: ${r.roles}`); play('success'); dMeta = null; await load(); paint(); } });
+}
+function senders(m) {
+  crud(m, { col: 'senders', title: 'Отправители', sub: 'От этих имён уходят посты в Discord. У каждого в канале свой вебхук с именем и аватаркой.', items: A.senders || [], newDefaults: { name: '', avatar: '' },
+    fields: [{ k: 'name', label: 'Имя' }, { k: 'order', label: 'Порядок', type: 'number' }, { k: 'avatar', label: 'Аватарка', type: 'image' }],
+    label: x => `<b>${esc(x.name)}</b>` });
 }
 function settings(m) {
   const s = A.settingsFull || {};
   const F = [{ k: 'weather', label: 'Погода над отелем', type: 'select', options: [['auto', 'Авто (смена каждые 3 ч)'], ['clear', 'Ясно'], ['rain', 'Дождь'], ['fog', 'Туман'], ['snow', 'Снег']] }, { k: 'theme', label: 'Тема сайта', type: 'select', options: [['none', 'Обычная'], ['newyear', 'Новогодняя']] }, { k: 'dayStart', label: 'День с (час, МСК)', type: 'number' }, { k: 'nightStart', label: 'Ночь с (час, МСК)', type: 'number' }, { k: 'hotelName', label: 'Название отеля' }, { k: 'tagline', label: 'Слоган на главной' }, { k: 'discordInvite', label: 'Ссылка на Discord-сервер' }, { k: 'address', label: 'Адрес' }, { k: 'footer', label: 'Подвал сайта' }, { k: 'heroDay', label: 'Главная картинка днём', type: 'image' }, { k: 'heroNight', label: 'Главная картинка ночью', type: 'image' }];
   m.innerHTML = head('Настройки') + `<form class="card pad stack" id="sF"><div class="g2">${F.map(f => field(f, s[f.k])).join('')}</div>
-    <div class="g2"><label class="field"><span>Роль администратора в Discord (часть названия)</span><input id="rA" value="${esc(s.roles?.admin || '')}"></label><label class="field"><span>Роль модератора в Discord (часть названия)</span><input id="rM" value="${esc(s.roles?.mod || '')}"></label></div>
-    <p class="note">Полный доступ получают участники с правом «Администратор» на сервере или с ролью, в названии которой есть указанный текст. Модераторы видят брони, доску, обращения, заказы, события и журнал.</p><div><button class="btn">Сохранить</button></div></form>`;
+    <p class="note">Роли, которые дают доступ к панели, выбираются в разделе Discord.</p><div><button class="btn">Сохранить</button></div></form>`;
   wirePickers($('#sF'));
-  $('#sF').onsubmit = async e => { e.preventDefault(); const body = { ...readFields(F), roles: { admin: $('#rA').value, mod: $('#rM').value } }; if (await run(() => api('PUT', '/admin/settings/main', body), 'Настройки сохранены')) { await load(); ctx.reloadPublic?.(); } };
+  $('#sF').onsubmit = async e => { e.preventDefault(); const body = readFields(F); if (await run(() => api('PUT', '/admin/settings/main', body), 'Настройки сохранены')) { await load(); ctx.reloadPublic?.(); } };
 }
 function danger(m) {
   m.innerHTML = head('Сброс данных', '', 'Используйте, чтобы начать с чистого листа: например, после тестов.') + `<div class="danger"><h3 style="font-size:1.05rem;color:var(--bad)">Сбросить статистику</h3>
