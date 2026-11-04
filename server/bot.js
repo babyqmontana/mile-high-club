@@ -221,6 +221,17 @@ export async function startBot({ core, store, env, hooks }) {
     const inUse = snap.roles.filter(r => !members || members.some(m => !m.user.bot && m.roles.cache.has(r.id))).map(r => r.id);
     return planCleanup(bp, saved, snap, occupied, [...staffIds(), ...inUse]);
   }
+  // Следы проверок: сообщения бота с пометкой 🧪 и вся история тестового канала. Сам канал остаётся.
+  hooks.clearTestTraces = async () => {
+    await guild.channels.fetch(); let removed = 0;
+    const lab = S().channels?.testLab, isTest = m => (m.author.id === client.user.id || m.webhookId) && (m.channelId === lab || [m.content, ...m.embeds.map(e => e.title)].some(x => x?.includes('🧪')));
+    for (const c of guild.channels.cache.values()) {
+      if (!c.isTextBased?.() || c.isThread() || c.type === ChannelType.GuildVoice) continue;
+      const list = await c.messages.fetch({ limit: 100 }).catch(() => null);
+      for (const m of list?.values() ?? []) if (isTest(m) && await m.delete().then(() => true).catch(() => false)) removed++;
+    }
+    return removed;
+  };
   hooks.applyProfile = () => applyProfile({ guild, client, root: ROOT });
   hooks.planCleanup = async () => { const c = await cleanup(); return { channels: c.channels.map(x => x.name), categories: c.categories.map(x => x.name), roles: c.roles.map(x => x.name), kept: c.kept.map(x => x.name) }; };
   hooks.cleanupGuild = async () => {
