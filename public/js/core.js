@@ -56,7 +56,7 @@ export function venueState(venue, events, now = Date.now()) {
 }
 
 export function createCore(store, hooks = {}) {
-  const emit = hooks.changed || (() => {});
+  const emit = cols => hooks.changed?.(cols); // бот подключается позже и оборачивает hooks.changed
   const log = (text, kind = 'info', by) => { const id = uid('l'); store.put('log', id, { id, text, kind, by: by || null, at: Date.now() }); trimLog(); };
   const trimLog = () => { const all = store.all('log').sort((a, b) => b.at - a.at); all.slice(400).forEach(l => store.del('log', l.id)); };
   const settings = () => store.get('settings', 'main') || {};
@@ -232,7 +232,8 @@ export function createCore(store, hooks = {}) {
 
   // Discord
   on('POST', '/admin/discord/post', async ({ body, user }) => { need(user, 'mod'); const ch = str(body.channel, 40), text = str(body.text, 1900); if (!text) bad('Пустой пост'); const ok = await call('post', ch, text, user.username); log(`${user.username} опубликовал в ${ch}`, 'discord', user.username); emit(['log']); return { ok: !!ok }; });
-  on('POST', '/admin/discord/setup', async ({ user }) => { need(user, 'admin'); const r = await call('setupGuild'); if (!r) bad('Бот не подключён. Укажите DISCORD_BOT_TOKEN и GUILD_ID в .env'); log(`${user.username} развернул структуру Discord-сервера`, 'discord', user.username); emit(['settings', 'log']); return r; });
+  on('POST', '/admin/discord/plan', async ({ user }) => { need(user, 'admin'); const r = await call('planGuild'); if (!r) bad('Бот не подключён. Укажите DISCORD_BOT_TOKEN и GUILD_ID в .env'); return r; });
+  on('POST', '/admin/discord/setup', async ({ body, user }) => { need(user, 'admin'); const r = await call('setupGuild', { branding: !!body.branding }); if (!r) bad('Бот не подключён. Укажите DISCORD_BOT_TOKEN и GUILD_ID в .env'); log(`${user.username} развернул структуру Discord-сервера`, 'discord', user.username); emit(['settings', 'log']); return r; });
 
   // сброс
   on('POST', '/admin/reset', ({ body, user }) => {
@@ -260,7 +261,7 @@ export function createCore(store, hooks = {}) {
     if (col === 'media') { pick('url', S(2_000_000)); pick('name', S(80)); }
     if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', S(400)); pick('date', N); pick('published', B); pick('accent', S(9)); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: str(p.image, 400), cat: str(p.cat, 30) })); }
     if (col === 'events') { pick('name', S(100)); pick('desc', S(1000)); pick('start', N); pick('end', N); pick('location', S(100)); pick('venueId', S(40)); pick('image', S(400)); pick('status', v => ['scheduled', 'active', 'completed', 'cancelled'].includes(v) ? v : 'scheduled'); if (!('source' in o)) o.source = 'manual'; }
-    if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'address', 'footer']) pick(k, S(400)); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 20).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
+    if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'address', 'footer']) pick(k, S(400)); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
     return o;
   }
   const label = c => ({ types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие' }[c] || c);
