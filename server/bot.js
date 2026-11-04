@@ -1,22 +1,20 @@
-import { Client, GatewayIntentBits, Events, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { Client, GatewayIntentBits, Events, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType } from 'discord.js';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildBlueprint, PERSONAS, SITE_ROLES } from './discord/layout.js';
+import { planSetup, snapshotGuild, applyPlan } from './discord/plan.js';
+import { BOARDS } from './discord/embeds.js';
+import { buildCommands, createInteractions } from './discord/commands.js';
+import { venueState } from '../public/js/core.js';
 
-// Discord-бот: события сервера → сайт, уведомления персоналу, тикеты, проверка ролей, счётчик свободных номеров.
-const PINK = 0xff2e88, GOLD = 0xffb400, TEAL = 0x3fd3c6;
+// Discord-бот: события сервера → сайт, уведомления персоналу, тикеты, проверка ролей, живые карточки, персоны, слэш-команды.
+const PINK = 0xF0177A, GOLD = 0xF7B50A, TEAL = 0x3FD3C6;
 const EVENT_STATUS = { 1: 'scheduled', 2: 'active', 3: 'completed', 4: 'cancelled' };
 const money = n => '$' + Number(n || 0).toLocaleString('ru-RU');
-
-// Структура сервера, которую бот создаёт кнопкой «Развернуть структуру» в панели
-const LAYOUT = {
-  roles: [['admin', 'MHC Администратор', 0xff2e88, true], ['mod', 'MHC Модератор', 0xffb400, true], ['staff', 'MHC Персонал', 0x3fd3c6, true]],
-  categories: [['catMain', 'MILE HIGH CLUB', 'public'], ['catStaff', 'СТАФФ', 'staff'], ['catTickets', 'ТИКЕТЫ', 'staff']],
-  channels: [
-    ['main', 'главная', 'catMain', 'readonly', 'Сайт отеля и всё главное'], ['announcements', 'анонсы', 'catMain', 'readonly', 'Анонсы и события'],
-    ['rooms', 'свободные-номера', 'catMain', 'readonly', 'Бот обновляет свободные номера в реальном времени'], ['journal', 'журнал', 'catMain', 'readonly', 'Новые выпуски Mile High Journal'],
-    ['chat', 'общение', 'catMain', 'public', 'Общий чат'],
-    ['staffBookings', 'брони', 'catStaff', 'staff', 'Новые брони с сайта'], ['staffOrders', 'заказы', 'catStaff', 'staff', 'Заказы в номер'],
-    ['staffTickets', 'обращения', 'catStaff', 'staff', 'Заявки и чаты с сайта'], ['staffGeneral', 'стафф-общий', 'catStaff', 'staff', 'Общение персонала']]
-};
-export const CHANNEL_LABELS = Object.fromEntries(LAYOUT.channels.map(c => [c[0], '#' + c[1]]));
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const AVATARS = path.join(ROOT, 'public', 'img', 'discord');
+const EMBLEM = path.join(ROOT, 'brand', 'emblem-dark.png');
 
 export async function startBot({ core, store, env, hooks }) {
   if (!env.DISCORD_BOT_TOKEN || !env.GUILD_ID) return null;
@@ -24,17 +22,30 @@ export async function startBot({ core, store, env, hooks }) {
   let guild = null;
   const site = (env.PUBLIC_URL || '').replace(/\/$/, '');
   const S = () => core.settings();
+  const blueprint = () => buildBlueprint({ depts: core.publicData().depts });
   const save = patch => store.put('settings', 'main', { ...S(), ...patch });
   const channel = async key => {
     const id = S().channels?.[key];
     if (id) { const c = await guild.channels.fetch(id).catch(() => null); if (c) return c; }
-    const name = (CHANNEL_LABELS[key] || key).replace(/^#/, '');
-    return guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.name === name) || null;
+    const spec = blueprint().channels.find(c => c.key === key); if (!spec) return null;
+    return guild.channels.cache.find(c => c.type === ChannelType.GuildText && [spec.name, ...spec.legacy].includes(c.name)) || null;
   };
-  const roleIds = () => { const r = S().roleIds || {}; return { admin: [r.admin, ...(env.ADMIN_ROLE_IDS || '').split(',')].map(s => (s || '').trim()).filter(Boolean), mod: [r.mod, r.staff, ...(env.MOD_ROLE_IDS || '').split(',')].map(s => (s || '').trim()).filter(Boolean) }; };
+  const roleIds = () => { const r = S().roleIds || {}, ids = (keys, extra) => [...keys.map(k => r[k]), ...(extra || '').split(',')].map(s => (s || '').trim()).filter(Boolean); return { admin: ids(SITE_ROLES.admin, env.ADMIN_ROLE_IDS), mod: ids(SITE_ROLES.mod, env.MOD_ROLE_IDS) }; };
   const staffOverwrites = () => { const ids = [...roleIds().admin, ...roleIds().mod]; return [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, ...ids.filter(id => guild.roles.cache.has(id)).map(id => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }))]; };
   const siteRow = (label = 'Открыть сайт', hash = '') => site ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(site + '/' + (hash ? '#' + hash : '')))] : [];
-  const send = async (key, payload) => { const c = await channel(key); if (!c) return null; return c.send(payload).catch(e => { console.error('Discord send:', e.message); return null; }); };
+  // персона: вебхук канала со своим именем и аватаркой. Нет прав на вебхуки — пишет сам бот.
+  const hookCache = new Map();
+  async function personaHook(c, persona) {
+    const k = c.id + ':' + persona; if (hookCache.has(k)) return hookCache.get(k);
+    const name = PERSONAS[persona], list = await c.fetchWebhooks();
+    const h = list.find(w => w.name === name && w.owner?.id === client.user.id) || await c.createWebhook({ name, avatar: path.join(AVATARS, persona + '.png'), reason: 'Mile High Club: персона' });
+    hookCache.set(k, h); return h;
+  }
+  const send = async (key, payload, persona) => {
+    const c = await channel(key); if (!c) return null;
+    const hook = persona && await personaHook(c, persona).catch(e => { console.error('Discord persona:', e.message); return null; });
+    return (hook ? hook.send(payload) : c.send(payload)).catch(e => { console.error('Discord send:', e.message); return null; });
+  };
 
   hooks.status = () => ({ connected: !!guild, guild: guild?.name || null, members: guild?.memberCount || 0, bot: client.user?.tag || null });
 
@@ -65,32 +76,65 @@ export async function startBot({ core, store, env, hooks }) {
 
   hooks.notify = async (kind, d) => {
     if (kind === 'booking') {
-      await send('staffBookings', { embeds: [new EmbedBuilder().setColor(PINK).setTitle(`Новая бронь ${d.code}`).addFields({ name: 'Номер', value: d.typeName + (d.preferredRoom ? ` (просит ${d.preferredRoom})` : ''), inline: true }, { name: 'Заезд', value: `${d.date}, ${d.nights} ноч.`, inline: true }, { name: 'Гостей', value: String(d.guests), inline: true }, { name: 'Гость', value: d.name, inline: true }, { name: 'Discord', value: d.discord, inline: true }, { name: 'Сумма', value: money(d.total), inline: true }, ...(d.note ? [{ name: 'Пожелания', value: d.note.slice(0, 1000) }] : [])).setTimestamp()], components: siteRow('Открыть в панели', 'admin') });
+      await send('staffBookings', { embeds: [new EmbedBuilder().setColor(PINK).setTitle(`Новая бронь ${d.code}`).addFields({ name: 'Номер', value: d.typeName + (d.preferredRoom ? ` (просит ${d.preferredRoom})` : ''), inline: true }, { name: 'Заезд', value: `${d.date}, ${d.nights} ноч.`, inline: true }, { name: 'Гостей', value: String(d.guests), inline: true }, { name: 'Гость', value: d.name, inline: true }, { name: 'Discord', value: d.discord, inline: true }, { name: 'Сумма', value: money(d.total), inline: true }, ...(d.note ? [{ name: 'Пожелания', value: d.note.slice(0, 1000) }] : [])).setTimestamp()], components: siteRow('Открыть в панели', 'admin') }, 'reception');
     }
     if (kind === 'booking_status') {
       const text = { confirmed: `Бронь ${d.code} подтверждена. Ваш номер ${d.room}, заезд ${d.date}.`, cancelled: `Бронь ${d.code} отменена. Если это ошибка, напишите управляющим.`, checkedin: `Добро пожаловать в Mile High Club! Номер ${d.room}.`, done: `Спасибо, что остановились у нас. Ждём снова.` }[d.status];
-      const m = text && await findMember(d.discord, d.discordId); if (m) m.send(text).catch(() => {});
-      await send('staffBookings', { content: `Бронь **${d.code}** → ${{ confirmed: 'подтверждена', cancelled: 'отменена', checkedin: 'заселение', done: 'выезд' }[d.status] || d.status}${d.room ? `, номер ${d.room}` : ''} (${d.handledBy || 'персонал'})` });
+      const m = await findMember(d.discord, d.discordId); if (m && text) m.send(text).catch(() => {});
+      const resident = S().roleIds?.resident; // постоялец: роль живёт ровно столько, сколько гость в отеле
+      if (m && resident) { if (d.status === 'checkedin') m.roles.add(resident).catch(() => {}); if (['done', 'cancelled'].includes(d.status)) m.roles.remove(resident).catch(() => {}); }
+      await send('staffBookings', { content: `Бронь **${d.code}** → ${{ confirmed: 'подтверждена', cancelled: 'отменена', checkedin: 'заселение', done: 'выезд' }[d.status] || d.status}${d.room ? `, номер ${d.room}` : ''} (${d.handledBy || 'персонал'})` }, 'reception');
     }
-    if (kind === 'order') await send('staffOrders', { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`Заказ в номер ${d.room}`).setDescription(d.items.map(i => `${i.name} × ${i.qty}`).join('\n')).addFields({ name: 'Сумма', value: money(d.total), inline: true }, { name: 'Гость', value: d.name || '—', inline: true }, { name: 'Discord', value: d.discord || '—', inline: true }).setTimestamp()] });
+    if (kind === 'order') await send('staffOrders', { embeds: [new EmbedBuilder().setColor(GOLD).setTitle(`Заказ в номер ${d.room}`).setDescription(d.items.map(i => `${i.name} × ${i.qty}`).join('\n')).addFields({ name: 'Сумма', value: money(d.total), inline: true }, { name: 'Гость', value: d.name || '—', inline: true }, { name: 'Discord', value: d.discord || '—', inline: true }).setTimestamp()] }, 'ciel');
     if (kind === 'order_status' && d.status === 'delivering') { const m = await findMember(d.discord); if (m) m.send(`Ваш заказ уже несут в номер ${d.room}.`).catch(() => {}); }
-    if (kind === 'ticket_site') await send('staffTickets', { embeds: [new EmbedBuilder().setColor(TEAL).setTitle('Новое обращение на сайте').setDescription(d.text.slice(0, 3900)).addFields({ name: 'Тема', value: d.topic, inline: true }, { name: 'Discord', value: d.discord, inline: true })], components: siteRow('Ответить в панели', 'admin') });
+    if (kind === 'ticket_site') await send('staffTickets', { embeds: [new EmbedBuilder().setColor(TEAL).setTitle('Новое обращение на сайте').setDescription(d.text.slice(0, 3900)).addFields({ name: 'Тема', value: d.topic, inline: true }, { name: 'Discord', value: d.discord, inline: true })], components: siteRow('Ответить в панели', 'admin') }, 'concierge');
     if (kind === 'ticket_discord') await send('staffTickets', { content: `Открыт тикет для **${d.discord}**: ${d.topic}${d.channel ? ` → <#${d.channel}>` : ' (пользователь не найден на сервере)'}` });
     if (kind === 'ticket_message') await send('staffTickets', { content: `Новое сообщение от **${d.discord}** в чате на сайте: «${d.messages.at(-1)?.text.slice(0, 300)}»` });
   };
 
-  hooks.post = async (key, text, by) => !!(await send(key, { embeds: [new EmbedBuilder().setColor(PINK).setDescription(text).setFooter({ text: `Mile High Club · ${by}` })], components: siteRow() }));
+  hooks.post = async (key, text, by) => !!(await send(key, { embeds: [new EmbedBuilder().setColor(PINK).setDescription(text).setFooter({ text: `Mile High Club · ${by}` })], components: siteRow() }, 'concierge'));
 
-  // свободные номера: одно сообщение, бот его редактирует
-  let roomsT = null;
-  hooks.roomsChanged = sum => { clearTimeout(roomsT); roomsT = setTimeout(() => updateRooms(sum).catch(e => console.error('rooms msg:', e.message)), 2500); };
-  async function updateRooms(sum = core.freeSummary()) {
-    const c = await channel('rooms'); if (!c) return;
-    const embed = new EmbedBuilder().setColor(sum.free ? TEAL : PINK).setTitle(`Свободно ${sum.free} из ${sum.total}`).setDescription(sum.byType.map(t => `**${t.name}** — ${t.free} из ${t.total}`).join('\n')).setFooter({ text: 'Обновляется автоматически' }).setTimestamp();
-    const id = S().roomsMessageId; const msg = id && await c.messages.fetch(id).catch(() => null);
-    if (msg) await msg.edit({ embeds: [embed], components: siteRow('Забронировать', 'stay') });
-    else { const m = await c.send({ embeds: [embed], components: siteRow('Забронировать', 'stay') }); save({ roomsMessageId: m.id }); }
-    client.user?.setActivity(`Свободно ${sum.free}/${sum.total}`, { type: 3 });
+  // живые карточки: одно сообщение на канал, правится только при изменении данных
+  const saveBoard = (key, rec) => save({ boards: { ...(S().boards || {}), [key]: rec } });
+  async function publishBoard(key) {
+    const [persona, build] = BOARDS[key], payload = build(core.publicData(), site);
+    const hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex'), rec = S().boards?.[key];
+    if (rec?.hash === hash) return false;
+    const c = await channel(key); if (!c) return false;
+    const hook = await personaHook(c, persona).catch(() => null);
+    if (rec?.id) {
+      try { if (rec.via === 'hook' && hook) await hook.editMessage(rec.id, payload); else await (await c.messages.fetch(rec.id)).edit(payload); saveBoard(key, { ...rec, hash }); return true; }
+      catch { /* сообщение удалили: отправим заново */ }
+    }
+    const m = await (hook ? hook.send(payload) : c.send(payload));
+    saveBoard(key, { id: m.id, via: hook ? 'hook' : 'bot', hash }); return true;
+  }
+  async function refreshBoards(keys = Object.keys(BOARDS)) { let n = 0; for (const k of keys) { try { if (await publishBoard(k)) n++; } catch (e) { console.error(`Discord board ${k}:`, e.message); } } return n; }
+  const BOARD_COLS = { rooms: ['rooms'], types: ['rooms'], venues: ['venues'], events: ['venues', 'events'], menu: ['menu'], cigars: ['cigars'], offers: ['offers'], issues: ['journal'], team: ['team'], depts: ['team'], faq: ['faq'], settings: ['about'] };
+  let dirty = new Set(), boardT = null;
+  const touch = keys => { keys.forEach(k => dirty.add(k)); clearTimeout(boardT); boardT = setTimeout(() => { const list = [...dirty]; dirty = new Set(); refreshBoards(list); }, 2500); };
+  hooks.roomsChanged = () => touch(['rooms']);
+  const changed = hooks.changed; // сайт сообщает, какие коллекции поменялись
+  hooks.changed = cols => { changed?.(cols); if (guild) touch(cols.flatMap(c => BOARD_COLS[c] || [])); if (guild && cols.includes('log')) flushAudit(); };
+
+  // журнал действий персонала → канал руководства
+  let auditT = null;
+  function flushAudit() {
+    clearTimeout(auditT);
+    auditT = setTimeout(async () => {
+      const since = S().auditAt || Date.now(), fresh = store.all('log').filter(l => l.at > since && l.by).sort((a, b) => a.at - b.at).slice(0, 10);
+      if (!fresh.length) return;
+      save({ auditAt: fresh.at(-1).at });
+      await send('auditLog', { content: fresh.map(l => `**${l.by}** ${l.text}`).join('\n').slice(0, 1900), allowedMentions: { parse: [] } }, 'security');
+    }, 4000);
+  }
+
+  // статус бота: свободные номера, что открыто, подсказка
+  let statusN = 0;
+  function rotateStatus() {
+    const sum = core.freeSummary(), d = core.publicData(), open = d.venues.filter(v => ['open', 'live', 'event'].includes(venueState(v, d.events).state));
+    const list = [`Свободно ${sum.free} из ${sum.total}`, open.length ? `Открыто: ${open.slice(0, 3).map(v => v.name).join(', ')}` : 'Отель над Лос-Сантосом', 'Команды: /номера /бронь /меню'];
+    client.user?.setActivity(list[statusN++ % list.length], { type: ActivityType.Watching });
   }
 
   // события сервера → сайт
@@ -105,40 +149,38 @@ export async function startBot({ core, store, env, hooks }) {
   client.on(Events.GuildScheduledEventUpdate, (o, ev) => ev.guildId === env.GUILD_ID && core.upsertEvent(mapEvent(ev)));
   client.on(Events.GuildScheduledEventDelete, ev => ev.guildId === env.GUILD_ID && core.removeEvent('dc-' + ev.id));
 
-  // развернуть структуру сервера
-  hooks.setupGuild = async () => {
+  // структура сервера: сначала план, потом выполнение. Ничего не удаляется.
+  const plan = async () => {
     await guild.roles.fetch(); await guild.channels.fetch();
-    const s = S(), roleIdsSaved = { ...(s.roleIds || {}) }, chans = { ...(s.channels || {}) }, made = [];
-    for (const [key, name, color, hoist] of LAYOUT.roles) {
-      let r = guild.roles.cache.get(roleIdsSaved[key]) || guild.roles.cache.find(x => x.name === name);
-      if (!r) { r = await guild.roles.create({ name, color, hoist, mentionable: true, reason: 'Mile High Club: структура сервера' }); made.push('роль ' + name); }
-      roleIdsSaved[key] = r.id;
-    }
-    save({ roleIds: roleIdsSaved });
-    const staffIds = [roleIdsSaved.admin, roleIdsSaved.mod, roleIdsSaved.staff];
-    const perms = mode => mode === 'public' ? [] : mode === 'readonly' ? [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.SendMessages], allow: [PermissionFlagsBits.ViewChannel] }, ...staffIds.map(id => ({ id, allow: [PermissionFlagsBits.SendMessages] }))] : [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, ...staffIds.map(id => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }))];
-    for (const [key, name, mode] of LAYOUT.categories) {
-      let c = guild.channels.cache.get(chans[key]) || guild.channels.cache.find(x => x.type === ChannelType.GuildCategory && x.name === name);
-      if (!c) { c = await guild.channels.create({ name, type: ChannelType.GuildCategory, permissionOverwrites: perms(mode) }); made.push('категория ' + name); }
-      chans[key] = c.id;
-    }
-    for (const [key, name, parent, mode, topic] of LAYOUT.channels) {
-      let c = guild.channels.cache.get(chans[key]) || guild.channels.cache.find(x => x.type === ChannelType.GuildText && x.name === name);
-      if (!c) { c = await guild.channels.create({ name, type: ChannelType.GuildText, parent: chans[parent], topic, permissionOverwrites: perms(mode) }); made.push('#' + name); }
-      chans[key] = c.id;
-    }
-    save({ channels: chans });
-    if (made.includes('#главная')) await send('main', { embeds: [new EmbedBuilder().setColor(PINK).setTitle('Mile High Club').setDescription('Бронь номеров, меню Le Ciel, сигарный клуб, журнал и заявки — на сайте отеля. Здесь общаемся и следим за анонсами.')], components: siteRow() });
-    await updateRooms();
-    return { made, channels: Object.keys(chans).length, roles: Object.keys(roleIdsSaved).length };
+    const s = S(), bp = blueprint();
+    return { bp, plan: planSetup(bp, snapshotGuild(guild, { roleIds: s.roleIds || {}, channels: s.channels || {} }, client.user.id)) };
   };
+  hooks.planGuild = async () => { const { plan: p } = await plan(); return { summary: p.summary, lines: p.lines }; };
+  hooks.setupGuild = async ({ branding = false } = {}) => {
+    const { bp, plan: p } = await plan();
+    const r = await applyPlan(guild, p, bp, { everyoneId: guild.roles.everyone.id, botId: client.user.id });
+    save({ roleIds: { ...(S().roleIds || {}), ...r.roleIds }, channels: { ...(S().channels || {}), ...r.channels } });
+    if (branding) {
+      await guild.setIcon(EMBLEM, 'Mile High Club: иконка сервера').catch(e => console.error('Discord icon:', e.message));
+      await client.user.setAvatar(EMBLEM).catch(e => console.error('Discord avatar:', e.message));
+    }
+    await refreshBoards();
+    return { made: r.made, updated: r.updated, channels: Object.keys(r.channels).length, roles: Object.keys(r.roleIds).length };
+  };
+
+  const interact = createInteractions({ core, store, site, resolveRole: id => hooks.resolveRole(id), roleId: k => S().roleIds?.[k], post: send });
+  client.on(Events.InteractionCreate, i => { if (i.guildId === env.GUILD_ID) interact(i); });
 
   await new Promise((resolve, reject) => { client.once(Events.ClientReady, resolve); client.login(env.DISCORD_BOT_TOKEN).catch(reject); });
   guild = await client.guilds.fetch(env.GUILD_ID);
+  if (!S().auditAt) save({ auditAt: Date.now() });
   await guild.roles.fetch().catch(() => {});
   console.log(`Discord: бот ${client.user.tag} подключён к «${guild.name}»`);
   hooks.syncEvents().catch(e => console.error('events sync:', e.message));
   setInterval(() => hooks.syncEvents().catch(() => {}), 5 * 60e3);
-  updateRooms().catch(() => {});
+  await guild.commands.set(buildCommands(core.publicData().types)).catch(e => console.error('Discord commands:', e.message));
+  refreshBoards().catch(() => {});
+  setInterval(() => refreshBoards(['venues', 'events']).catch(() => {}), 5 * 60e3);
+  rotateStatus(); setInterval(rotateStatus, 60e3);
   return client;
 }

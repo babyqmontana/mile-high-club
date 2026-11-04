@@ -16,7 +16,7 @@ function shell() {
   $('#app').innerHTML = `
   <canvas class="wxbg" id="wxBg" aria-hidden="true"></canvas>
   <header class="nav"><div class="garland" aria-hidden="true">${Array.from({ length: 34 }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</div><div class="wrap">
-    <a class="brand" href="#home" aria-label="На главную"><img src="img/logo.webp" alt="" width="42" height="42"><b>MILE HIGH<br>CLUB</b></a>
+    <a class="brand" href="#home" aria-label="На главную"><img src="img/emblem.webp" alt="" width="42" height="42"><b>MILE HIGH<br>CLUB</b></a>
     <nav class="links" aria-label="Разделы">${ROUTES.map(([id, n]) => `<a href="#${id}" data-r="${id}"><span class="rl"><span data-t="${n}">${n}</span></span></a>`).join('')}</nav>
     <div class="navr">
       <span class="pill wxp" id="wxChip" title="Погода и время над отелем (Москва)"></span>
@@ -387,7 +387,7 @@ function paintCompare() {
 }
 function keyCard(r, t) {
   return `<div class="kc" id="keyCard" tabindex="0" role="button" aria-label="Ключ-карта номера ${esc(r.id)}, нажмите, чтобы перевернуть"><div class="kci">
-    <div class="kf"><img src="img/logo.webp" alt=""><span class="kn num">${esc(r.id)}</span><span class="kt">${esc(t?.name || 'Номер')} · ${r.floor} этаж</span><span class="kl">MILE HIGH CLUB · ROOM KEY</span><i class="chip2"></i></div>
+    <div class="kf"><img src="img/emblem.webp" alt=""><span class="kn num">${esc(r.id)}</span><span class="kt">${esc(t?.name || 'Номер')} · ${r.floor} этаж</span><span class="kl">MILE HIGH CLUB · ROOM KEY</span><i class="chip2"></i></div>
     <div class="kb"><i class="stripe"></i><span>Заезд с 14:00 · Выезд до 12:00</span><span>Приложите к замку двери ${esc(r.id)}</span><small>При потере обратитесь на ресепшен, 20 этаж</small></div></div></div>`;
 }
 function wireKeyCard() {
