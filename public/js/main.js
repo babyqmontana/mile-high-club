@@ -89,6 +89,7 @@ function viewOf(hash) {
 }
 function route() {
   const next = viewOf(location.hash);
+  if (next === 'contact' && current !== 'contact' && ticketStep === 3) { ticketStep = 1; curTicket = null; } // вернулись после отправки: снова чистая форма
   const animate = VT && booted && next !== current && document.visibilityState === 'visible' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (!animate) return doRoute();
   vtRunning?.skipTransition();
@@ -749,7 +750,7 @@ function paintStaff() {
 }
 
 /* ---------------- заявка ---------------- */
-let curTicket = null, ticketStep = 1;
+let curTicket = null, ticketStep = 1, ticketMember = null, ticketMode = 'site';
 function renderContact() {
   const v = view('contact'); if (focusedIn(v)) { paintChat(); return; }
   const s = S.pub.settings;
@@ -768,9 +769,11 @@ function paintTicketStep() {
       <label class="field"><span>Сообщение</span><textarea id="tText" required placeholder="Опишите, что нужно"></textarea></label><button class="btn" type="submit" data-sfx="">Отправить</button></form>`;
     $('#tForm').onsubmit = async e => { e.preventDefault(); const b = $('#tForm button'); b.disabled = true;
       try { const r = await api('POST', '/tickets', { discord: $('#tDiscord').value, name: $('#tName').value, topic: $('#tTopic').value, text: $('#tText').value }); curTicket = r.ticket; ticketStep = 2; play('open'); paintCheck(r.member); loadItems(); } catch (err) { fail(err); b.disabled = false; } };
-  }
+  } else if (ticketStep === 2) paintCheck(ticketMember);
+  else paintDone();
 }
 function paintCheck(member) {
+  ticketMember = member;
   const box = $('#tBox'), s = S.pub.settings, bar = `<div class="steps"><i class="on"></i><i class="on"></i><i></i></div>`;
   if (member === true) { box.innerHTML = `${bar}<h3 style="font-size:1.2rem">2. Вы на сервере</h3><p class="mut">Нашли <b>${esc(curTicket.discord)}</b> на сервере Mile High Club. Открыть тикет в Discord?</p><div class="row"><button class="btn" id="tDc">Открыть тикет в Discord</button><button class="btn ghost" id="tSite">Лучше чат на сайте</button></div>`; }
   else if (member === false) { box.innerHTML = `${bar}<h3 style="font-size:1.2rem">2. Вас нет на сервере</h3><p class="mut">Не нашли <b>${esc(curTicket.discord)}</b> на нашем Discord-сервере. Зайдите на сервер, и бот откроет тикет. Или продолжим здесь, в чате.</p><div class="row">${s.discordInvite ? `<a class="btn discord" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} Зайти на сервер</a>` : ''}<button class="btn ghost" id="tRe">Я зашёл, проверить</button><button class="btn ghost" id="tSite">Продолжить на сайте</button></div>`; }
@@ -779,10 +782,15 @@ function paintCheck(member) {
   $('#tSite') && ($('#tSite').onclick = () => setMode('site'));
   $('#tRe') && ($('#tRe').onclick = async () => { try { const r = await api('POST', `/tickets/${curTicket.id}/recheck`); paintCheck(r.member); if (r.member === false) toast('Пока не видим вас на сервере'); } catch (e) { fail(e); } });
 }
+// Шаг 3 рисуется и при повторной отрисовке страницы, иначе блок заявки остаётся пустым
+function paintDone() {
+  const m = ticketMode;
+  $('#tBox').innerHTML = `<div class="steps"><i class="on"></i><i class="on"></i><i class="on"></i></div><div class="success"><span class="mark">${I.check}</span><h3>${m === 'discord' ? 'Тикет открыт' : 'Чат открыт'}</h3><p class="mut">${m === 'discord' ? 'Бот создал канал тикета и добавил вас. Загляните в Discord.' : 'Управляющие получили уведомление и ответят в чате справа.'}</p><button class="btn ghost" id="tNew">Новая заявка</button></div>`;
+  $('#tNew').onclick = () => { ticketStep = 1; curTicket = null; paintTicketStep(); paintChat(); };
+}
 async function setMode(m) {
-  try { const r = await api('POST', `/tickets/${curTicket.id}/mode`, { mode: m }); curTicket = r.ticket; ticketStep = 3; play('success');
-    $('#tBox').innerHTML = `<div class="steps"><i class="on"></i><i class="on"></i><i class="on"></i></div><div class="success"><span class="mark">${I.check}</span><h3>${m === 'discord' ? 'Тикет открыт' : 'Чат открыт'}</h3><p class="mut">${m === 'discord' ? (curTicket.channel ? 'Бот создал канал тикета и добавил вас. Загляните в Discord.' : 'Управляющие получили заявку и откроют тикет в Discord.') : 'Управляющие получили уведомление и ответят в чате справа.'}</p><button class="btn ghost" id="tNew">Новая заявка</button></div>`;
-    $('#tNew').onclick = () => { ticketStep = 1; curTicket = null; paintTicketStep(); paintChat(); };
+  try { const r = await api('POST', `/tickets/${curTicket.id}/mode`, { mode: m }); curTicket = r.ticket; ticketStep = 3; play('success'); if (r.fallback) { m = 'site'; toast('Тикет в Discord сейчас недоступен. Обращение открыто в чате на сайте.'); }
+    ticketMode = m; paintDone();
     await loadItems(); if (m === 'site') { openTicketId = curTicket.id; paintChat(); }
   } catch (e) { fail(e); }
 }

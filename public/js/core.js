@@ -142,11 +142,13 @@ export function createCore(store, hooks = {}) {
   on('POST', '/tickets/:id/mode', async ({ params, body, user, guestKey }) => {
     const t = myTicket(params.id, user, guestKey); const mode = body.mode === 'discord' ? 'discord' : 'site';
     t.mode = mode; t.status = 'open'; t.lastAt = Date.now();
-    if (mode === 'site' && !t.messages.length) t.messages.push({ from: 'guest', text: t.text, at: Date.now() });
-    if (mode === 'discord') { const ch = await call('createTicketChannel', t); t.channel = ch || null; }
-    store.put('tickets', t.id, t); log(`Обращение от ${t.discord}: ${t.topic} (${mode === 'discord' ? 'тикет в Discord' : 'чат на сайте'})`, 'ticket'); emit(['tickets', 'log']);
-    call('notify', mode === 'discord' ? 'ticket_discord' : 'ticket_site', t);
-    return { ticket: t };
+    // Канал не создался (бот недоступен или гостя нет на сервере): обращение уходит в чат на сайте, а не теряется
+    let fallback = false;
+    if (t.mode === 'discord') { t.channel = (await call('createTicketChannel', t)) || null; if (!t.channel) { t.mode = 'site'; fallback = true; } }
+    if (t.mode === 'site' && !t.messages.length) t.messages.push({ from: 'guest', text: t.text, at: Date.now() });
+    store.put('tickets', t.id, t); log(`Обращение от ${t.discord}: ${t.topic} (${t.mode === 'discord' ? 'тикет в Discord' : 'чат на сайте'})`, 'ticket'); emit(['tickets', 'log']);
+    call('notify', t.mode === 'discord' ? 'ticket_discord' : 'ticket_site', t);
+    return { ticket: t, fallback };
   });
   on('POST', '/tickets/:id/messages', ({ params, body, user, guestKey }) => {
     const t = myTicket(params.id, user, guestKey); const text = str(body.text, 2000); if (!text) bad('Пустое сообщение');

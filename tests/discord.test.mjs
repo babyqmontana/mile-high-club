@@ -323,6 +323,15 @@ test('демо-событий нет у гостей, этажи номеров 
   assert.equal(roomGameFloor(rooms, 26), 'Rooms Floor 6');
 });
 
+test('если канал не создался, обращение уходит в чат на сайте', async () => {
+  const { core, store } = makeCore({ checkMember: async () => null, createTicketChannel: async () => { throw new Error('бот недоступен'); } });
+  const { ticket: t } = await core.handle('POST', '/tickets', { user: { id: 'u1', username: 'g', role: 'guest' }, body: { topic: 'Вопрос', text: 'Помогите' } });
+  const r = await core.handle('POST', `/tickets/${t.id}/mode`, { user: { id: 'u1', username: 'g', role: 'guest' }, body: { mode: 'discord' } });
+  assert.equal(r.fallback, true);
+  assert.equal(store.get('tickets', t.id).mode, 'site');
+  assert.deepEqual(store.get('tickets', t.id).messages.map(m => m.text), ['Помогите']);
+});
+
 test('транскрипт экранирует разметку и содержит переписку', () => {
   const h = transcriptHtml({ id: 't1', topic: 'Тема', discord: 'guest1', createdAt: 1 }, [{ from: 'guest', by: 'Джон', text: '<script>x</script>', files: ['https://cdn/a.png?x=1'], at: 2 }], 'admin');
   assert.ok(!h.includes('<script>'));

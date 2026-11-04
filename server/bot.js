@@ -252,6 +252,11 @@ export async function startBot({ core, store, env, hooks }) {
   console.log(`Discord: бот ${client.user.tag} подключён к «${guild.name}»`);
   hooks.syncEvents().catch(e => console.error('events sync:', e.message));
   setInterval(() => hooks.syncEvents().catch(() => {}), 5 * 60e3);
+  // заявки, которые не дошли, пока бот был выключен
+  for (const t of store.all('tickets').filter(x => x.status === 'open' && x.mode === 'discord' && !x.channel)) {
+    const channelId = await hooks.createTicketChannel(t).catch(e => { console.error('Discord ticket:', e.message); return null; });
+    if (channelId) { const doc = { ...t, channel: channelId }; store.put('tickets', t.id, doc); hooks.notify('ticket_discord', doc).catch(() => {}); }
+  }
   await guild.commands.set(buildCommands()).catch(e => console.error('Discord commands:', e.message));
   client.user.setActivity(site && /^https:/.test(site) ? site.replace(/^https:\/\//, '') : 'Отель над Лос-Сантосом', { type: ActivityType.Watching });
   return client;
