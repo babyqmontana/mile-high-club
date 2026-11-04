@@ -46,6 +46,33 @@ export function transcriptHtml(t, log, by) {
 ${rows}</main></body></html>`;
 }
 
+const usd = n => '$' + Number(n || 0).toLocaleString('en-US');
+const BOOKING = { new: ['🟡 Новая', PALETTE.pink], confirmed: ['🟢 Подтверждена', PALETTE.gold], checkedin: ['🛎️ Заселён', PALETTE.gold], done: ['✅ Завершена', PALETTE.wine], cancelled: ['❌ Отменена', PALETTE.wine] };
+const ORDER = { new: ['🟡 Новый', PALETTE.gold], cooking: ['🍳 Готовится', PALETTE.gold], delivering: ['🚪 Несём в номер', PALETTE.sand], done: ['✅ Доставлен', PALETTE.wine], cancelled: ['❌ Отменён', PALETTE.wine] };
+const ENDED = ['done', 'cancelled', 'closed'];
+
+// Карточка ленты: одна на заявку, правится при каждом изменении. Завершённая сжимается в строку.
+export function feedCard(kind, d, guest) {
+  const compact = (title, color) => ({ done: true, message: { embeds: [{ title, color, description: guest }] } });
+  const open = (title, color, description, fields) => ({ done: false, message: { embeds: [{ title, color, description, fields: [{ name: 'Гость', value: guest, inline: true }, ...fields], timestamp: new Date().toISOString() }] } });
+  if (kind === 'booking') {
+    const [label, color] = BOOKING[d.status] || BOOKING.new, title = `🛏️ Бронь ${d.code} · ${label}`;
+    if (ENDED.includes(d.status)) return compact(title, color);
+    return open(title, color, `${d.typeName}, ${d.date}, ${d.nights} ноч.${d.room ? ` · номер ${d.room}` : ''}`, [{ name: 'Имя', value: d.name || '—', inline: true }, { name: 'Сумма', value: usd(d.total), inline: true }, ...(d.note ? [{ name: 'Пожелания', value: cut(d.note, 300) }] : [])]);
+  }
+  if (kind === 'order') {
+    const [label, color] = ORDER[d.status] || ORDER.new, title = `🍽️ Заказ в номер ${d.room} · ${label}`;
+    if (ENDED.includes(d.status)) return compact(title, color);
+    return open(title, color, cut(d.items.map(i => `${i.name} × ${i.qty}`).join(', '), 500), [{ name: 'Сумма', value: usd(d.total), inline: true }]);
+  }
+  const topic = cut(d.topic, 120);
+  if (d.status === 'closed') return compact(`✅ ${topic} · закрыто${d.closedBy ? `: ${d.closedBy}` : ''}`, PALETTE.wine);
+  const waiting = d.lastFrom !== 'staff', last = d.messages?.at(-1)?.text || d.text;
+  return open(`${waiting ? '🟠 Ждёт ответа' : '🟢 Отвечено'} · ${topic}`, waiting ? PALETTE.flame : PALETTE.sand, `> ${cut(last, 200).replace(/\n/g, ' ')}`, [
+    { name: 'Где', value: d.channel ? `<#${d.channel}>` : 'Чат на сайте', inline: true }, { name: 'Сообщений', value: String(Math.max(d.messages?.length || 0, 1)), inline: true }
+  ]);
+}
+
 // Пост из конструктора на сайте
 export function postPayload(p, site = '') {
   const image = publicUrl(p.image, site), thumbnail = publicUrl(p.thumbnail, site);

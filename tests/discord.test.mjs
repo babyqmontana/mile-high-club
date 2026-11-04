@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildBlueprint, overwritesFor, TEXT, VOICE, CATEGORY, ANNOUNCEMENT } from '../server/discord/layout.js';
 import { planSetup, snapshotGuild, applyPlan, planCleanup } from '../server/discord/plan.js';
-import { helpdeskBoard, postPayload, eventAnnouncement, transcriptHtml } from '../server/discord/embeds.js';
+import { helpdeskBoard, postPayload, eventAnnouncement, transcriptHtml, feedCard } from '../server/discord/embeds.js';
 import { buildCommands, createInteractions } from '../server/discord/commands.js';
 import { createCore, seed, roomGameFloor } from '../public/js/core.js';
 
@@ -330,6 +330,28 @@ test('если канал не создался, обращение уходит
   assert.equal(r.fallback, true);
   assert.equal(store.get('tickets', t.id).mode, 'site');
   assert.deepEqual(store.get('tickets', t.id).messages.map(m => m.text), ['Помогите']);
+});
+
+test('карточка ленты показывает, кто ждёт ответа, и сжимается по завершении', () => {
+  const t = { id: 't1', topic: 'Вопрос', text: 'Помогите', status: 'open', lastFrom: 'guest', messages: [{ text: 'Помогите' }] };
+  assert.match(feedCard('ticket', t, 'гость').message.embeds[0].title, /Ждёт ответа/);
+  const answered = feedCard('ticket', { ...t, lastFrom: 'staff', messages: [{ text: 'a' }, { text: 'Отвечаем' }] }, 'гость').message.embeds[0];
+  assert.match(answered.title, /Отвечено/);
+  assert.match(answered.description, /Отвечаем/);
+  const closed = feedCard('ticket', { ...t, status: 'closed', closedBy: 'admin' }, 'гость');
+  assert.equal(closed.done, true);
+  assert.equal(closed.message.embeds[0].fields, undefined);
+  assert.match(feedCard('booking', { code: 'MHC-1', status: 'confirmed', typeName: 'Люкс', date: '2026-12-01', nights: 2, total: 100, room: '2001' }, 'гость').message.embeds[0].title, /Подтверждена/);
+  assert.equal(feedCard('order', { room: '2001', status: 'done', items: [], total: 1 }, 'гость').done, true);
+});
+
+test('переписка и закрытие обновляют одну карточку заявки', async () => {
+  const kinds = [], { core } = makeCore({ checkMember: async () => true, createTicketChannel: async () => null, notify: async k => { kinds.push(k); } });
+  const t = await ticket(core);
+  await core.handle('POST', `/tickets/${t.id}/messages`, { user: { id: 'u1', username: 'guest1', role: 'guest' }, body: { text: 'ещё вопрос' } });
+  await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'ответ' } });
+  await core.handle('POST', `/admin/tickets/${t.id}/close`, { user: mod });
+  assert.deepEqual(kinds, ['ticket_site', 'ticket_update', 'ticket_update', 'ticket_update']);
 });
 
 test('транскрипт экранирует разметку и содержит переписку', () => {

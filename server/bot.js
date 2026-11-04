@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildBlueprint, allTiers, DIRECTOR_ROLE } from './discord/layout.js';
 import { planSetup, snapshotGuild, snapshotRoles, applyPlan, planCleanup } from './discord/plan.js';
-import { helpdeskBoard, postPayload, eventAnnouncement, ticketOpened, archiveCard, transcriptHtml, PALETTE } from './discord/embeds.js';
+import { helpdeskBoard, postPayload, eventAnnouncement, ticketOpened, archiveCard, transcriptHtml, feedCard } from './discord/embeds.js';
 import { applyProfile } from './discord/profile.js';
 import { buildCommands, createInteractions } from './discord/commands.js';
 
@@ -92,21 +92,28 @@ export async function startBot({ core, store, env, hooks }) {
   // уведомления персоналу: одна лента. Гость на сервере — кликабельный профиль, иначе только имя
   const who = async d => { const m = await findMember(d.discord, d.discordId); return m ? { text: `<@${m.id}> · ${m.user.username}`, url: `https://discord.com/users/${m.id}` } : { text: `${d.discord || '—'} · нет на сервере`, url: null }; };
   const panel = site ? site + '/#admin' : null;
-  const feed = async (d, color, title, description, fields = []) => {
-    const w = await who(d);
-    return send(FEED, { embeds: [new EmbedBuilder().setColor(color).setTitle(title).setDescription(description).addFields({ name: 'Гость', value: w.text, inline: true }, ...fields).setTimestamp()], components: links([['Открыть в панели', panel], ['Профиль в Discord', w.url]]), allowedMentions: { parse: [] } });
-  };
+  // Лента без спама: одна карточка на заявку. Новые сообщения и смена статуса правят её, а не пишут заново.
+  async function writeCard(key, kind, d) {
+    const c = await channel(FEED); if (!c) return;
+    const w = await who(d), card = feedCard(kind, d, w.text);
+    const payload = { ...card.message, components: card.done ? [] : links([['Открыть в панели', panel], ['Профиль в Discord', w.url]]), allowedMentions: { parse: [] } };
+    const rec = store.get('feedcards', key), old = rec && await c.messages.fetch(rec.message).catch(() => null);
+    if (old) { await old.edit(payload); return; }
+    const m = await c.send(payload);
+    store.put('feedcards', key, { id: key, message: m.id });
+  }
+  // серия сообщений подряд даёт одну правку
+  const cardQueue = new Map();
+  const card = (key, kind, d) => { clearTimeout(cardQueue.get(key)); cardQueue.set(key, setTimeout(() => { cardQueue.delete(key); writeCard(key, kind, d).catch(e => console.error('Discord feed:', e.message)); }, 1500)); };
   hooks.notify = async (kind, d) => {
-    if (kind === 'booking') await feed(d, PALETTE.pink, `🛏️ Новая бронь ${d.code}`, `${d.typeName}, ${d.date}, ${d.nights} ноч.`, [{ name: 'Имя', value: d.name, inline: true }, { name: 'Сумма', value: money(d.total), inline: true }, ...(d.note ? [{ name: 'Пожелания', value: d.note.slice(0, 500) }] : [])]);
+    if (kind === 'booking' || kind === 'booking_status') card('b:' + d.id, 'booking', d);
+    if (kind === 'order' || kind === 'order_status') card('o:' + d.id, 'order', d);
+    if (kind.startsWith('ticket')) card('t:' + d.id, 'ticket', d);
     if (kind === 'booking_status') {
       const text = { confirmed: `Бронь ${d.code} подтверждена. Ваш номер ${d.room}, заезд ${d.date}.`, cancelled: `Бронь ${d.code} отменена. Если это ошибка, напишите управляющим.`, checkedin: `Добро пожаловать в Mile High Club! Номер ${d.room}.`, done: `Спасибо, что остановились у нас. Ждём снова.` }[d.status];
       const m = await findMember(d.discord, d.discordId); if (m && text) m.send(text).catch(() => {});
     }
-    if (kind === 'order') await feed(d, PALETTE.gold, `🍽️ Заказ в номер ${d.room}`, d.items.map(i => `${i.name} × ${i.qty}`).join(', '), [{ name: 'Сумма', value: money(d.total), inline: true }]);
     if (kind === 'order_status' && d.status === 'delivering') { const m = await findMember(d.discord); if (m) m.send(`Ваш заказ уже несут в номер ${d.room}.`).catch(() => {}); }
-    if (kind === 'ticket_site') await feed(d, PALETTE.sand, '✉️ Новое обращение на сайте', `**${d.topic}**\n${d.text.slice(0, 500)}`);
-    if (kind === 'ticket_discord') await feed(d, PALETTE.flame, '🎫 Открыт тикет', `**${d.topic}**${d.channel ? `\nКанал: <#${d.channel}>` : '\nГостя нет на сервере, тикет-канал не создан.'}`);
-    if (kind === 'ticket_message') await feed(d, PALETTE.sand, '💬 Сообщение в чате на сайте', `«${d.messages.at(-1)?.text.slice(0, 300)}»`);
   };
 
   // посты с сайта: вебхук канала с именем и аватаркой отправителя из панели
@@ -221,10 +228,11 @@ export async function startBot({ core, store, env, hooks }) {
     const inUse = snap.roles.filter(r => !members || members.some(m => !m.user.bot && m.roles.cache.has(r.id))).map(r => r.id);
     return planCleanup(bp, saved, snap, occupied, [...staffIds(), ...inUse]);
   }
-  // Следы проверок: сообщения бота с пометкой 🧪 и вся история тестового канала. Сам канал остаётся.
+  // Следы проверок: сообщения бота с пометкой 🧪, история тестового канала и старые сообщения ленты. Живые карточки остаются.
   hooks.clearTestTraces = async () => {
     await guild.channels.fetch(); let removed = 0;
-    const lab = S().channels?.testLab, isTest = m => (m.author.id === client.user.id || m.webhookId) && (m.channelId === lab || [m.content, ...m.embeds.map(e => e.title)].some(x => x?.includes('🧪')));
+    const lab = S().channels?.testLab, feedId = S().channels?.[FEED], live = new Set(store.all('feedcards').map(c => c.message));
+    const isTest = m => (m.author.id === client.user.id || m.webhookId) && (m.channelId === lab || (m.channelId === feedId && !live.has(m.id)) || [m.content, ...m.embeds.map(e => e.title)].some(x => x?.includes('🧪')));
     for (const c of guild.channels.cache.values()) {
       if (!c.isTextBased?.() || c.isThread() || c.type === ChannelType.GuildVoice) continue;
       const list = await c.messages.fetch({ limit: 100 }).catch(() => null);
@@ -255,7 +263,7 @@ export async function startBot({ core, store, env, hooks }) {
   // заявки, которые не дошли, пока бот был выключен
   for (const t of store.all('tickets').filter(x => x.status === 'open' && x.mode === 'discord' && !x.channel)) {
     const channelId = await hooks.createTicketChannel(t).catch(e => { console.error('Discord ticket:', e.message); return null; });
-    if (channelId) { const doc = { ...t, channel: channelId }; store.put('tickets', t.id, doc); hooks.notify('ticket_discord', doc).catch(() => {}); }
+    if (channelId) { const doc = { ...t, channel: channelId }; store.put('tickets', t.id, doc); hooks.notify('ticket_update', doc).catch(() => {}); }
   }
   await guild.commands.set(buildCommands()).catch(e => console.error('Discord commands:', e.message));
   client.user.setActivity(site && /^https:/.test(site) ? site.replace(/^https:\/\//, '') : 'Отель над Лос-Сантосом', { type: ActivityType.Watching });
