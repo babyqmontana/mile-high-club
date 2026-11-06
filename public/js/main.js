@@ -15,11 +15,11 @@ let authCfg = { oauth: false, demo: false }, manualMode = null, current = 'home'
 function shell() {
   $('#app').innerHTML = `
   <canvas class="wxbg" id="wxBg" aria-hidden="true"></canvas>
-  <header class="nav"><div class="garland" aria-hidden="true">${Array.from({ length: 34 }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</div><div class="wrap">
+  <header class="nav"><div class="wrap">
     <a class="brand" href="#home" aria-label="На главную"><img src="img/emblem.webp?v=2" alt="" width="42" height="42"><b>MILE HIGH<br>CLUB</b></a>
     <nav class="links" aria-label="Разделы">${ROUTES.map(([id, n]) => `<a href="#${id}" data-r="${id}"><span class="rl"><span data-t="${n}">${n}</span></span></a>`).join('')}</nav>
     <div class="navr">
-      <span class="pill wxp" id="wxChip" title="Погода и время над отелем (Москва)"></span>
+      <span class="pill wxp" id="wxChip" title="Погода и время над отелем"></span>
       <a class="pill" href="#stay" title="Свободные номера сейчас"><span class="d"></span><span class="t">Свободно</span><b class="num" id="navFree">—</b></a>
       <button class="ibtn" id="sndBtn" aria-label="Звук" data-sfx=""></button>
       <button class="ibtn" id="modeBtn" aria-label="День или ночь" data-sfx=""></button>
@@ -63,10 +63,12 @@ const WXI = { clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
   rain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 15a4.5 4.5 0 1 1 1.5-8.7A6 6 0 0 1 19 9a3.5 3.5 0 0 1-1 6.9H7z"/><path d="M8 19l-1 2M12 19l-1 2M16 19l-1 2"/></svg>',
   fog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9h13M3 13h18M6 17h13M8 5h8"/></svg>',
   snow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M4 6.5l16 11M4 17.5l16-11M9 3.5l3 2 3-2M9 20.5l3-2 3 2"/></svg>' };
-let wxBg = null, wxNow = null;
+let wxBg = null, wxNow = null, garland = null;
 function applyWeather() {
   if (!S.pub) return; const w = weatherNow(S.pub.settings), m = mode(), root = document.documentElement;
   wxNow = w; root.dataset.wx = w.kind; if (w.kind === 'snow') unlock('snow'); root.dataset.theme = w.newyear ? 'newyear' : '';
+  if (w.newyear && !garland) { garland = 'loading'; import('./garland.js').then(m => { garland = m.mountGarland($('.nav')); }); }
+  if (!w.newyear && garland?.destroy) { garland.destroy(); garland = null; }
   if (!wxBg && $('#wxBg')) wxBg = mountWeather($('#wxBg'), { strength: .55 });
   wxBg?.set(w.kind, m === 'day'); mods.heroWx?.set(w.kind, m === 'day'); mods.hero?.setWeather?.(w.kind); mods.tower?.setWeather?.(w);
   const c = $('#wxChip'); if (c) c.innerHTML = `${w.kind === 'clear' && m === 'night' ? WXI.night : WXI[w.kind]}<b class="num">${w.temp > 0 ? '+' : w.temp < 0 ? '−' : ''}${Math.abs(w.temp)}°</b><span class="t">${hhmm(Date.now())}</span>`;
@@ -198,7 +200,7 @@ function renderHome() {
       <div class="fb-rows">
       <a class="fb-row" href="#stay" data-st="${free ? 'open' : 'closed'}"><span class="fb-k">Номера</span><span class="fb-v">${flap('rooms', `${free}/${p.rooms.length}`)}</span><span class="fb-s">${free ? 'свободно прямо сейчас' : 'все номера заняты'}</span></a>
       ${p.venues.map(v => ({ v, st: venueState(v, p.events) })).sort((a, b) => (RANK[a.st.state] ?? 9) - (RANK[b.st.state] ?? 9)).map(({ v, st }) => `<a class="fb-row" href="#${venueRoute(v)}" data-venue="${esc(v.id)}" data-st="${st.state}"><span class="fb-k">${esc(v.name)}</span><span class="fb-v">${flap('v-' + v.id, FLAP_WORD[st.state] || FLAP_WORD.open)}</span><span class="fb-s">${esc(st.label || '')}${st.state !== 'event' && st.state !== 'soon' && st.state !== 'closed' ? ' · ' + nextChange(v) : ''}</span></a>`).join('')}
-      <div class="fb-row" data-st="clock"><span class="fb-k">Время в отеле · МСК</span><span class="fb-v" id="clock">${flap('clock', hhmm(Date.now()))}</span><span class="fb-s" id="wxTile">${wxNow ? '' : (m === 'day' ? 'День' : 'Ночь')}</span></div>
+      <div class="fb-row" data-st="clock"><span class="fb-k">Время в отеле</span><span class="fb-v" id="clock">${flap('clock', hhmm(Date.now()))}</span><span class="fb-s" id="wxTile">${wxNow ? '' : (m === 'day' ? 'День' : 'Ночь')}</span></div>
       </div>
     </section>
   </div>
@@ -244,7 +246,7 @@ function heroLayers(url) { const m = /img\/(atrium-night|atrium-day)\.webp$/.exe
 // слова через дефис («Лос-Сантос») не разрываются переносом; на вход — уже экранированный текст
 const nowrapHyphens = html => html.replace(/[^\s<>]+-[^\s<>]+/g, w => `<span class="nw">${w}</span>`);
 function evCard(e) {
-  // билет: корешок с датой (по московскому времени, как и часы), перфорация, тело с площадкой
+  // билет: корешок с датой (по времени отеля, как и часы), перфорация, тело с площадкой
   const live = e.start <= Date.now() && (e.end || e.start + 3 * 3600e3) > Date.now(), v = S.pub.venues.find(x => x.id === e.venueId);
   const day = new Date(e.start).toLocaleDateString('ru-RU', { day: 'numeric', timeZone: 'Europe/Moscow' }), mon = new Date(e.start).toLocaleDateString('ru-RU', { month: 'short', timeZone: 'Europe/Moscow' }).replace('.', '');
   return `<${e.url ? `a href="${esc(e.url)}" target="_blank" rel="noopener"` : 'div'} class="ev${live ? ' live' : ''}" style="--a:${esc(v?.accent || '#F0177A')}"><div class="stub"${e.image ? ` style="background-image:linear-gradient(rgba(13,8,9,.5),rgba(13,8,9,.88)),url('${esc(e.image)}')"` : ''}><b class="num">${day}</b><span>${esc(mon)}</span><small class="num">${hhmm(e.start)}</small></div>
@@ -449,8 +451,8 @@ function timeline(v) {
 }
 // «Сутки отеля»: все площадки на одной оси 00–24 и ползунок «что будет открыто в 23:00?».
 // Статус на выбранное время считает та же venueState(), что и сервер, — с учётом событий из Discord.
-let dayAt = null; // минуты МСК, выбранные ползунком; null — «сейчас»
-function dayTime() { // ближайший момент в будущем (в пределах суток) с выбранными минутами МСК
+let dayAt = null; // минуты, выбранные ползунком; null — «сейчас»
+function dayTime() { // ближайший момент в будущем (в пределах суток) с выбранными минутами
   const now = Date.now(), m = mskMinutes(now); if (dayAt === null) return now;
   return now + ((dayAt - m + 1440) % 1440) * 60e3;
 }
@@ -477,7 +479,7 @@ function paintDay() {
   $$('.hd-lane', box).forEach(b => { const v = venues.find(x => x.id === b.dataset.venue); if (v) b.querySelector('.hd-st').innerHTML = stateChip(venueState(v, p.events, t)); });
   const r = $('#hdRange'), hh = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
   if (document.activeElement !== r || dayAt === null) r.value = dayAt ?? Math.floor(m / 15) * 15;
-  r.setAttribute('aria-valuetext', dayAt === null ? `сейчас, ${hh}` : `${hh} МСК`);
+  r.setAttribute('aria-valuetext', dayAt === null ? `сейчас, ${hh}` : `${hh}`);
   $('#hdT').textContent = dayAt === null ? `сейчас · ${hh}` : `в ${hh}${t - Date.now() > 12 * 3600e3 ? ' (завтра)' : ''}`;
   host.querySelector('.hd-grid').style.setProperty('--x', m / 1440);
   host.classList.toggle('at', dayAt !== null); $('#hdNow').disabled = dayAt === null;
@@ -491,7 +493,7 @@ function renderLeisure() {
   const p = S.pub, m = mskMinutes();
   const lv = view('leisure');
   if (!lv.querySelector('#venuesList')) {
-    lv.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Отдых</span><h2>Что сейчас открыто</h2><p>Статусы обновляются по расписанию и по событиям из Discord. Время — московское. Днём работает Sky Pool, ночью Night Pool и The Hot Times.</p></div>
+    lv.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Отдых</span><h2>Что сейчас открыто</h2><p>Статусы обновляются по расписанию и по событиям из Discord. Днём работает Sky Pool, ночью Night Pool и The Hot Times.</p></div>
       <div id="deckHost" class="reveal"></div><section class="hday reveal" id="hday" aria-label="Сутки отеля"></section><div class="venues" id="venuesList"></div></div>`;
     import('./deck.js').then(d => { mods.deck = d.mountDeck($('#deckHost'), S.pub.settings.deckUrl); mods.deck.active(current === 'leisure'); });
   }
@@ -528,7 +530,7 @@ function renderDining() {
   $$('#main [data-c]').forEach(b => b.onclick = () => { menuCat = b.dataset.c; renderDining(); });
   paintDishes(); wireCloche();
 }
-// блюдо дня под серебряным клошем: меняется каждый день по московскому времени
+// блюдо дня под серебряным клошем: меняется каждый день по времени отеля
 let clocheOpen = false;
 function dishOfDay() { const m = S.pub.menu; if (!m.length) return null; const day = Math.floor((Date.now() + 3 * 3600e3) / 864e5); const main = m.filter(i => /основ|горяч|main/i.test(i.cat)); const pool = main.length ? main : m; return pool[day % pool.length]; }
 function clocheHtml() {
@@ -881,6 +883,8 @@ async function boot() {
   if (failed) { $('#main').innerHTML = `<div class="gate"><h2>Сайт недоступен</h2><p class="mut">${esc(failed.message)}</p><button class="btn" onclick="location.reload()">Обновить</button></div>`; return; }
   if (!$('.view.on')) { applyMode(); route(); loadItems(); }
   addEventListener('hashchange', route); booted = true;
+  // раздел «Отдых» собирается заранее в простое: плееру нужно время на загрузку
+  setTimeout(() => { if (!view('leisure').querySelector('#venuesList')) renderLeisure(); }, 2500);
   subscribe(onChange);
   setInterval(() => { applyMode(); const c = $('#clock'); if (c) c.innerHTML = flap('clock', hhmm(Date.now())); applyWeather(); if (current === 'leisure' && !focusedIn(view('leisure'))) { renderLeisure(); $$('.view[data-view="leisure"] .reveal').forEach(e => e.classList.add('in')); } }, 20000);
   if (DEMO && !pref.get('mhc-demo-hint')) { pref.set('mhc-demo-hint', '1'); setTimeout(() => toast('Демо-версия: данные хранятся только в этом браузере'), 1200); }

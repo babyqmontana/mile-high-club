@@ -4,7 +4,7 @@ import { scratch, play, soundOn } from './sound.js';
 import { pref } from './api.js';
 import { unlock } from './achievements.js';
 
-const FADE_IN = 2600, FADE_OUT = 1500, PLAYING = 1, ENDED = 0;
+const FADE_IN = 900, FADE_OUT = 900, IDLE = 120000, PLAYING = 1, ENDED = 0;
 const idOf = url => (String(url || '').match(/(?:youtu\.be\/|[?&]v=|embed\/|shorts\/)([\w-]{11})/) || [])[1] || '';
 
 let api = null;
@@ -24,7 +24,7 @@ export function mountDeck(host, url) {
       <label class="dkv">Громкость<input type="range" id="dkVol" min="0" max="100"></label></div><div class="dkyt"><div id="dkYt"></div></div></div>`;
   const $ = s => host.querySelector(s), rec = $('#dkRec'), btn = $('#dkPlay'), deck = $('.deck'), note = $('#dkN');
   let id = idOf(url), player = null, ready = false, loading = false, playing = false, shown = false, level = 0, fadeT = 0, want = pref.get('mhc-deck') !== 'off';
-  let vol = Number(pref.get('mhc-deck-vol')) || 30, ang = 0, vel = 0, raf = 0, drag = null, last = 0, scr = 0, blockT = 0;
+  let primed = false, idleT = 0, vol = Number(pref.get('mhc-deck-vol')) || 30, ang = 0, vel = 0, raf = 0, drag = null, last = 0, scr = 0, blockT = 0;
   $('#dkVol').value = vol; deck.classList.toggle('none', !id);
 
   function loop(t) {
@@ -49,11 +49,14 @@ export function mountDeck(host, url) {
   function start() {
     if (!id) return; if (!soundOn) { note.textContent = 'Включите звук сайта, чтобы слушать.'; return; }
     if (!player) return create();
-    if (!ready) return;
-    clearInterval(fadeT); level = 0; player.setVolume(0); jump(); player.playVideo();
+    if (!ready) { note.textContent = 'Музыка загружается…'; return; }
+    clearTimeout(idleT);
+    if (primed && player.getPlayerState() === PLAYING) { primed = false; ui(true); fade(vol, FADE_IN); return; } // уже играет без звука с нового места
+    clearInterval(fadeT); level = 0; player.setVolume(0); if (!primed) jump(); primed = false; player.playVideo();
     clearTimeout(blockT); blockT = setTimeout(() => { if (!playing) note.textContent = 'Браузер ждёт вашего нажатия: включите музыку кнопкой.'; }, 2000);
   }
-  function halt() { clearTimeout(blockT); if (!playing) return; ui(false); fade(0, FADE_OUT, () => player?.pauseVideo?.()); }
+  // После затухания переходим на новое случайное место и ещё немного играем без звука: возврат звучит сразу, без подгрузки
+  function halt() { clearTimeout(blockT); if (!playing) return; ui(false); fade(0, FADE_OUT, () => { jump(); primed = true; idleT = setTimeout(() => player?.pauseVideo?.(), IDLE); }); }
   async function create() {
     if (loading) return; loading = true;
     const YT = await loadApi(); if (!YT) { loading = false; note.textContent = 'Музыка сейчас недоступна.'; return; }
@@ -71,8 +74,8 @@ export function mountDeck(host, url) {
     });
   }
   btn.onclick = () => {
-    want = !playing; pref.set('mhc-deck', want ? 'on' : 'off'); play('needle');
-    if (want) start(); else halt();
+    want = !playing; if (!want) { clearTimeout(idleT); } pref.set('mhc-deck', want ? 'on' : 'off'); play('needle');
+    if (want) start(); else { halt(); idleT = 0; }
   };
   $('#dkVol').oninput = e => { vol = +e.target.value; pref.set('mhc-deck-vol', String(vol)); if (playing && !drag) { clearInterval(fadeT); level = vol; player?.setVolume?.(vol); } };
 
@@ -86,6 +89,7 @@ export function mountDeck(host, url) {
   const up = () => { if (!drag) return; drag = null; if (playing) fade(vol, 400); kick(); };
   rec.addEventListener('pointerup', up); rec.addEventListener('pointercancel', up);
 
+  if (id) create(); // плеер готовится заранее: к заходу в раздел музыка стартует сразу
   return {
     active(on) { shown = on; if (on && want) start(); else if (!on) halt(); },
     sound() { if (!soundOn) halt(); else if (shown && want) start(); },
