@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Mile High Club — рекламный ролик v2 (вертикальный)</title>
+<style>
+  @font-face{font-family:"Unbounded";font-weight:800;src:url(fonts/unbounded-cyrillic-800-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Unbounded";font-weight:800;src:url(fonts/unbounded-latin-800-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Unbounded";font-weight:600;src:url(fonts/unbounded-cyrillic-600-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Unbounded";font-weight:600;src:url(fonts/unbounded-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Onest";font-weight:400;src:url(fonts/onest-cyrillic-400-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Onest";font-weight:400;src:url(fonts/onest-latin-400-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Onest";font-weight:700;src:url(fonts/onest-cyrillic-700-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Onest";font-weight:700;src:url(fonts/onest-latin-700-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Cormorant Garamond";font-style:italic;font-weight:600;src:url(fonts/cormorant-garamond-cyrillic-600-italic.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Cormorant Garamond";font-style:italic;font-weight:600;src:url(fonts/cormorant-garamond-latin-600-italic.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  html,body{margin:0;background:#000;overflow:hidden}
+  canvas{display:block;height:100vh;width:auto;margin:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// Рекламный ролик v2: вертикальный 1080×1920, 20 с, 30 к/с. Стиль продуктового промо (тёмный фон,
+// один акцент, вкладки, список, раскрытие карточки, кинетическая типографика, глитч, раскрытие логотипа),
+// но с настоящими экранами сайта Mile High Club, новым верблюдом и переливающейся надписью.
+// Все цифры — из стартовых данных сайта: 36 номеров, цены типов, площадки и этажи, меню Le Ciel.
+const W = 1080, H = 1920, FPS = 30, DUR = 20;
+const C = { bg: '#070405', card: '#160f11', card2: '#21161a', line: 'rgba(246,232,210,0.13)', fg: '#F6E8D2', mut: '#A99D89', gold: '#F7B50A', wine: '#7A1E26', pink: '#F0177A', dark: '#1a1205' };
+const DISP = 'Unbounded', BODY = 'Onest', SERIF = 'Cormorant Garamond';
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const acc = document.createElement('canvas'); acc.width = W; acc.height = H; const actx = acc.getContext('2d');
+const IMG = {}; const load = (k, src) => { const i = new Image(); i.src = src; IMG[k] = i; return i.decode().catch(() => {}); };
+
+/* ---------- время ---------- */
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, x) => a + (b - a) * x;
+const eo4 = x => 1 - Math.pow(1 - x, 4);
+const eoX = x => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x);
+const eio = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const ein = x => x * x * x;
+const back = (x, s = 1.7) => x <= 0 ? 0 : 1 + (s + 1) * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2);
+function rnd(seed) { let h = seed * 2654435761 >>> 0; return () => { h ^= h << 13; h >>>= 0; h ^= h >> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; }; }
+
+/* ---------- рисование ---------- */
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function font(size, w = 800, fam = DISP, style = '') { ctx.font = `${style} ${w} ${size}px "${fam}"`; }
+function txt(s, x, y, size, color, { w = 800, fam = DISP, align = 'left', base = 'alphabetic', style = '', track = 0 } = {}) {
+  font(size, w, fam, style); ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = base;
+  ctx.letterSpacing = track + 'px'; ctx.fillText(s, x, y); ctx.letterSpacing = '0px';
+}
+function tw(s, size, w = 800, fam = DISP, style = '', track = 0) { font(size, w, fam, style); ctx.letterSpacing = track + 'px'; const m = ctx.measureText(s).width; ctx.letterSpacing = '0px'; return m; }
+function glow(x, y, r, rgb, a) { if (a <= 0) return; const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); }
+const GOLD = '247,181,10', WINE = '122,30,38', CREAM = '246,232,210', PINK = '240,23,122';
+function chip(x, y, label, color, { fill = false, size = 26, padX = 22, h = 54, a = 1 } = {}) {
+  const w = tw(label, size, 700, BODY, '', 2) + padX * 2;
+  ctx.save(); ctx.globalAlpha *= a; rr(x, y, w, h, h / 2);
+  ctx.fillStyle = fill ? color : color === C.pink ? 'rgba(240,23,122,.16)' : color === C.gold ? 'rgba(247,181,10,.14)' : 'rgba(246,232,210,.08)'; ctx.fill();
+  txt(label, x + w / 2, y + h / 2 + 1, size, fill ? C.dark : color, { w: 700, fam: BODY, align: 'center', base: 'middle', track: 2 });
+  ctx.restore(); return w;
+}
+function chevron(x, y, s, up = false) { ctx.strokeStyle = C.mut; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); const d = up ? -1 : 1; ctx.moveTo(x - s, y - s * .5 * d); ctx.lineTo(x, y + s * .5 * d); ctx.lineTo(x + s, y - s * .5 * d); ctx.stroke(); }
+function ring(x, y, r, label, gold = true) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = '#100b0d'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = gold ? C.gold : C.line; ctx.stroke();
+  txt(label, x, y + 2, r * .6, gold ? C.gold : C.fg, { align: 'center', base: 'middle' });
+}
+function emblem(x, y, r, a = 1) { const i = IMG.emblem; if (!i?.complete || a <= 0) return; ctx.save(); ctx.globalAlpha *= a; ctx.drawImage(i, x - r, y - r, r * 2, r * 2); ctx.restore(); }
+// телефон с настоящим экраном сайта: рамка, скругления, блик стекла; sy — прокрутка экрана (0…1 высоты)
+function phone(img, cx, cy, w, { rot = 0, a = 1, skew = 0, sy = 0, img2 = null, mix = 0 } = {}) {
+  const h = w * 16 / 9, r = w * .11; if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(cx, cy); ctx.rotate(rot); ctx.transform(1, skew * .25, 0, 1, 0, 0);
+  ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 60; ctx.shadowOffsetY = 30;
+  rr(-w / 2 - 14, -h / 2 - 14, w + 28, h + 28, r + 12); ctx.fillStyle = '#0c0809'; ctx.fill(); ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(246,232,210,.18)'; ctx.stroke();
+  ctx.save(); rr(-w / 2, -h / 2, w, h, r); ctx.clip();
+  if (img?.complete) ctx.drawImage(img, -w / 2, -h / 2 - sy * h, w, h);
+  if (img2?.complete && mix > 0) { ctx.globalAlpha *= mix; ctx.drawImage(img2, -w / 2, -h / 2 + (1 - mix) * h * .25, w, h); }
+  ctx.restore();
+  const g = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2); g.addColorStop(0, 'rgba(255,255,255,.10)'); g.addColorStop(.35, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  rr(-w / 2, -h / 2, w, h, r); ctx.fillStyle = g; ctx.fill();
+  ctx.restore();
+}
+// четырёхлучевая искра
+function star(x, y, r, a, rot = 0) {
+  if (a <= .01) return; ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.globalAlpha *= a; ctx.globalCompositeOperation = 'lighter';
+  glow(0, 0, r * .7, '255,230,170', .8);
+  ctx.fillStyle = '#fffaf0';
+  for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI / 2); const L = i % 2 ? r : r * .6; ctx.beginPath(); ctx.moveTo(0, -L); ctx.quadraticCurveTo(r * .07, -r * .07, r * .09, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(0, -L); ctx.quadraticCurveTo(-r * .07, -r * .07, -r * .09, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+
+function backdrop(tint = 1) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W / 2, H * .5, 80, W / 2, H * .5, H * .7); g.addColorStop(0, `rgba(${WINE},${.32 * tint})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function grain(frame) {
+  const r = rnd(frame + 7); ctx.save(); ctx.globalAlpha = .045;
+  for (let i = 0; i < 1100; i++) { ctx.fillStyle = r() > .5 ? '#fff' : '#000'; ctx.fillRect(r() * W, r() * H, 2, 2); }
+  ctx.restore();
+  const v = ctx.createRadialGradient(W / 2, H / 2, W * .45, W / 2, H / 2, H * .72); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.6)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+/* ================= сцены ================= */
+// A. Вкладки сайта и типы номеров (0–2.6)
+const PILLS = ['Все', 'Номера', 'Отдых', 'Le Ciel', 'Сигары', 'Журнал'];
+const TYPES = [['СТАНДАРТ', '$2 500', 'Свободно 16 из 16'], ['ДЕЛЮКС', '$4 000', 'Свободно 12 из 12'], ['ПЕНТХАУС', '$30 000', 'Свободен 1 из 1']];
+function sceneA(t) {
+  const enter = eoX(prog(t, 0, .6)), exit = ein(prog(t, 2.35, 2.6));
+  ctx.save(); ctx.translate(0, -1200 * exit); ctx.globalAlpha = prog(t, 0, .2);
+  const size = 40, h = 92, gap = 18, ws = PILLS.map(p => tw(p, size, 700, BODY) + 64);
+  const xs = []; let x = 190; ws.forEach(w => { xs.push(x); x += w + gap; });
+  // строка едет влево вслед за активной вкладкой
+  const k1 = eio(prog(t, .8, 1.08)), k2 = eio(prog(t, 1.55, 1.8)), act = k2 > 0 ? lerp(1, 0, 0) : 0;
+  const ax = k2 > 0 ? lerp(xs[1], xs[1], 1) : lerp(xs[0], xs[1], k1), aw = lerp(ws[0], ws[1], k1);
+  const shift = lerp(900, 0, enter) - 70 * eio(prog(t, .8, 2.3));
+  const y = 420;
+  ctx.save(); ctx.translate(shift, 0);
+  ctx.beginPath(); ctx.arc(100, y + h / 2, 52, 0, 7); ctx.fillStyle = C.gold; ctx.fill(); emblem(100, y + h / 2, 46);
+  glow(ax + aw / 2, y + h / 2, 300, GOLD, .24 * prog(t, .75, 1.3));
+  PILLS.forEach((p, i) => { rr(xs[i], y, ws[i], h, h / 2); ctx.fillStyle = 'rgba(246,232,210,.07)'; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = C.line; ctx.stroke(); });
+  rr(ax, y, aw, h, h / 2); ctx.fillStyle = C.gold; ctx.fill();
+  PILLS.forEach((p, i) => { const on = (i === 0 && k1 < .5) || (i === 1 && k1 >= .5); txt(p, xs[i] + ws[i] / 2, y + h / 2 + 2, size, on ? C.dark : C.fg, { w: 700, fam: BODY, align: 'center', base: 'middle' }); });
+  ctx.restore();
+  // карточки типов номеров (реальные цены и количество)
+  TYPES.forEach(([lab, price, free], i) => {
+    const a = eo4(prog(t, 1.15 + i * .11, 1.6 + i * .11)); if (!a) return;
+    const cw = 860, ch = 250, cx = W / 2 - cw / 2 + 300 * (1 - a), cy = 640 + i * 290;
+    ctx.save(); ctx.globalAlpha *= a;
+    const hot = i === 2 && t > 1.9;
+    rr(cx, cy, cw, ch, 34); ctx.fillStyle = C.card; ctx.fill(); ctx.lineWidth = hot ? 4 : 1.5; ctx.strokeStyle = hot ? C.gold : C.line; ctx.stroke();
+    if (hot) glow(cx + cw / 2, cy + ch / 2, 460, GOLD, .16 * prog(t, 1.9, 2.15));
+    txt(lab, cx + 48, cy + 74, 26, C.gold, { w: 700, fam: BODY, track: 6 });
+    txt(price, cx + 44, cy + 168, 76, C.fg);
+    txt('за ночь', cx + cw - 48, cy + 168, 28, C.mut, { w: 400, fam: BODY, align: 'right' });
+    chip(cx + 46, cy + 186, free, C.gold, { size: 22, h: 44, padX: 18 });
+    ctx.restore();
+  });
+  ctx.restore();
+}
+// B. Телефон: настоящая страница «Номера» — 3D-башня и типы (2.6–5.4)
+function sceneB(t) {
+  const a = eoX(prog(t, 2.6, 3.1)), out = ein(prog(t, 5.15, 5.4));
+  const cx = W / 2 + 900 * (1 - a) - 1300 * out, rot = lerp(.22, -.04, a) - .25 * out;
+  // заголовок: слова поднимаются из-под маски
+  const line = (s, y, at, size, col, o = {}) => { const p = eo4(prog(t, at, at + .45)); if (!p) return; ctx.save(); ctx.globalAlpha *= 1 - out; ctx.beginPath(); ctx.rect(0, y - size * 1.05, W, size * 1.4); ctx.clip(); txt(s, W / 2, y + size * 1.2 * (1 - p), size, col, { align: 'center', ...o }); ctx.restore(); };
+  line('Выбери этаж', 250, 2.75, 86, C.fg); line('и номер', 360, 2.95, 104, C.gold, { w: 600, fam: SERIF, style: 'italic' });
+  const sy = .0, mix = eio(prog(t, 4.2, 4.65));
+  glow(cx, 1180, 560, GOLD, .14 * a);
+  phone(IMG.stay, cx, 1180, 640 * lerp(.92, 1, a), { rot, a: 1, skew: (1 - a) * .6, img2: IMG.stay2, mix });
+  // подсказка-метка на окне башни
+  const m = back(prog(t, 3.5, 3.85)); if (m > 0 && mix < .5) { ctx.save(); ctx.globalAlpha *= 1 - mix * 2; ctx.translate(cx + 230, 1120); ctx.scale(m, m); chip(-10, -27, '26 этаж · свободно', C.gold, { fill: true, size: 24, h: 54 }); ctx.restore(); }
+}
+// C. Площадки отеля: статусы по расписанию, раскрытие Le Ciel и заказ в номер (5.4–7.6)
+const ROWS = [['SP', 'Sky Pool', '38 этаж · диджей до 18:00', 'LIVE', C.pink], ['NP', 'Night Pool', '40 этаж · вечеринка до 04:00', 'СКОРО', C.mut], ['HT', 'The Hot Times', 'Атриум · бар до 04:00', 'ОТКРЫТО', C.gold], ['СК', 'Сигарный клуб', '31 этаж · до 03:00', 'ОТКРЫТО', C.gold], ['LC', 'Le Ciel', '30 этаж · кухня до 01:00', 'ОТКРЫТО', C.gold]];
+function sceneC(t) {
+  const out = prog(t, 7.38, 7.6), s = lerp(1, 1.06, eio(prog(t, 5.4, 7.3))) * (1 - .2 * ein(out));
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(s, s); ctx.translate(-W / 2, -H / 2 - 120 * eio(prog(t, 6.2, 6.7))); ctx.globalAlpha = 1 - ein(out);
+  const pw = 940, px = W / 2 - pw / 2; let y = 520;
+  txt('ЧТО СЕЙЧАС ОТКРЫТО', W / 2, 460, 26, C.mut, { w: 700, fam: BODY, align: 'center', track: 8 });
+  const ex = eio(prog(t, 6.2, 6.55));
+  ROWS.forEach(([ini, name, sub, st, col], i) => {
+    const a = eoX(prog(t, 5.42 + i * .07, 6.0 + i * .07)); if (!a) { y += 168; return; }
+    const last = i === ROWS.length - 1, h = last ? lerp(148, 470, ex) : 148, x = px + 700 * (1 - a);
+    ctx.save(); ctx.globalAlpha *= a;
+    rr(x, y, pw, h, 34); ctx.fillStyle = last && ex > 0 ? C.card2 : C.card; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = last && ex > 0 ? 'rgba(247,181,10,.5)' : C.line; ctx.stroke();
+    ring(x + 80, y + 74, 44, ini, col !== C.mut);
+    txt(name, x + 150, y + 66, 38, C.fg, { w: 600 });
+    txt(sub, x + 150, y + 108, 26, C.mut, { w: 400, fam: BODY });
+    const cw = tw(st, 20, 700, BODY, '', 2) + 32; chip(x + pw - 92 - cw, y + 48, st, col, { size: 20, h: 48, padX: 16 });
+    chevron(x + pw - 50, y + 74, 12, last && ex > .5);
+    if (last && ex > 0) {
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y + 148, pw, h - 148); ctx.clip(); ctx.globalAlpha *= prog(t, 6.35, 6.55);
+      txt('ЗАКАЗ В НОМЕР', x + 52, y + 200, 22, C.mut, { w: 700, fam: BODY, track: 5 });
+      [['Устрицы Жиллардо', '$180', 6.5], ['Турнедо Россини', '$420', 6.6], ['Шампанское брют', '$600', 6.7]].forEach(([n, p, at], k) => {
+        const q = eo4(prog(t, at, at + .25)); if (!q) return; const yy = y + 250 + k * 62;
+        ctx.save(); ctx.globalAlpha *= q; txt(n, x + 52 + 40 * (1 - q), yy + 10, 34, C.fg, { w: 600, fam: SERIF, style: 'italic' }); txt(p, x + pw - 52, yy + 10, 30, C.gold, { align: 'right' }); ctx.restore();
+      });
+      const bp = prog(t, 6.9, 7.1), press = t > 7.15 && t < 7.25 ? .93 : 1;
+      if (bp > 0) { ctx.save(); ctx.globalAlpha *= eo4(bp); const bw = pw - 104, bx = x + 52, by = y + 398; ctx.translate(bx + bw / 2, by + 34); ctx.scale(press, press); rr(-bw / 2, -34, bw, 68, 34); ctx.fillStyle = C.gold; ctx.fill(); txt('В номер 2601 · $1 200', 0, 2, 28, C.dark, { w: 700, fam: BODY, align: 'center', base: 'middle' }); ctx.restore(); glow(W / 2, by + 34, 360, GOLD, .2 * bp); }
+      ctx.restore();
+    }
+    ctx.restore(); y += h + 20;
+  });
+  ctx.restore();
+}
+// D. «Абсолютная высота» и бейдж с верблюдом (7.6–9.6)
+function sceneD(t) {
+  const out = ein(prog(t, 9.4, 9.6));
+  ctx.save(); ctx.translate(W / 2, H / 2); const s = lerp(1, 1.07, prog(t, 7.6, 9.6)) * (1 + .8 * out); ctx.scale(s, s); ctx.globalAlpha = 1 - out;
+  const words = [['Абсолютная', -170, 7.62, 104, C.fg, {}], ['высота', 0, 7.82, 150, C.gold, { w: 600, fam: SERIF, style: 'italic' }]];
+  words.forEach(([wd, y, at, size, col, o]) => { const p = eo4(prog(t, at, at + .5)); ctx.save(); ctx.beginPath(); ctx.rect(-W, y - size, W * 2, size * 1.35); ctx.clip(); txt(wd, lerp(-60, 60, prog(t, 7.6, 9.6)) * (o.fam ? -1 : 1), y + size * 1.2 * (1 - p), size, col, { align: 'center', ...o }); ctx.restore(); });
+  // бейдж: верблюд в бордовом круге, золотой обод
+  const bp = back(prog(t, 8.05, 8.4)); if (bp > 0) {
+    const R = 150, by = 260; glow(0, by, 480, GOLD, .3 * clamp(bp)); glow(0, by, 300, WINE, .5 * clamp(bp));
+    ctx.save(); ctx.translate(0, by); ctx.scale(bp, bp); ctx.rotate(-.3 * (1 - clamp(bp)) + .04 * Math.sin(t * 3));
+    ctx.beginPath(); ctx.arc(0, 0, R + 12, 0, 7); ctx.fillStyle = C.gold; ctx.fill(); emblem(0, 0, R); ctx.restore();
+    // искры по ободу
+    [0, 1, 2].forEach(i => { const at = 8.4 + i * .28, a = Math.exp(-(((t - at) / .07) ** 2)); const ang = -2.2 + i * 1.5; star(Math.cos(ang) * (R + 12), by + Math.sin(ang) * (R + 12), 70, a, t * 2); });
+  }
+  ctx.restore();
+}
+// E. Веер из трёх телефонов: Le Ciel, хьюмидор, журнал (9.6–12.2)
+function sceneE(t) {
+  const out = ein(prog(t, 11.95, 12.2));
+  const list = [['dining', -1, 'Ужин'], ['journal', 1, 'Журнал'], ['cigars', 0, 'Сигары']];
+  ctx.save(); ctx.translate(0, 1400 * out);
+  list.forEach(([k, i, word], n) => {
+    const p = eoX(prog(t, 9.62 + n * .14, 10.3 + n * .14)), fan = eio(prog(t, 10.4, 10.9));
+    const cx = W / 2 + i * lerp(0, 270, fan) + (1 - p) * i * 200, cy = 1230 + (1 - p) * 900 + Math.abs(i) * 60 * fan, rot = i * .15 * fan;
+    phone(IMG[k], cx, cy, 430, { rot, a: p, skew: i * .2 * fan });
+  });
+  // слова с точками, по одному в ритм
+  const words = [['Ужин.', C.fg, 10.5], ['Сигары.', C.gold, 10.85], ['Журнал.', C.fg, 11.2]];
+  let y = 300; words.forEach(([w, col, at]) => { const p = back(prog(t, at, at + .3), 2); if (p > 0) { ctx.save(); ctx.translate(W / 2, y); ctx.scale(p, p); txt(w, 0, 0, 96, col, { align: 'center', base: 'middle', ...(col === C.gold ? { w: 600, fam: SERIF, style: 'italic' } : {}) }); ctx.restore(); } y += 120; });
+  ctx.restore();
+}
+// F. «Смотри, какие [36/36] номера свободны» (12.2–14.4)
+function sceneF(t) {
+  const out = ein(prog(t, 14.2, 14.4));
+  ctx.save(); ctx.translate(W / 2 - 1300 * out, H / 2); const s = lerp(1.06, 1, eo4(prog(t, 12.2, 13.2))); ctx.scale(s, s);
+  const word = (s2, x, y, at, size, col = C.fg, o = {}) => { const p = eo4(prog(t, at, at + .35)); if (!p) return; ctx.save(); ctx.globalAlpha *= p; txt(s2, x, y + 50 * (1 - p), size, col, { align: 'center', ...o }); ctx.restore(); };
+  word('Смотри, какие', 0, -260, 12.25, 84);
+  const pp = back(prog(t, 12.55, 12.9));
+  if (pp > 0) {
+    const pillW = 600, pillH = 180; ctx.save(); ctx.translate(0, -40); ctx.scale(pp, pp);
+    glow(0, 0, 480, GOLD, .3 * clamp(pp) * (1 + .5 * (t > 13.7 ? Math.max(0, Math.sin((t - 13.7) * 7)) : 0)));
+    rr(-pillW / 2, -pillH / 2, pillW, pillH, pillH / 2); ctx.fillStyle = '#0d0809'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = C.gold; ctx.stroke();
+    // перекидное табло: 00 → 36, затем 36 → 35 — кто-то забронировал прямо сейчас
+    const n = t < 13.7 ? Math.round(36 * clamp((t - 12.6) / .55)) : 35, s2 = String(n).padStart(2, '0') + '/36';
+    const cw = 84, ch = 124; let fx = -(cw * 5 + 6 * 4) / 2;
+    [...s2].forEach((c, i) => { ctx.save(); ctx.translate(fx + cw / 2, 0); const flip = (t > 13.7 && t < 13.9 && i === 1) ? Math.cos((t - 13.7) / .2 * Math.PI) : 1; ctx.scale(1, Math.abs(flip) * .9 + .1); rr(-cw / 2, -ch / 2, cw, ch, 12); ctx.fillStyle = '#1d1416'; ctx.fill(); ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(-cw / 2, -1.5, cw, 3); txt(c, 0, 6, 78, C.gold, { align: 'center', base: 'middle' }); ctx.restore(); fx += cw + 6; });
+    ctx.restore();
+  }
+  word('номера', 0, 210, 12.85, 96); word('свободны', 0, 330, 13.05, 112, C.gold, { w: 600, fam: SERIF, style: 'italic' });
+  ctx.restore();
+}
+// G. «Вопрос отелю — в Discord» (14.4–15.6)
+function sceneG(t) {
+  ctx.save(); ctx.translate(W / 2, H / 2 - 120);
+  const parts = [['Вопрос отелю', C.fg, 84, {}, -90], ['в Discord', C.gold, 120, { w: 600, fam: SERIF, style: 'italic' }, 60]];
+  let i = 0;
+  parts.forEach(([s, col, size, o, y]) => { const total = tw(s, size, o.w || 800, o.fam || DISP, o.style || ''); let x = -total / 2; for (const ch of s) { const at = 14.42 + i * .025, p = back(prog(t, at, at + .3), 2.2), cwid = tw(ch, size, o.w || 800, o.fam || DISP, o.style || ''); if (p > 0) { ctx.save(); ctx.translate(x + cwid / 2, y); ctx.scale(p, p); ctx.globalAlpha *= clamp(p * 1.3); txt(ch, 0, 0, size, col, { ...o, align: 'center' }); ctx.restore(); } x += cwid; i++; } });
+  // кнопка «Написать нам» с нажатием — так выглядит канал обращений на сервере
+  const bp = back(prog(t, 14.95, 15.2)), press = t > 15.3 && t < 15.42 ? .92 : 1;
+  if (bp > 0) { ctx.save(); ctx.translate(0, 260); ctx.scale(bp * press, bp * press); const bw = 520; rr(-bw / 2, -46, bw, 92, 46); ctx.fillStyle = '#5865F2'; ctx.fill(); txt('Написать нам', 0, 3, 36, '#fff', { w: 700, fam: BODY, align: 'center', base: 'middle' }); ctx.restore(); glow(0, 260, 380, '88,101,242', .2 * clamp(bp)); }
+  ctx.restore();
+}
+// H. «В реальном времени» с глитчем и схлопыванием (15.6–16.85)
+function sceneH(t, frame) {
+  const sq = ein(prog(t, 16.7, 16.85)), p = eo4(prog(t, 15.6, 15.9));
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(lerp(.9, 1, p), lerp(.9, 1, p) * (1 - sq * .98));
+  const gl = t > 15.85 && t < 16.7, r = rnd(frame * 13 + 1), jx = gl ? (r() - .5) * 40 : 0;
+  const lines = [['В реальном', -60, 96], ['времени', 70, 120]];
+  lines.forEach(([s, y, size]) => {
+    if (gl) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; txt(s, jx - 12, y, size, 'rgba(240,23,122,.55)', { align: 'center' }); txt(s, jx + 12, y, size, 'rgba(247,181,10,.45)', { align: 'center' }); ctx.restore(); }
+    ctx.globalAlpha = p; txt(s, jx, y, size, C.fg, { align: 'center' });
+    if (gl) for (let k = 0; k < 4; k++) { const yy = y - size + r() * size * 1.2, hh = 8 + r() * 30, dx = (r() - .5) * 180; ctx.save(); ctx.beginPath(); ctx.rect(-W / 2, yy, W, hh); ctx.clip(); ctx.fillStyle = C.bg; ctx.fillRect(-W / 2, yy, W, hh); txt(s, jx + dx, y, size, k % 2 ? C.gold : C.fg, { align: 'center' }); ctx.restore(); }
+  });
+  ctx.restore();
+  if (gl && r() > .55) { ctx.fillStyle = 'rgba(247,181,10,.06)'; ctx.fillRect(0, r() * H, W, 60 + r() * 160); }
+}
+// I. Финал: удар, бордовая точка → верблюд, переливающаяся надпись MILE HIGH CLUB, слоган и призыв (16.85–20)
+let WM = null; // надпись как маска для переливов
+function buildWM() { const c = document.createElement('canvas'); c.width = c.height = 720; const g = c.getContext('2d'); g.drawImage(IMG.wm, 0, 0, 720, 720); WM = c; }
+function wordmark(cx, cy, size, t, a) {
+  if (!WM || a <= 0) return;
+  const c = document.createElement('canvas'); c.width = c.height = 720; const g = c.getContext('2d');
+  g.drawImage(WM, 0, 0); g.globalCompositeOperation = 'source-in';
+  let gr = g.createLinearGradient(0, 40, 0, 680); [[0, '#F8E9CC'], [.2, '#E9D0A0'], [.36, '#C9984E'], [.5, '#F3DDB0'], [.62, '#D8B57A'], [.78, '#A8732E'], [.88, '#E2C08A'], [1, '#9A6426']].forEach(([o, col]) => gr.addColorStop(o, col));
+  g.fillStyle = gr; g.fillRect(0, 0, 720, 720); g.globalCompositeOperation = 'source-atop';
+  // фольга: перелив оттенков
+  g.save(); g.translate(360, 360); g.rotate(-.62); g.translate(-360, -360); const off = (t * 300) % 800;
+  gr = g.createLinearGradient(-800 + off, 0, 1600 + off, 0); const foil = ['rgba(255,246,226,0)', 'rgba(255,196,60,.3)', 'rgba(255,150,150,.32)', 'rgba(200,190,255,.28)', 'rgba(140,235,215,.22)', 'rgba(255,196,60,.3)', 'rgba(255,246,226,0)'];
+  for (let k = 0; k < 3; k++) foil.forEach((col, i) => gr.addColorStop((k + i / (foil.length - 1)) / 3, col)); g.fillStyle = gr; g.fillRect(-720, -720, 2160, 2160); g.restore();
+  // блик-свип: два прохода
+  [17.75, 19.0].forEach(st => { const p = prog(t, st, st + .7); if (p <= 0 || p >= 1) return; g.save(); g.translate(360, 360); g.rotate(.42); g.translate(-360, -360); const x0 = lerp(-250, 970, eio(p)); gr = g.createLinearGradient(x0 - 110, 0, x0 + 110, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.5, 'rgba(255,255,255,.95)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(-720, -720, 2160, 2160); g.restore(); });
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.filter = 'blur(26px)'; ctx.globalAlpha *= .55; ctx.drawImage(c, cx - size / 2, cy - size / 2, size, size); ctx.filter = 'none'; ctx.globalAlpha /= .55;
+  ctx.drawImage(c, cx - size / 2, cy - size / 2, size, size); ctx.restore();
+}
+function sceneI(t) {
+  const flash = Math.max(0, 1 - (t - 16.85) / .25); if (flash > 0) { ctx.fillStyle = `rgba(246,232,210,${.55 * flash})`; ctx.fillRect(0, 0, W, H); }
+  const dot = back(prog(t, 16.9, 17.2), 2.4), em = eo4(prog(t, 17.1, 17.5)), up = eio(prog(t, 17.45, 17.95));
+  const R = 170, ey = lerp(H / 2, 470, up);
+  glow(W / 2, ey, 640, WINE, .55 * clamp(dot)); glow(W / 2, ey, 420, GOLD, .22 * clamp(dot) * (1 - .5 * up));
+  if (dot > 0) { ctx.save(); ctx.translate(W / 2, ey); ctx.scale(dot, dot); ctx.beginPath(); ctx.arc(0, 0, R * (1 - .08 * em), 0, 7); ctx.fillStyle = C.wine; ctx.globalAlpha = 1 - em; ctx.fill(); ctx.restore(); }
+  if (em > 0) { ctx.save(); ctx.translate(W / 2, ey); const s = lerp(.55, 1, em) * lerp(1, .78, up); ctx.scale(s, s); ctx.rotate(-.2 * (1 - em)); emblem(0, 0, R, em); ctx.restore(); }
+  // надпись проявляется снизу вверх по маске и переливается
+  const wp = eo4(prog(t, 17.6, 18.2));
+  if (wp > 0) { ctx.save(); const top = 1050 - 330, hh = 660; ctx.beginPath(); ctx.rect(0, top + hh * (1 - wp), W, hh * wp + 10); ctx.clip(); wordmark(W / 2, 1050, 700, t, 1); ctx.restore();
+    // искры на кончиках букв во время блика
+    [[.18, .14, 17.95], [.86, .14, 18.1], [.12, .56, 18.25], [.9, .82, 18.4], [.84, .14, 19.2], [.2, .86, 19.35]].forEach(([u, v, at], i) => star(W / 2 - 350 + u * 700, 1050 - 350 + v * 700, 80, Math.exp(-(((t - at) / .06) ** 2)), t * 3 + i));
+  }
+  const tg = eo4(prog(t, 18.35, 18.75)); if (tg > 0) { ctx.save(); ctx.globalAlpha = tg; txt('Отель над Лос‑Сантосом', W / 2, 1490 + 20 * (1 - tg), 70, C.gold, { w: 600, fam: SERIF, style: 'italic', align: 'center' }); ctx.restore(); }
+  const sub = eo4(prog(t, 18.7, 19.0)); if (sub > 0) { ctx.save(); ctx.globalAlpha = sub; txt('НОМЕРА · БАССЕЙНЫ · LE CIEL · СИГАРЫ', W / 2, 1570, 26, C.mut, { w: 700, fam: BODY, align: 'center', track: 5 }); ctx.restore(); }
+  const cta = back(prog(t, 18.9, 19.25)); if (cta > 0) { ctx.save(); ctx.translate(W / 2, 1700); ctx.scale(cta, cta); const w = 680; rr(-w / 2, -50, w, 100, 50); ctx.fillStyle = C.gold; ctx.fill(); txt('Забронируй на сайте', 0, 3, 38, C.dark, { w: 700, fam: BODY, align: 'center', base: 'middle' }); ctx.restore(); glow(W / 2, 1700, 420, GOLD, .2 * clamp(cta)); }
+}
+
+function scene(t, frame) {
+  if (t < 2.6) sceneA(t); else if (t < 5.4) sceneB(t); else if (t < 7.6) sceneC(t); else if (t < 9.6) sceneD(t); else if (t < 12.2) sceneE(t); else if (t < 14.4) sceneF(t); else if (t < 15.6) sceneG(t); else if (t < 16.85) sceneH(t, frame); else sceneI(t);
+  if (t >= 7.6 && t < 7.85) { ctx.fillStyle = `rgba(247,181,10,${.16 * (1 - (t - 7.6) / .25)})`; ctx.fillRect(0, 0, W, H); }
+}
+function render(frame, K = 5) {
+  const t0 = frame / FPS; actx.clearRect(0, 0, W, H);
+  for (let k = 0; k < K; k++) {
+    const t = t0 + (k / K) * (0.5 / FPS);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; backdrop(t > 16.85 ? 1.4 : 1); scene(Math.min(t, DUR - 1e-3), frame);
+    actx.globalAlpha = 1 / (k + 1); actx.drawImage(cv, 0, 0);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.drawImage(acc, 0, 0); grain(frame);
+  const fade = Math.min(prog(t0, 0, .25), 1 - prog(t0, DUR - .4, DUR)); if (fade < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// Звуковые события (секунды) — типы синтезирует promo/sfx.py
+const CUES = [
+  { t: 0.00, type: 'whoosh', dur: .55, gain: .7 }, { t: .8, type: 'click', pitch: 1.0 }, { t: .86, type: 'tick', pitch: 1.4 },
+  { t: 1.15, type: 'swish', gain: .5 }, { t: 1.26, type: 'swish', gain: .45 }, { t: 1.37, type: 'swish', gain: .4 }, { t: 1.9, type: 'tick', pitch: 1.1 },
+  { t: 2.0, type: 'riser', dur: .6, gain: .45 }, { t: 2.35, type: 'whoosh', dur: .3, gain: .8, up: true },
+  { t: 2.6, type: 'whoosh', dur: .5, gain: .7 }, { t: 2.75, type: 'swish', gain: .45 }, { t: 2.95, type: 'swish', gain: .5 }, { t: 3.5, type: 'pop', pitch: 1.1 },
+  { t: 4.2, type: 'expand', dur: .45 }, { t: 5.1, type: 'whoosh', dur: .3, gain: .7 },
+  { t: 5.42, type: 'tick', pitch: .9 }, { t: 5.49, type: 'tick', pitch: 1.0 }, { t: 5.56, type: 'tick', pitch: 1.1 }, { t: 5.63, type: 'tick', pitch: 1.2 }, { t: 5.7, type: 'tick', pitch: 1.3 },
+  { t: 6.2, type: 'expand', dur: .4 }, { t: 6.5, type: 'pop', pitch: 1.0 }, { t: 6.6, type: 'pop', pitch: 1.12 }, { t: 6.7, type: 'pop', pitch: 1.26 },
+  { t: 7.0, type: 'riser', dur: .6, gain: .6 }, { t: 7.18, type: 'click', pitch: .8 }, { t: 7.6, type: 'impact', gain: .9 },
+  { t: 7.62, type: 'swish', gain: .45 }, { t: 7.82, type: 'swish', gain: .45 }, { t: 8.05, type: 'pop', pitch: .7, gain: 1.2 }, { t: 8.4, type: 'sparkle', gain: .45 },
+  { t: 9.0, type: 'riser', dur: .6, gain: .7 }, { t: 9.45, type: 'whoosh', dur: .25, gain: .7, up: true },
+  { t: 9.6, type: 'hit', gain: .8 }, { t: 9.62, type: 'whoosh', dur: .4, gain: .6, up: true }, { t: 9.76, type: 'whoosh', dur: .4, gain: .55, up: true }, { t: 9.9, type: 'whoosh', dur: .4, gain: .5, up: true },
+  { t: 10.4, type: 'expand', dur: .45 }, { t: 10.5, type: 'pop', pitch: 1.0, gain: 1.1 }, { t: 10.85, type: 'pop', pitch: 1.12, gain: 1.1 }, { t: 11.2, type: 'pop', pitch: 1.26, gain: 1.1 },
+  { t: 11.6, type: 'riser', dur: .6, gain: .6 }, { t: 11.95, type: 'whoosh', dur: .3, gain: .8 },
+  { t: 12.2, type: 'hit', gain: .7 }, { t: 12.25, type: 'click', pitch: 1.0 }, { t: 12.55, type: 'pop', pitch: .9 }, { t: 12.6, type: 'flaps', dur: .55 },
+  { t: 12.85, type: 'click', pitch: 1.2 }, { t: 13.05, type: 'click', pitch: 1.35 }, { t: 13.7, type: 'flaps', dur: .2 }, { t: 13.75, type: 'ding', pitch: 1.0, gain: .5 },
+  { t: 14.2, type: 'whoosh', dur: .3, gain: .75 }, { t: 14.42, type: 'stutter', dur: .5 }, { t: 14.95, type: 'pop', pitch: 1.0 }, { t: 15.3, type: 'click', pitch: .9 },
+  { t: 15.1, type: 'riser', dur: .5, gain: .55 }, { t: 15.6, type: 'hit', gain: .6 }, { t: 15.85, type: 'glitch', dur: .85 },
+  { t: 16.6, type: 'reverse', dur: .25 }, { t: 16.85, type: 'impact', gain: 1.0, big: true },
+  { t: 16.9, type: 'pop', pitch: .6, gain: 1.3 }, { t: 17.15, type: 'sting', gain: .9 }, { t: 17.45, type: 'whoosh', dur: .45, gain: .45, up: true },
+  { t: 17.75, type: 'swish', gain: .55 }, { t: 17.95, type: 'sparkle', gain: .5 }, { t: 18.35, type: 'swish', gain: .35 },
+  { t: 18.9, type: 'pop', pitch: 1.05 }, { t: 18.95, type: 'click', pitch: .9 }, { t: 19.0, type: 'sparkle', gain: .4 }
+];
+const FACES = ['800 40px "Unbounded"', '600 40px "Unbounded"', '400 40px "Onest"', '700 40px "Onest"', 'italic 600 40px "Cormorant Garamond"'];
+const ready = () => Promise.all([...FACES.map(f => document.fonts.load(f, 'Абвгд Abc 0123$')),
+  load('emblem', '../brand/emblem.png'), load('wm', '../brand/mhc-wordmark.svg'),
+  ...['home', 'stay', 'stay-2', 'dining', 'cigars', 'journal'].map(k => load(k.replace('-', ''), `assets/site-${k}.webp`))])
+  .then(() => { if (!FACES.every(f => document.fonts.check(f, 'Абв'))) throw new Error('fonts not loaded'); buildWM(); });
+window.AD = { W, H, FPS, DUR, CUES, render, ready };
+const q = new URLSearchParams(location.search);
+window.AD.ready().then(() => {
+  if (q.has('t')) return render(Math.round(+q.get('t') * FPS));
+  if (q.has('still')) return;
+  const t0 = performance.now(); const loop = () => { const f = Math.floor((performance.now() - t0) / 1000 * FPS) % (DUR * FPS); render(f, 2); requestAnimationFrame(loop); }; loop();
+});
+</script>
+</body>
+</html>

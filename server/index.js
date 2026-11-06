@@ -30,7 +30,8 @@ const hooks = {
   changed(cols) { cols.forEach(c => pending.add(c)); clearTimeout(flushT); flushT = setTimeout(() => { const msg = `data: ${JSON.stringify({ cols: [...pending] })}\n\n`; pending = new Set(); for (const r of clients) r.write(msg); }, 200); }
 };
 const core = createCore(store, hooks);
-const bot = await startBot({ core, store, env, hooks }).catch(e => { console.error('Discord-бот не запустился:', e.message); return null; });
+// Бот не поднялся: его хуки убираем, иначе сайт будет считать заявки отправленными
+const bot = await startBot({ core, store, env, hooks }).catch(e => { console.error('Discord-бот не запустился:', e.message); Object.keys(hooks).filter(k => k !== 'changed').forEach(k => delete hooks[k]); return null; });
 
 /* ---- сессии: подписанная cookie ---- */
 const sign = v => crypto.createHmac('sha256', SECRET).update(v).digest('base64url');
