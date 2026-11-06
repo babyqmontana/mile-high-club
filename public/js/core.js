@@ -3,11 +3,11 @@
 // hooks: необязательные интеграции с Discord (на сервере их даёт бот).
 
 export const ROLES = { guest: 0, mod: 1, admin: 2 };
-// Время отеля — всегда московское (UTC+3), у любого гостя в любой стране.
+// Время отеля единое (UTC+3), у любого гостя в любой стране.
 export const MSK_OFFSET = 3 * 3600e3;
 export const mskDate = (t = Date.now()) => new Date(t + MSK_OFFSET);
 export const mskMinutes = (t = Date.now()) => { const d = mskDate(t); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
-// Погода над отелем. «Авто» меняется каждые 3 часа по московскому времени и одинакова у всех гостей:
+// Погода над отелем. «Авто» меняется каждые 3 часа по времени отеля и одинакова у всех гостей:
 // ясно, дождь или туман. Снег идёт только в новогодней теме и никогда сам по себе.
 export const WEATHER = { clear: 'Ясно', rain: 'Дождь', fog: 'Туман', snow: 'Снег' };
 export function weatherNow(s = {}, t = Date.now()) {
