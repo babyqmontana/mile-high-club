@@ -3,20 +3,21 @@
 // hooks: необязательные интеграции с Discord (на сервере их даёт бот).
 
 export const ROLES = { guest: 0, mod: 1, admin: 2 };
-// Время отеля — всегда московское (UTC+3), у любого гостя в любой стране.
+// Время отеля единое (UTC+3), у любого гостя в любой стране.
 export const MSK_OFFSET = 3 * 3600e3;
 export const mskDate = (t = Date.now()) => new Date(t + MSK_OFFSET);
 export const mskMinutes = (t = Date.now()) => { const d = mskDate(t); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
-// Погода над отелем. «Авто» меняется каждые 3 часа по московскому времени и одинакова у всех гостей:
-// зимой бывает снег, летом — дождь и туман. Новогодняя тема всегда включает снег.
+// Погода над отелем. «Авто» меняется каждые 3 часа по времени отеля и одинакова у всех гостей:
+// ясно, дождь или туман. Снег идёт только в новогодней теме и никогда сам по себе.
 export const WEATHER = { clear: 'Ясно', rain: 'Дождь', fog: 'Туман', snow: 'Снег' };
 export function weatherNow(s = {}, t = Date.now()) {
   const d = mskDate(t), mon = d.getUTCMonth(), winter = mon >= 10 || mon <= 2, h = d.getUTCHours();
   let kind = s.weather && s.weather !== 'auto' ? s.weather : null;
+  if (kind === 'snow') kind = null;
   if (s.theme === 'newyear') kind = 'snow';
   if (!kind) {
     const block = Math.floor((t + MSK_OFFSET) / (3 * 3600e3)); let x = (block * 2654435761) >>> 0; x ^= x >>> 15; x = (x * 2246822519) >>> 0; x ^= x >>> 13; const r = (x % 1000) / 1000;
-    kind = winter ? (r < .38 ? 'snow' : r < .62 ? 'clear' : r < .82 ? 'fog' : 'rain') : (r < .55 ? 'clear' : r < .78 ? 'rain' : 'fog');
+    kind = winter ? (r < .5 ? 'clear' : r < .78 ? 'fog' : 'rain') : (r < .55 ? 'clear' : r < .78 ? 'rain' : 'fog');
   }
   const base = [-6, -5, 0, 8, 15, 20, 23, 21, 15, 8, 1, -4][mon], daily = Math.round(Math.sin((h - 9) / 24 * Math.PI * 2) * 3);
   const temp = kind === 'snow' ? Math.min(-1, base + daily) : kind === 'rain' ? Math.max(2, base + daily - 2) : base + daily;
@@ -31,9 +32,11 @@ export const CIGAR_SHAPES = { robusto: 'Робусто', corona: 'Корона',
 // Что может редактировать каждая роль через общий редактор
 const EDITABLE = {
   types: 'admin', venues: 'admin', menu: 'admin', cigars: 'admin', depts: 'admin', team: 'admin', offers: 'admin', faq: 'admin', settings: 'admin', media: 'mod',
-  issues: 'mod', events: 'mod'
+  issues: 'mod', events: 'mod', senders: 'admin'
 };
-const PUBLIC_SETTINGS = ['weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer'];
+// Отправители постов в Discord: имя и аватарка вебхука
+const DEFAULT_SENDERS = [['concierge', '🛎️ Консьерж MHC', '#F7B50A'], ['reception', '🔑 Ресепшен MHC', '#F0177A'], ['manager', '🥂 Управляющий MHC', '#EF5617'], ['journal', '📰 Журнал «Высота»', '#F4D9A0']].map(([id, name, color], order) => ({ id, name, color, avatar: `img/discord/${id}.png`, order }));
+const PUBLIC_SETTINGS = ['deckUrl', 'staffExtras', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer'];
 
 export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const bad = m => { throw new HttpError(400, m); };
@@ -56,13 +59,14 @@ export function venueState(venue, events, now = Date.now()) {
 }
 
 export function createCore(store, hooks = {}) {
-  const emit = hooks.changed || (() => {});
+  const emit = cols => hooks.changed?.(cols); // бот подключается позже и оборачивает hooks.changed
   const log = (text, kind = 'info', by) => { const id = uid('l'); store.put('log', id, { id, text, kind, by: by || null, at: Date.now() }); trimLog(); };
   const trimLog = () => { const all = store.all('log').sort((a, b) => b.at - a.at); all.slice(400).forEach(l => store.del('log', l.id)); };
   const settings = () => store.get('settings', 'main') || {};
   const call = async (name, ...args) => { try { return hooks[name] ? await hooks[name](...args) : null; } catch (e) { log(`Discord: ${name} не выполнено (${e.message})`, 'error'); return null; } };
   const roomsSorted = () => store.all('rooms').sort((a, b) => a.floor - b.floor || String(a.id).localeCompare(String(b.id), 'ru', { numeric: true }));
   const freeSummary = () => { const types = sort(store.all('types')); const rooms = store.all('rooms'); return { total: rooms.length, free: rooms.filter(r => r.status === 'free').length, byType: types.map(t => ({ name: t.name, free: rooms.filter(r => r.type === t.id && r.status === 'free').length, total: rooms.filter(r => r.type === t.id).length })) }; };
+  const senders = () => { if (!store.all('senders').length) DEFAULT_SENDERS.forEach(s => store.put('senders', s.id, s)); return sort(store.all('senders')); };
   const roomsChanged = () => { emit(['rooms']); call('roomsChanged', freeSummary()); };
   const ownerOf = (user, guestKey) => user ? 'd:' + user.id : guestKey ? 'g:' + str(guestKey, 64) : null;
   const isOwner = (doc, user, guestKey) => doc.owner && (doc.owner === ownerOf(user, guestKey) || (user && doc.owner === 'd:' + user.id));
@@ -76,7 +80,7 @@ export function createCore(store, hooks = {}) {
       settings: pub,
       types: sort(store.all('types')),
       rooms: roomsSorted().map(r => ({ id: r.id, floor: r.floor, type: r.type, status: r.status })),
-      venues: sort(store.all('venues')),
+      venues: sort(store.all('venues')).filter(v => !v.staffOnly),
       menu: sort(store.all('menu')),
       cigars: sort(store.all('cigars')),
       depts: sort(store.all('depts')),
@@ -84,7 +88,7 @@ export function createCore(store, hooks = {}) {
       offers: sort(store.all('offers')).filter(o => o.active !== false),
       faq: sort(store.all('faq')),
       issues: store.all('issues').filter(i => i.published).sort((a, b) => (b.date || 0) - (a.date || 0)),
-      events: store.all('events').filter(e => e.status !== 'cancelled' && (e.end || e.start + 3 * 3600e3) > now - 3600e3).sort((a, b) => a.start - b.start).slice(0, 30),
+      events: store.all('events').filter(e => !['cancelled', 'completed'].includes(e.status) && (e.end || e.start + 3 * 3600e3) > now - 3600e3).sort((a, b) => a.start - b.start).slice(0, 30),
       media: store.all('media').map(m => ({ id: m.id, url: m.url })),
       now
     };
@@ -139,11 +143,13 @@ export function createCore(store, hooks = {}) {
   on('POST', '/tickets/:id/mode', async ({ params, body, user, guestKey }) => {
     const t = myTicket(params.id, user, guestKey); const mode = body.mode === 'discord' ? 'discord' : 'site';
     t.mode = mode; t.status = 'open'; t.lastAt = Date.now();
-    if (mode === 'site' && !t.messages.length) t.messages.push({ from: 'guest', text: t.text, at: Date.now() });
-    if (mode === 'discord') { const ch = await call('createTicketChannel', t); t.channel = ch || null; }
-    store.put('tickets', t.id, t); log(`Обращение от ${t.discord}: ${t.topic} (${mode === 'discord' ? 'тикет в Discord' : 'чат на сайте'})`, 'ticket'); emit(['tickets', 'log']);
-    call('notify', mode === 'discord' ? 'ticket_discord' : 'ticket_site', t);
-    return { ticket: t };
+    // Канал не создался (бот недоступен или гостя нет на сервере): обращение уходит в чат на сайте, а не теряется
+    let fallback = false;
+    if (t.mode === 'discord') { t.channel = (await call('createTicketChannel', t)) || null; if (!t.channel) { t.mode = 'site'; fallback = true; } }
+    if (t.mode === 'site' && !t.messages.length) t.messages.push({ from: 'guest', text: t.text, at: Date.now() });
+    store.put('tickets', t.id, t); log(`Обращение от ${t.discord}: ${t.topic} (${t.mode === 'discord' ? 'тикет в Discord' : 'чат на сайте'})`, 'ticket'); emit(['tickets', 'log']);
+    call('notify', t.mode === 'discord' ? 'ticket_discord' : 'ticket_site', t);
+    return { ticket: t, fallback };
   });
   on('POST', '/tickets/:id/messages', ({ params, body, user, guestKey }) => {
     const t = myTicket(params.id, user, guestKey); const text = str(body.text, 2000); if (!text) bad('Пустое сообщение');
@@ -152,7 +158,8 @@ export function createCore(store, hooks = {}) {
     t.messages.push({ from: staff ? 'staff' : 'guest', text, at: Date.now(), by: staff ? user.username : undefined });
     if (t.messages.length > 300) t.messages = t.messages.slice(-300);
     t.lastAt = Date.now(); t.lastFrom = staff ? 'staff' : 'guest'; store.put('tickets', t.id, t); emit(['tickets']);
-    if (!staff) call('notify', 'ticket_message', t);
+    if (staff && t.mode === 'discord' && t.channel) call('ticketReply', t, text, user.username);
+    call('notify', 'ticket_update', t);
     return { ticket: t };
   });
 
@@ -160,9 +167,12 @@ export function createCore(store, hooks = {}) {
   on('GET', '/admin/all', ({ user }) => {
     need(user, 'mod');
     const s = settings();
-    return { ...publicData(), team: store.all('team').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), offers: store.all('offers').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), settingsFull: user.role === 'admin' ? s : null, rooms: roomsSorted(), issues: store.all('issues').sort((a, b) => (b.date || 0) - (a.date || 0)), events: store.all('events').sort((a, b) => b.start - a.start).slice(0, 100),
-      bookings: store.all('bookings').sort((a, b) => b.createdAt - a.createdAt).slice(0, 500), tickets: store.all('tickets').sort((a, b) => b.lastAt - a.lastAt).slice(0, 300), orders: store.all('orders').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300), log: store.all('log').sort((a, b) => b.at - a.at).slice(0, 120), summary: freeSummary(), discord: hooks.status ? hooks.status() : { connected: false } };
+    return { ...publicData(), venues: sort(store.all('venues')), team: store.all('team').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), offers: store.all('offers').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), settingsFull: user.role === 'admin' ? s : null, rooms: roomsSorted(), issues: store.all('issues').sort((a, b) => (b.date || 0) - (a.date || 0)), events: store.all('events').sort((a, b) => b.start - a.start).slice(0, 100),
+      bookings: store.all('bookings').sort((a, b) => b.createdAt - a.createdAt).slice(0, 500), tickets: store.all('tickets').sort((a, b) => b.lastAt - a.lastAt).slice(0, 300), orders: store.all('orders').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300), log: store.all('log').sort((a, b) => b.at - a.at).slice(0, 120), summary: freeSummary(), discord: hooks.status ? hooks.status() : { connected: false }, senders: senders(), posts: store.all('posts').sort((a, b) => b.at - a.at).slice(0, 30) };
   });
+  // Удаление обращений: только закрытых, чтобы открытый тикет-канал не остался без записи на сайте
+  on('POST', '/admin/tickets/purge', ({ user }) => { need(user, 'admin'); const list = store.all('tickets').filter(t => t.status === 'closed'); list.forEach(t => store.del('tickets', t.id)); log(`${user.username} удалил закрытые обращения: ${list.length}`, 'danger', user.username); emit(['tickets', 'log']); return { deleted: list.length }; });
+  on('DELETE', '/admin/tickets/:id', ({ params, user }) => { need(user, 'admin'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения'); if (t.status !== 'closed') bad('Сначала закройте обращение'); store.del('tickets', t.id); log(`${user.username} удалил обращение ${t.discord}: ${t.topic}`, 'danger', user.username); emit(['tickets', 'log']); return { ok: true }; });
   on('PUT', '/admin/:col/:id', ({ params, body, user }) => {
     const role = EDITABLE[params.col]; if (!role) bad('Этот раздел так не редактируется'); need(user, role);
     const id = params.id === 'new' ? uid(params.col.slice(0, 2)) : str(params.id, 60);
@@ -225,14 +235,50 @@ export function createCore(store, hooks = {}) {
     emit(['bookings', 'log']); roomsChanged(); call('notify', 'booking_status', b); return { booking: b };
   });
   on('POST', '/admin/orders/:id/status', ({ params, body, user }) => { need(user, 'mod'); const o = store.get('orders', params.id); if (!o) throw new HttpError(404, 'Заказ не найден'); const st = str(body.status, 20); if (!ORDER_STATUS[st]) bad('Неверный статус'); o.status = st; o.updatedAt = Date.now(); store.put('orders', o.id, o); emit(['orders']); call('notify', 'order_status', o); return { order: o }; });
-  on('POST', '/admin/tickets/:id/close', ({ params, user }) => { need(user, 'mod'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения'); t.status = 'closed'; t.lastAt = Date.now(); store.put('tickets', t.id, t); log(`${user.username} закрыл обращение ${t.discord}`, 'ticket', user.username); emit(['tickets', 'log']); return { ticket: t }; });
+  on('POST', '/admin/tickets/:id/close', async ({ params, user }) => { need(user, 'mod'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения');
+    if (t.status === 'closed') return { ticket: t };
+    if (t.channel && hooks.closeTicketChannel) { let history; try { history = await hooks.closeTicketChannel(t, user.username); } catch (e) { bad('Обращение не закрыто: ' + e.message); } if (history.length) t.messages = [{ from: 'guest', by: t.name || t.discord, text: t.text, at: t.createdAt }, ...history.filter(m => m.from !== 'bot')].slice(-300); t.channel = null; }
+    t.status = 'closed'; t.closedBy = user.username; t.lastAt = Date.now(); store.put('tickets', t.id, t); log(`${user.username} закрыл обращение ${t.discord}`, 'ticket', user.username); emit(['tickets', 'log']); call('notify', 'ticket_update', t); return { ticket: t }; });
 
   // события
   on('POST', '/admin/events/sync', async ({ user }) => { need(user, 'mod'); const r = await call('syncEvents'); emit(['events']); return { synced: r ?? 0, connected: !!hooks.syncEvents }; });
 
   // Discord
-  on('POST', '/admin/discord/post', async ({ body, user }) => { need(user, 'mod'); const ch = str(body.channel, 40), text = str(body.text, 1900); if (!text) bad('Пустой пост'); const ok = await call('post', ch, text, user.username); log(`${user.username} опубликовал в ${ch}`, 'discord', user.username); emit(['log']); return { ok: !!ok }; });
-  on('POST', '/admin/discord/setup', async ({ user }) => { need(user, 'admin'); const r = await call('setupGuild'); if (!r) bad('Бот не подключён. Укажите DISCORD_BOT_TOKEN и GUILD_ID в .env'); log(`${user.username} развернул структуру Discord-сервера`, 'discord', user.username); emit(['settings', 'log']); return r; });
+  const offline = 'Бот не подключён. Укажите DISCORD_BOT_TOKEN и GUILD_ID в .env';
+  const link = v => { v = str(v, 400); return /^(https?:\/\/|\/?(uploads|img)\/)/.test(v) ? v : ''; };
+  const cleanPost = b => {
+    const p = { content: str(b.content, 2000), title: str(b.title, 256), url: /^https?:\/\//.test(b.url || '') ? str(b.url, 400) : '', description: str(b.description, 4000), color: /^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : '#F0177A', image: link(b.image), thumbnail: link(b.thumbnail), footer: str(b.footer, 200),
+      fields: (Array.isArray(b.fields) ? b.fields : []).slice(0, 10).map(f => ({ name: str(f.name, 256), value: str(f.value, 1024), inline: !!f.inline })).filter(f => f.name && f.value),
+      button: { label: str(b.button?.label, 80), url: /^https?:\/\//.test(b.button?.url || '') ? str(b.button.url, 400) : '' } };
+    if (!p.content && !p.title && !p.description && !p.image && !p.fields.length) bad('Заполните текст или заголовок');
+    if (p.button.label && !p.button.url) bad('Укажите адрес кнопки');
+    return p;
+  };
+  on('GET', '/admin/discord/meta', async ({ user }) => { need(user, 'mod'); return (await call('guildMeta')) || { channels: [], roles: [] }; });
+  // новый пост или правка уже отправленного: тот же канал и тот же отправитель
+  on('POST', '/admin/discord/send', async ({ body, user }) => {
+    need(user, 'mod'); if (!hooks.sendPost) bad(offline);
+    const post = cleanPost(body.post || {}), prev = body.id ? store.get('posts', str(body.id, 60)) : null;
+    const sender = store.get('senders', prev?.sender || str(body.sender, 60)) || senders()[0], channel = prev?.channel || str(body.channel, 30);
+    if (!/^\d+$/.test(channel)) bad('Выберите канал');
+    let r; try { r = await hooks.sendPost({ channel, sender, post, messageId: prev?.messageId }); } catch (e) { bad('Discord не принял сообщение: ' + e.message); }
+    const doc = { id: prev?.id || uid('p'), channel, channelName: r.channelName, sender: sender.id, senderName: sender.name, messageId: r.messageId, post, by: user.username, at: prev?.at || Date.now(), editedAt: prev ? Date.now() : null };
+    store.put('posts', doc.id, doc); store.all('posts').sort((a, b) => b.at - a.at).slice(100).forEach(p => store.del('posts', p.id));
+    log(`${user.username} ${prev ? 'изменил пост' : 'отправил пост'} в ${r.channelName}: ${post.title || post.content.slice(0, 40) || 'без заголовка'}`, 'discord', user.username); emit(['log']);
+    return { doc };
+  });
+  const roleList = l => (Array.isArray(l) ? l : []).map(x => str(x, 30)).filter(x => /^\d+$/.test(x)).slice(0, 20);
+  on('POST', '/admin/discord/access', async ({ body, user }) => {
+    need(user, 'admin');
+    store.put('settings', 'main', { ...settings(), adminRoles: roleList(body.admin), directorRoles: roleList(body.director), modRoles: roleList(body.mod), devRoles: roleList(body.dev), announceChannel: /^\d+$/.test(body.announceChannel || '') ? str(body.announceChannel, 30) : '' });
+    log(`${user.username} изменил доступ к панели и канал анонсов`, 'discord', user.username);
+    await call('setupGuild'); emit(['settings', 'log']); return { ok: true };
+  });
+  on('POST', '/admin/discord/profile', async ({ user }) => { need(user, 'admin'); const r = await call('applyProfile'); if (!r) bad(offline); log(`${user.username} обновил профиль Discord-сервера`, 'discord', user.username); emit(['log']); return r; });
+  on('POST', '/admin/discord/cleanup-plan', async ({ user }) => { need(user, 'admin'); const r = await call('planCleanup'); if (!r) bad(offline); return r; });
+  on('POST', '/admin/discord/cleanup', async ({ user }) => { need(user, 'admin'); const r = await call('cleanupGuild'); if (!r) bad(offline); log(`${user.username} убрал лишнее с Discord-сервера: каналов ${r.channels}, категорий ${r.categories}, ролей ${r.roles}`, 'discord', user.username); emit(['settings', 'log']); return r; });
+  on('POST', '/admin/discord/plan', async ({ user }) => { need(user, 'admin'); const r = await call('planGuild'); if (!r) bad(offline); return r; });
+  on('POST', '/admin/discord/setup', async ({ user }) => { need(user, 'admin'); const r = await call('setupGuild'); if (!r) bad(offline); log(`${user.username} развернул структуру Discord-сервера`, 'discord', user.username); emit(['settings', 'log']); return r; });
 
   // сброс
   on('POST', '/admin/reset', ({ body, user }) => {
@@ -250,7 +296,7 @@ export function createCore(store, hooks = {}) {
     const pick = (k, f) => { if (k in b) o[k] = f(b[k]); };
     const S = n => v => str(v, n), N = v => num(v), B = v => !!v, A = v => (Array.isArray(v) ? v : String(v || '').split(',')).map(x => str(x, 40)).filter(Boolean).slice(0, 12);
     if (col === 'types') { pick('name', S(40)); pick('price', N); pick('desc', S(400)); pick('image', S(400)); pick('capacity', N); pick('order', N); pick('features', A); }
-    if (col === 'venues') { pick('name', S(40)); pick('kind', S(20)); pick('floor', S(20)); pick('desc', S(500)); pick('image', S(400)); pick('order', N); pick('keywords', S(200)); pick('comingSoon', B); pick('accent', S(10)); if ('schedule' in b) o.schedule = (Array.isArray(b.schedule) ? b.schedule : []).slice(0, 8).map(s => ({ from: str(s.from, 5), to: str(s.to, 5), label: str(s.label, 80), state: ['live', 'open', 'calm', 'closed'].includes(s.state) ? s.state : 'open' })); }
+    if (col === 'venues') { pick('name', S(40)); pick('kind', S(20)); pick('floor', S(20)); pick('gameFloor', S(40)); pick('staffOnly', B); pick('desc', S(500)); pick('image', S(400)); pick('order', N); pick('keywords', S(200)); pick('comingSoon', B); pick('accent', S(10)); if ('schedule' in b) o.schedule = (Array.isArray(b.schedule) ? b.schedule : []).slice(0, 8).map(s => ({ from: str(s.from, 5), to: str(s.to, 5), label: str(s.label, 80), state: ['live', 'open', 'calm', 'closed'].includes(s.state) ? s.state : 'open' })); }
     if (col === 'menu') { pick('cat', S(30)); pick('name', S(60)); pick('desc', S(200)); pick('price', N); pick('order', N); pick('image', S(400)); }
     if (col === 'cigars') { pick('name', S(40)); pick('origin', S(40)); pick('shape', v => CIGAR_SHAPES[v] ? v : 'robusto'); pick('length', N); pick('ring', N); pick('wrapper', S(9)); pick('band', S(9)); pick('band2', S(9)); pick('bandStyle', v => ['classic', 'medallion', 'double', 'foot', 'stripe'].includes(v) ? v : 'classic'); pick('bandText', S(14)); pick('bandText2', S(14)); pick('strength', v => Math.min(5, Math.max(1, Math.round(num(v, 3))))); pick('notes', A); pick('price', N); pick('order', N); pick('desc', S(400)); }
     if (col === 'team') { pick('name', S(60)); pick('position', S(60)); pick('dept', S(40)); pick('photo', S(400)); pick('bio', S(600)); pick('since', S(40)); pick('discord', S(40)); pick('quote', S(160)); pick('order', N); pick('hidden', B); pick('example', B); }
@@ -260,10 +306,11 @@ export function createCore(store, hooks = {}) {
     if (col === 'media') { pick('url', S(2_000_000)); pick('name', S(80)); }
     if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', S(400)); pick('date', N); pick('published', B); pick('accent', S(9)); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: str(p.image, 400), cat: str(p.cat, 30) })); }
     if (col === 'events') { pick('name', S(100)); pick('desc', S(1000)); pick('start', N); pick('end', N); pick('location', S(100)); pick('venueId', S(40)); pick('image', S(400)); pick('status', v => ['scheduled', 'active', 'completed', 'cancelled'].includes(v) ? v : 'scheduled'); if (!('source' in o)) o.source = 'manual'; }
-    if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'address', 'footer']) pick(k, S(400)); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 20).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
+    if (col === 'senders') { pick('name', S(80)); pick('avatar', S(400)); pick('color', v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : '#F0177A'); pick('order', N); }
+    if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'address', 'footer', 'deckUrl']) pick(k, S(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
     return o;
   }
-  const label = c => ({ types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие' }[c] || c);
+  const label = c => ({ types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие', senders: 'отправителя' }[c] || c);
 
   async function handle(method, path, ctx = {}) {
     for (const r of routes) {
@@ -275,9 +322,11 @@ export function createCore(store, hooks = {}) {
   // для бота: событие Discord → площадка по ключевым словам
   function matchVenue(text) { const t = String(text || '').toLowerCase(); return store.all('venues').find(v => [v.name, ...(String(v.keywords || '').split(','))].map(x => x.trim().toLowerCase()).filter(Boolean).some(k => t.includes(k)))?.id || null; }
   function upsertEvent(e) { const prev = store.get('events', e.id) || {}; const doc = { ...prev, ...e, venueId: e.venueId ?? matchVenue(`${e.location} ${e.name}`), source: 'discord', updatedAt: Date.now() }; store.put('events', doc.id, doc); emit(['events']); return doc; }
+  // сообщение из тикет-канала Discord: копия для панели сайта
+  function ticketMessage(id, m) { const t = store.get('tickets', id); if (!t) return; t.messages.push(m); if (t.messages.length > 300) t.messages = t.messages.slice(-300); t.lastAt = m.at; t.lastFrom = m.from; store.put('tickets', t.id, t); emit(['tickets']); call('notify', 'ticket_update', t); }
   function removeEvent(id) { store.del('events', id); emit(['events']); }
 
-  return { handle, publicData, freeSummary, upsertEvent, removeEvent, matchVenue, settings, log, store };
+  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store };
 }
 
 /* ---------- стартовые данные ---------- */
@@ -302,7 +351,25 @@ function seedV2(store) {
     .forEach(([q, a], i) => put('faq', { id: 'q' + (i + 1), q, a, order: i }));
   store.put('meta', 'v2', { id: 'v2', at: Date.now() });
 }
-export function seed(store) {
+// Этажи из лифта в игре: подписи к площадкам, новая площадка и служебный этаж. Один раз, правки в панели не трогает.
+function floorsV1(store) {
+  const s = store.get('settings', 'main'); if (s.floorsV1) return;
+  const names = { ciel: 'French Restaurant', cigar: 'Cigar Lounge', night: 'Rooftop Pool 1', sky: 'Rooftop Pool 2', spa: 'Spa & Gym' };
+  for (const [id, gameFloor] of Object.entries(names)) { const v = store.get('venues', id); if (v && !v.gameFloor) store.put('venues', id, { ...v, gameFloor }); }
+  if (!store.get('venues', 'assmosphere')) store.put('venues', 'assmosphere', { id: 'assmosphere', name: 'Assmosphere', gameFloor: 'Assmosphere', kind: 'bar', floor: '33 этаж', order: 6, accent: '#EF5617', keywords: 'assmosphere', desc: 'Ночная площадка отеля.', image: '', comingSoon: true, schedule: [] });
+  if (!store.get('venues', 'yusuf')) store.put('venues', 'yusuf', { id: 'yusuf', name: 'Кабинет Юсуфа', gameFloor: "Yusuf's Office", kind: 'club', floor: '36 этаж', order: 7, accent: '#59161E', keywords: '', desc: 'Служебный этаж, только для персонала.', image: '', staffOnly: true, schedule: [] });
+  for (const d of DEFAULT_SENDERS) { const x = store.get('senders', d.id); if (x) store.put('senders', d.id, { ...x, name: d.name, color: x.color || d.color }); }
+  store.put('settings', 'main', { ...s, floorsV1: true });
+}
+// Примеры событий из первой версии не должны попасть к гостям. В панели они остаются отменёнными.
+function hideDemoEvents(store) { for (const id of ['e-demo1', 'e-demo2']) { const e = store.get('events', id); if (e && e.status !== 'cancelled') store.put('events', id, { ...e, status: 'cancelled' }); } }
+
+// Кнопка лифта в игре для этажа номеров: снизу вверх, верхние этажи сверх шести идут на Rooms Floor 6
+export function roomGameFloor(rooms, floor) { const list = [...new Set(rooms.map(r => r.floor))].sort((a, b) => a - b), i = list.indexOf(floor); return i < 0 ? '' : `Rooms Floor ${Math.min(i + 1, 6)}`; }
+
+export function seed(store) { const fresh = seedBase(store); floorsV1(store); hideDemoEvents(store); siteV3(store); return fresh; }
+function siteV3(store) { const s = store.get('settings', 'main'); if (s.siteV3) return; store.put('settings', 'main', { ...s, siteV3: true, deckUrl: s.deckUrl ?? 'https://youtu.be/rkjSuky5vdk', staffExtras: s.staffExtras ?? true, weather: s.weather === 'snow' ? 'auto' : s.weather }); }
+function seedBase(store) {
   if (store.get('settings', 'main')) { seedV2(store); return false; }
   const put = (c, d) => store.put(c, d.id, d);
   put('settings', { id: 'main', hotelName: 'Mile High Club', tagline: 'Отель над Лос-Сантосом', heroDay: 'img/atrium-day.webp', heroNight: 'img/atrium-night.webp', discordInvite: 'https://discord.gg/G45rJ9qVY', dayStart: 6, nightStart: 18, address: 'Вайнвуд, 20–40 этажи', footer: 'Mile High Club, Лос-Сантос', channels: {}, roles: { admin: 'Администратор', mod: 'Модератор' } });
@@ -352,7 +419,5 @@ export function seed(store) {
   const day = 864e5, base = Date.now();
   put('issues', { id: 'i1', title: 'Высота', number: '№ 01', publisher: 'Mile High Media', desc: 'Первый выпуск: ночь в атриуме, бархат и неон, хьюмидор и кухня Le Ciel. Тестовый выпуск, страницы меняются в панели.', date: base - 2 * day, published: true, accent: '#F0177A', cover: 'img/journal/p1.webp',
     pages: [1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ kind: 'image', image: `img/journal/p${n}.webp`, title: '', text: '' })) });
-  put('events', { id: 'e-demo1', name: 'Neon Night: открытие сезона', desc: 'Резиденты The Hot Times, неоновая вода и шампанское до утра.', start: base + 2 * 3600e3, end: base + 7 * 3600e3, location: 'Night Pool, 40 этаж', venueId: 'night', image: '', status: 'scheduled', source: 'manual' });
-  put('events', { id: 'e-demo2', name: 'Дегустация сигар', desc: 'Три сигары дома отеля и коньяк. Двенадцать мест.', start: base + day + 3600e3 * 3, end: base + day + 3600e3 * 6, location: 'Сигарный клуб', venueId: 'cigar', image: '', status: 'scheduled', source: 'manual' });
   return true;
 }

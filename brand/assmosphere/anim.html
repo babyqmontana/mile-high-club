@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>The Ass.mosphere Club — анимированный логотип</title>
+<!-- Квадратная бесшовная петля 5 с. Слои: бордовый фон, закатное солнце за горизонтом с лучами и ореолом,
+     дрейфующая дымка, звёзды, облако (тёмная заливка закрывает солнце), кремовая линия логотипа с мягким свечением.
+     Движение: солнце дышит и покачивается, свет бежит по контуру облака, затем по линии горизонта,
+     блик проходит по надписи, на кончиках букв вспыхивают искры. render(frame) детерминирован. -->
+<style>html,body{margin:0;background:#0a0204}canvas{display:block;width:min(100vw,100vh);height:min(100vw,100vh);margin:auto}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script>
+const N = 1080, FPS = 25, FRAMES = 125;                          // 5 с
+const GEO = { cw: 1809, ch: 874, sun: [1170.4, 290.4, 320.6], hz: 496 };   // координаты в кадрированной маске (×2 от исходника)
+const SC = 960 / GEO.cw, OX = (N - 960) / 2, OY = 560 - GEO.ch * SC / 2;
+const X = x => OX + x * SC, Y = y => OY + y * SC;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const mk = () => { const c = document.createElement('canvas'); c.width = c.height = N; return [c, c.getContext('2d')]; };
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const eio = x => x < .5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const TAU = Math.PI * 2;
+let LINE, FILL;
+const img = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = src; });
+async function ready() {
+  const [l, f] = await Promise.all([img('line.png'), img('cloudfill.png')]);
+  let g; [LINE, g] = mk(); g.drawImage(l, OX, OY, GEO.cw * SC, GEO.ch * SC);
+  [FILL, g] = mk(); g.drawImage(f, OX, OY, GEO.cw * SC, GEO.ch * SC);
+  render(0);
+}
+function glow(c, x, y, r, rgb, a) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); }
+function star(x, y, r, a, rot) {
+  if (a < .02) return; ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.globalAlpha = a; ctx.globalCompositeOperation = 'lighter';
+  glow(ctx, 0, 0, r * .55, '255,225,200', .9); ctx.fillStyle = '#fff6ec';
+  for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI / 2); const L = i % 2 ? r : r * .6; ctx.beginPath(); ctx.moveTo(0, -L); ctx.quadraticCurveTo(r * .07, -r * .07, r * .09, 0); ctx.lineTo(-r * .09, 0); ctx.quadraticCurveTo(-r * .07, -r * .07, 0, -L); ctx.fill(); }
+  ctx.restore();
+}
+function haze(c, t, layer) {
+  for (let i = 0; i < 6; i++) {
+    const k = i + layer * 10, sp = (.6 + hash(k) * .6) * (layer ? -1 : 1), ph = ((hash(k + 1) + t * Math.round(sp * 2 || 1) / 2) % 1 + 1) % 1;
+    const x = -300 + ph * (N + 600), y = layer ? Y(GEO.hz) + 90 + hash(k + 2) * 120 : 140 + hash(k + 2) * 380, w = 260 + hash(k + 3) * 300;
+    c.save(); c.translate(x, y); c.scale(1, .32); glow(c, 0, 0, w, layer ? '246,220,200' : '255,190,190', layer ? .07 : .06); c.restore();
+  }
+}
+
+function render(frame) {
+  const t = (frame % FRAMES) / FRAMES;
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.filter = 'none';
+  const hz = Y(GEO.hz), [sx0, sy0, sr0] = GEO.sun, sx = X(sx0), sr = sr0 * SC;
+  const sy = Y(sy0) + 14 * Math.sin(TAU * t) - 6, breathe = .5 + .5 * Math.sin(TAU * t - 1);
+
+  // 1. фон: бордовый радиальный, дышит вместе с солнцем
+  ctx.fillStyle = '#080103'; ctx.fillRect(0, 0, N, N);
+  glow(ctx, N * .52, N * .5, N * .78, '84,12,26', .75 + .1 * breathe);
+  glow(ctx, sx, sy, sr * 3.2, '150,24,40', .18 + .08 * breathe);
+
+  // 2. звёзды
+  for (let i = 0; i < 46; i++) {
+    const x = hash(i) * N, y = hash(i + 50) * N * .9, tw = .5 + .5 * Math.sin(TAU * (t * (1 + (i % 3)) + hash(i + 9)));
+    if (y > hz - 30 && y < hz + 260 && x > 60 && x < N - 60) continue;
+    ctx.globalAlpha = (.12 + .5 * hash(i + 3)) * tw; ctx.fillStyle = '#f6e4cc'; ctx.beginPath(); ctx.arc(x, y, .8 + 1.6 * hash(i + 7), 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // 3. солнце: лучи и ореол мягко гаснут к горизонту, диск обрезан линией горизонта
+  const [Rc, R] = mk();
+  R.save(); R.translate(sx, sy); R.rotate(t * TAU / 12); R.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 12; i++) { R.rotate(TAU / 12); const lg = R.createLinearGradient(0, 0, 0, -sr * 3.4); lg.addColorStop(0, 'rgba(255,120,120,0)'); lg.addColorStop(.3, `rgba(255,140,130,${.06 + .035 * breathe})`); lg.addColorStop(1, 'rgba(255,140,130,0)'); R.fillStyle = lg; R.beginPath(); R.moveTo(0, 0); R.lineTo(-sr * .22, -sr * 3.4); R.lineTo(sr * .22, -sr * 3.4); R.closePath(); R.fill(); }
+  R.restore();
+  glow(R, sx, sy, sr * 1.7, '190,36,52', .32 + .14 * breathe);
+  haze(R, t, 0);
+  R.globalCompositeOperation = 'destination-in'; let fg = R.createLinearGradient(0, hz - 120, 0, hz + 10); fg.addColorStop(0, '#000'); fg.addColorStop(1, 'rgba(0,0,0,0)'); R.fillStyle = fg; R.fillRect(0, 0, N, N);
+  ctx.drawImage(Rc, 0, 0);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, N, hz); ctx.clip();
+  let g = ctx.createRadialGradient(sx - sr * .3, sy - sr * .35, sr * .1, sx, sy, sr);
+  g.addColorStop(0, '#b42a38'); g.addColorStop(.7, '#8f1c2a'); g.addColorStop(1, '#741520');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, sr, 0, TAU); ctx.fill();
+  ctx.restore();
+
+  // 4. облако: тёмная заливка закрывает солнце
+  const [Fc, F] = mk(); F.drawImage(FILL, 0, 0); F.globalCompositeOperation = 'source-in';
+  g = F.createLinearGradient(0, Y(0), 0, hz); g.addColorStop(0, '#2a0910'); g.addColorStop(1, '#14040a'); F.fillStyle = g; F.fillRect(0, 0, N, N);
+  F.globalCompositeOperation = 'source-atop'; glow(F, sx - sr * .3, sy, sr * 1.2, '120,20,34', .25 + .1 * breathe);
+  ctx.drawImage(Fc, 0, 0);
+
+  // 5. туман под горизонтом
+  haze(ctx, t, 1);
+
+  // 6. линия логотипа: мягкое свечение + кремовый градиент + бегущий свет
+  const [Lc, L] = mk(); L.drawImage(LINE, 0, 0); L.globalCompositeOperation = 'source-in';
+  g = L.createLinearGradient(0, Y(0), 0, Y(GEO.ch)); g.addColorStop(0, '#FFF3DF'); g.addColorStop(.5, '#F4E2C6'); g.addColorStop(1, '#E9CFAa'); L.fillStyle = g; L.fillRect(0, 0, N, N);
+  L.globalCompositeOperation = 'source-atop';
+  // 6a. свет бежит по контуру облака (по дуге вокруг его центра)
+  const cc = [X(900), Y(380)], ca = clamp((t - .06) / .42), caE = eio(ca);
+  if (ca > 0 && ca < 1) {
+    const ang = Math.PI * (.95 + 1.15 * caE);
+    L.save(); L.beginPath(); L.rect(0, 0, N, hz - 4); L.clip();
+    const cg = L.createConicGradient(ang - .35, cc[0], cc[1]);
+    cg.addColorStop(0, 'rgba(255,190,150,0)'); cg.addColorStop(.035, 'rgba(255,210,170,.9)'); cg.addColorStop(.05, 'rgba(255,255,255,1)'); cg.addColorStop(.065, 'rgba(255,200,160,.5)'); cg.addColorStop(.11, 'rgba(255,200,160,0)'); cg.addColorStop(1, 'rgba(255,200,160,0)');
+    L.fillStyle = cg; L.fillRect(0, 0, N, N); L.restore();
+  }
+  // 6b. потом по линии горизонта
+  const ha = clamp((t - .44) / .2);
+  if (ha > 0 && ha < 1) { const hx = X(-100 + 2000 * eio(ha)); L.save(); L.beginPath(); L.rect(0, hz - 14, N, 28); L.clip(); glow(L, hx, hz, 120, '255,255,255', 1); L.restore(); }
+  // 6c. блик по надписи
+  const ta = clamp((t - .6) / .3);
+  if (ta > 0 && ta < 1) {
+    L.save(); L.beginPath(); L.rect(0, hz + 14, N, N); L.clip(); L.translate(N / 2, N / 2); L.rotate(.45); L.translate(-N / 2, -N / 2);
+    const x0 = -300 + 1700 * eio(ta); g = L.createLinearGradient(x0 - 120, 0, x0 + 120, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); L.fillStyle = g; L.fillRect(-N, -N, N * 3, N * 3);
+    const x1 = x0 - 200; g = L.createLinearGradient(x1 - 30, 0, x1 + 30, 0); g.addColorStop(0, 'rgba(255,240,220,0)'); g.addColorStop(.5, 'rgba(255,240,220,.7)'); g.addColorStop(1, 'rgba(255,240,220,0)'); L.fillStyle = g; L.fillRect(-N, -N, N * 3, N * 3);
+    L.restore();
+  }
+  // свечение линии (сильнее, когда по ней бежит свет)
+  const lift = .25 + .3 * Math.sin(Math.PI * clamp(ca)) * (ca > 0 && ca < 1) + .3 * Math.sin(Math.PI * ta) * (ta > 0 && ta < 1);
+  ctx.filter = 'blur(14px)'; ctx.globalAlpha = .35 + lift; ctx.drawImage(Lc, 0, 0); ctx.filter = 'blur(3px)'; ctx.globalAlpha = .3; ctx.drawImage(Lc, 0, 0);
+  ctx.filter = 'none'; ctx.globalAlpha = 1; ctx.drawImage(Lc, 0, 0);
+
+  // 7. искры: верх облака (в момент прохода света), горизонт, кончики букв (во время блика)
+  const sparks = [[790, 40, .27], [330, 110, .14], [1450, 150, .42], [1760, 496, .62], [90, 563, .66], [914, 653, .78], [1780, 623, .86], [1470, 827, .93]];
+  sparks.forEach(([x, y, at], i) => star(X(x), Y(y), 46 + 20 * hash(i), Math.exp(-(((t - at) / .028) ** 2)), t * 5 + i));
+
+  // 8. виньетка
+  g = ctx.createRadialGradient(N / 2, N / 2, N * .42, N / 2, N / 2, N * .75); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.6)'); ctx.fillStyle = g; ctx.fillRect(0, 0, N, N);
+}
+window.ANIM = { N, FPS, FRAMES, ready, render };
+if (!new URLSearchParams(location.search).has('still')) ready().then(() => { let f = 0; setInterval(() => render(f++), 1000 / FPS); });
+</script>
+</body>
+</html>

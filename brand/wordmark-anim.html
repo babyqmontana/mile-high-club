@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>MHC — анимированный логотип</title>
+<!-- Зацикленная анимация надписи MILE HIGH CLUB (без верблюда), квадрат.
+     Эффекты: шампань-металл с тиснением, переливающаяся фольга, блик-«свип», искры на кончиках букв,
+     световой бегунок по росчерку, дыхание бордового ореола, золотая пыль. render(frame) детерминирован. -->
+<style>html,body{margin:0;background:#070405}canvas{display:block;width:min(100vw,100vh);height:min(100vw,100vh);margin:auto}</style>
+</head>
+<body>
+<canvas id="c" width="720" height="720"></canvas>
+<script>
+const N = 720, FPS = 25, FRAMES = 100, K = N / 1000;            // 4 с, бесшовная петля
+const PAD = N * .12, SC = (N - 2 * PAD) / 1000, P = v => PAD + v * SC;   // поля вокруг надписи
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const mk = () => { const c = document.createElement('canvas'); c.width = c.height = N; return [c, c.getContext('2d')]; };
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const sm = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const eio = x => x < .5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+
+let M, edgeTL, edgeBR, swash = [];
+// кончики букв (координаты в системе 1000×1000 SVG), где вспыхивают искры
+const GLINTS = [[72, 70], [452, 70], [905, 72], [66, 345], [905, 350], [520, 610], [124, 655], [940, 850]];
+
+async function ready() {
+  const svg = await (await fetch('mhc-wordmark.svg')).text();
+  const img = new Image(); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); await img.decode();
+  let g; [M, g] = mk(); g.drawImage(img, PAD, PAD, N - 2 * PAD, N - 2 * PAD); g.globalCompositeOperation = 'source-in'; g.fillStyle = '#fff'; g.fillRect(0, 0, N, N);
+  // кромки для тиснения: маска минус маска со сдвигом
+  const edge = (dx, dy) => { const [c, x] = mk(); x.drawImage(M, 0, 0); x.globalCompositeOperation = 'destination-out'; x.drawImage(M, dx, dy); return c; };
+  edgeTL = edge(3 * K, 3.5 * K); edgeBR = edge(-3 * K, -3.5 * K);
+  // кривая росчерка под CLUB: нижний край заливки по столбцам, поднятый внутрь штриха
+  const d = g.getImageData(0, 0, N, N).data;
+  for (let x = Math.round(P(60)); x < Math.round(P(940)); x += 3) {
+    let y = -1; for (let yy = N - 1; yy > N * .6; yy--) if (d[(yy * N + x) * 4 + 3] > 128) { y = yy; break; }
+    if (y > 0) swash.push([x, y - 9 * SC]);
+  }
+  render(0);
+}
+
+function star(c, x, y, r, a, rot) {
+  c.save(); c.translate(x, y); c.rotate(rot); c.globalAlpha = a;
+  const gr = c.createRadialGradient(0, 0, 0, 0, 0, r * .5); gr.addColorStop(0, 'rgba(255,250,235,1)'); gr.addColorStop(1, 'rgba(255,214,140,0)');
+  c.fillStyle = gr; c.beginPath(); c.arc(0, 0, r * .5, 0, 7); c.fill();
+  c.fillStyle = '#fffaf0';
+  for (let i = 0; i < 4; i++) { c.rotate(Math.PI / 2); const L = i % 2 ? r : r * .62; c.beginPath(); c.moveTo(0, -L); c.quadraticCurveTo(r * .06, -r * .06, L * .0 + r * .07, 0); c.quadraticCurveTo(r * .06, r * .06, 0, L * .0); c.lineTo(0, -L); c.fill(); }
+  c.restore();
+}
+
+function render(frame) {
+  const t = (frame % FRAMES) / FRAMES, TAU = Math.PI * 2;
+  // блик проходит один раз за петлю: t 0.08…0.52
+  const sw = eio(clamp((t - .08) / .44)), swOn = t > .06 && t < .56;
+  const flash = Math.exp(-(((t - .30) / .12) ** 2));            // общий подъём свечения в момент блика
+
+  // 1. фон: чёрный с бордовым ореолом, который дышит
+  ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; ctx.globalAlpha = 1;
+  ctx.fillStyle = '#070405'; ctx.fillRect(0, 0, N, N);
+  const br = .62 + .06 * Math.sin(TAU * t);
+  let gr = ctx.createRadialGradient(N * .5, N * .52, 0, N * .5, N * .52, N * br);
+  gr.addColorStop(0, `rgba(122,30,38,${.42 + .1 * flash})`); gr.addColorStop(.55, 'rgba(70,14,20,.22)'); gr.addColorStop(1, 'rgba(7,4,5,0)');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, N, N);
+
+  // 2. золотая пыль (позиции периодичны по t)
+  for (let i = 0; i < 34; i++) {
+    const ph = (t + hash(i)) % 1, x = N * (.06 + .88 * hash(i + 40)) + Math.sin(TAU * (ph + hash(i + 9))) * 10 * K, y = N * (1.04 - ph * 1.1);
+    const a = Math.sin(Math.PI * ph) * (.25 + .45 * hash(i + 3)), r = (1 + 2.2 * hash(i + 7)) * K * 1.6;
+    ctx.globalAlpha = a; ctx.fillStyle = hash(i + 5) > .3 ? '#F7C873' : '#F6E8D2';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // 3. ореол букв: широкий бордовый и узкий золотой
+  const [Gc, G] = mk(); G.drawImage(M, 0, 0); G.globalCompositeOperation = 'source-in'; G.fillStyle = '#F7B50A'; G.fillRect(0, 0, N, N);
+  ctx.filter = `blur(${34 * K}px)`; ctx.globalAlpha = .38 + .25 * flash; ctx.drawImage(Gc, 0, 0);
+  ctx.filter = `blur(${10 * K}px)`; ctx.globalAlpha = .22 + .35 * flash; ctx.drawImage(Gc, 0, 0);
+  ctx.filter = 'none'; ctx.globalAlpha = 1;
+
+  // 4. тело букв: шампань-металл
+  const [Lc, L] = mk(); L.drawImage(M, 0, 0); L.globalCompositeOperation = 'source-in';
+  gr = L.createLinearGradient(0, PAD, 0, N - PAD);
+  [[0, '#F8E9CC'], [.2, '#E9D0A0'], [.36, '#C9984E'], [.5, '#F3DDB0'], [.62, '#D8B57A'], [.78, '#A8732E'], [.88, '#E2C08A'], [1, '#9A6426']].forEach(([o, c]) => gr.addColorStop(o, c));
+  L.fillStyle = gr; L.fillRect(0, 0, N, N);
+  L.globalCompositeOperation = 'source-atop';
+  // 4a. переливающаяся фольга: диагональный градиент, сдвиг ровно на один период за петлю
+  const per = N * 1.1, off = -t * per, ang = -.62;
+  L.save(); L.translate(N / 2, N / 2); L.rotate(ang); L.translate(-N / 2, -N / 2);
+  gr = L.createLinearGradient(off - per, 0, off + per * 2, 0);
+  const foil = ['rgba(255,246,226,0)', 'rgba(255,196,60,.30)', 'rgba(255,150,150,.34)', 'rgba(200,190,255,.30)', 'rgba(140,235,215,.24)', 'rgba(255,196,60,.30)', 'rgba(255,246,226,0)'];
+  for (let k = 0; k < 3; k++) foil.forEach((c, i) => gr.addColorStop((k + i / (foil.length - 1)) / 3, c));
+  L.fillStyle = gr; L.fillRect(-N, -N, N * 3, N * 3); L.restore();
+  // 4b. тиснение: свет сверху-слева, тень снизу-справа
+  L.globalAlpha = .75; L.drawImage(edgeTL, 0, 0); // белые кромки (маска белая)
+  L.globalAlpha = 1;
+  const [Bc, B] = mk(); B.drawImage(edgeBR, 0, 0); B.globalCompositeOperation = 'source-in'; B.fillStyle = '#5a2a14'; B.fillRect(0, 0, N, N);
+  L.globalAlpha = .7; L.drawImage(Bc, 0, 0); L.globalAlpha = 1;
+  // 4c. блик-свип: яркая диагональная полоса
+  if (swOn) {
+    const p = -.35 + 1.7 * sw;
+    L.save(); L.translate(N / 2, N / 2); L.rotate(.42); L.translate(-N / 2, -N / 2);
+    const x0 = p * N; gr = L.createLinearGradient(x0 - N * .16, 0, x0 + N * .16, 0);
+    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.42, 'rgba(255,250,236,.55)'); gr.addColorStop(.5, 'rgba(255,255,255,.95)'); gr.addColorStop(.58, 'rgba(255,250,236,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    L.fillStyle = gr; L.fillRect(-N, -N, N * 3, N * 3);
+    // тонкая вторая полоса следом
+    const x1 = x0 - N * .26; gr = L.createLinearGradient(x1 - N * .04, 0, x1 + N * .04, 0);
+    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.5, 'rgba(255,248,230,.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    L.fillStyle = gr; L.fillRect(-N, -N, N * 3, N * 3); L.restore();
+  }
+  // 4d. световой бегунок по росчерку (t 0.5…0.9)
+  const ru = clamp((t - .5) / .4), runOn = t > .5 && t < .9;
+  let rp = null;
+  if (runOn && swash.length) {
+    const e = eio(ru), i = Math.min(swash.length - 1, Math.floor(e * (swash.length - 1))); rp = swash[i];
+    for (let k = 0; k < 14; k++) { const j = Math.max(0, i - k * 3), q = swash[j]; const a = (1 - k / 14) * .55 * Math.sin(Math.PI * ru);
+      gr = L.createRadialGradient(q[0], q[1], 0, q[0], q[1], 40 * K); gr.addColorStop(0, `rgba(255,252,240,${a})`); gr.addColorStop(1, 'rgba(255,220,150,0)'); L.fillStyle = gr; L.fillRect(q[0] - 40 * K, q[1] - 40 * K, 80 * K, 80 * K); }
+  }
+  ctx.drawImage(Lc, 0, 0);
+
+  // 5. искры на кончиках букв — вспыхивают, когда их проходит блик
+  ctx.globalCompositeOperation = 'lighter';
+  GLINTS.forEach(([gx, gy], i) => {
+    // проекция точки на ось блика → когда полоса над ней
+    const x = P(gx), y = P(gy), c = Math.cos(.42), s = Math.sin(.42);
+    const proj = ((x - N / 2) * c + (y - N / 2) * s + N / 2) / N; // 0…1 вдоль полосы
+    const tp = .08 + .44 * invEio(clamp((proj + .35) / 1.7));
+    const a = Math.exp(-(((t - tp) / .035) ** 2)) * (.75 + .25 * hash(i));
+    if (a > .02) star(ctx, x, y, (52 + 26 * hash(i + 2)) * K * (.6 + .4 * a), a, .3 + t * 2);
+  });
+  // искра на бегунке
+  if (rp) { const a = Math.sin(Math.PI * ru); star(ctx, rp[0], rp[1], 30 * K, .8 * a, t * 6); }
+  // поздняя «двойная» искра, чтобы вторая половина петли тоже жила
+  [[.74, 0], [.86, 4]].forEach(([tt, gi]) => { const a = Math.exp(-(((t - tt) / .03) ** 2)); if (a > .02) star(ctx, P(GLINTS[gi][0]), P(GLINTS[gi][1]), 60 * K, a * .95, t * 4); });
+  ctx.globalCompositeOperation = 'source-over';
+
+  // 6. мягкая виньетка
+  gr = ctx.createRadialGradient(N / 2, N / 2, N * .45, N / 2, N / 2, N * .75); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.55)');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, N, N);
+}
+// обратная функция к eio (для поиска момента, когда блик над точкой)
+function invEio(y) { let lo = 0, hi = 1; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (eio(m) < y) lo = m; else hi = m; } return (lo + hi) / 2; }
+
+window.WM = { N, FPS, FRAMES, ready, render };
+if (!new URLSearchParams(location.search).has('still')) ready().then(() => { let f = 0; setInterval(() => render(f++), 1000 / FPS); });
+</script>
+</body>
+</html>
