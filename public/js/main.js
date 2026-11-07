@@ -9,7 +9,7 @@ document.documentElement.classList.add('js');
 const ROUTES = [['home', 'Главная'], ['stay', 'Номера'], ['leisure', 'Отдых'], ['dining', 'Le Ciel'], ['cigars', 'Сигары'], ['journal', 'Журнал'], ['staff', 'Персонал'], ['contact', 'Заявка']];
 const STATE_CHIP = { live: ['Live', 'p live'], open: ['Открыто', 'ok'], calm: ['Тихо', 'warn'], closed: ['Закрыто', 'm'], event: ['Событие', 'v live'], soon: ['Скоро', 't'] };
 const KIND_LABEL = { pool: 'Бассейн', bar: 'Бар', restaurant: 'Ресторан', club: 'Клуб', spa: 'Спа' };
-let authCfg = { oauth: false, demo: false }, manualMode = null, current = 'home', mods = {};
+let authCfg = { oauth: false, demo: false }, current = 'home', mods = {};
 
 /* ---------------- оболочка ---------------- */
 function shell() {
@@ -22,12 +22,11 @@ function shell() {
       <span class="pill wxp" id="wxChip" title="Погода и время над отелем"></span>
       <a class="pill" href="#stay" title="Свободные номера сейчас"><span class="d"></span><span class="t">Свободно</span><b class="num" id="navFree">—</b></a>
       <button class="ibtn" id="sndBtn" aria-label="Звук" data-sfx=""></button>
-      <button class="ibtn" id="modeBtn" aria-label="День или ночь" data-sfx=""></button>
       <span id="navUser"></span>
       <button class="ibtn burger" id="burger" aria-label="Меню" data-sfx="open">${I.menu}</button>
     </div>
   </div></header>
-  <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button><button type="button" class="btn ghost" id="dMode" data-sfx=""></button></div></nav>
+  <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button></div></nav>
   <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
   <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a></span></div><div class="wrap kon" aria-hidden="true">↑ ↑ ↓ ↓ ← → ← → B A</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
@@ -38,7 +37,6 @@ function shell() {
   $$('#drawer a').forEach(a => a.addEventListener('click', closeDrawer));
   // звук и день/ночь: в шапке, а на узких экранах — в меню (те же действия)
   $('#sndBtn').onclick = $('#dSnd').onclick = () => { setSound(!soundOn); paintNav(); mods.deck?.sound(); burst('dj', 8, 20000); };
-  $('#modeBtn').onclick = $('#dMode').onclick = () => { manualMode = mode() === 'day' ? 'night' : 'day'; play(manualMode); applyMode(); burst('sunmoon', 6, 60000); };
   // логотип: с каждым кликом подрагивает сильнее — намёк, что что-то будет
   { let n = 0, tmr = 0; $('.brand').addEventListener('click', () => { clearTimeout(tmr); tmr = setTimeout(() => { n = 0; $('.brand').style.removeProperty('--wob'); }, 2500); n++; const b = $('.brand'); b.style.setProperty('--wob', Math.min(n, 7)); b.classList.remove('wob'); void b.offsetWidth; b.classList.add('wob'); if (n >= 7) { n = 0; unlock('logo'); } }); }
   $('#achBtn').onclick = () => openCabinet();
@@ -49,14 +47,13 @@ function shell() {
 function paintNav() {
   $('#sndBtn').innerHTML = soundOn ? I.sound : I.mute; $('#sndBtn').setAttribute('aria-label', soundOn ? 'Выключить звук' : 'Включить звук');
   $('#dSnd').innerHTML = `${soundOn ? I.sound : I.mute}${soundOn ? 'Звук включён' : 'Звук выключен'}`; $('#dSnd').setAttribute('aria-pressed', soundOn);
-  $('#dMode').innerHTML = `${mode() === 'day' ? I.sun : I.moon}${mode() === 'day' ? 'Дневной отель' : 'Ночной отель'}`;
-  $('#modeBtn').innerHTML = mode() === 'day' ? I.sun : I.moon; $('#modeBtn').title = mode() === 'day' ? 'Дневной отель. Нажмите для ночного' : 'Ночной отель. Нажмите для дневного';
   const u = S.me;
   $('#navUser').innerHTML = u ? `<button class="ibtn" id="userBtn" aria-label="Профиль" style="overflow:hidden;padding:0">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc((u.username || '?')[0])}</span>`}</button>` : `<button class="ibtn" id="userBtn" aria-label="Мои брони и вход">${I.user}</button>`;
   $('#userBtn').onclick = () => location.hash = u && u.role !== 'guest' ? '#admin' : '#me';
   if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; { const nf = $('#navFree'), val = `${f}/${S.pub.rooms.length}`; if (nf.textContent !== val) { const had = nf.textContent !== '—'; nf.textContent = val; if (had) { nf.classList.remove('tick'); void nf.offsetWidth; nf.classList.add('tick'); } } } $('#foot').textContent = S.pub.settings.footer || ''; }
 }
-function mode() { if (manualMode) return manualMode; const s = S.pub?.settings || {}, h = Math.floor(mskMinutes() / 60); return h >= (s.dayStart ?? 6) && h < (s.nightStart ?? 18) ? 'day' : 'night'; }
+// сайт всегда в ночной теме: тёмный интерфейс, ночной отель и ночное небо
+function mode() { return 'night'; }
 // погода: фон страницы, главный экран, 3D-башня и значок в шапке
 const WXI = { clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   night: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
@@ -156,6 +153,8 @@ function flap(key, text) {
   const t = String(text).slice(0, 7).padStart(7, ' '), prev = flapPrev.get(key); flapPrev.set(key, t);
   return `<span class="sr">${esc(String(text))}</span><span class="fls" aria-hidden="true">${[...t].map((c, i) => `<span class="fl${c === ' ' ? ' e' : ''}${prev && prev[i] !== c ? ' flip' : ''}" style="--i:${i}">${c === ' ' ? '' : esc(c)}</span>`).join('')}</span>`;
 }
+// площадки для 3D-башни: этаж из подписи («30 этаж»), без номера — атриум у входа
+const towerVenues = () => (S.pub.venues || []).map(v => { const n = parseInt((String(v.floor || '').match(/\d+/) || [])[0], 10); return { id: v.id, name: v.name, kind: v.kind, accent: v.accent || '#f7b50a', floor: Number.isFinite(n) ? n : 1, label: venueState(v, S.pub.events).label || '' }; });
 const venueRoute = v => ({ restaurant: 'dining', club: 'cigars' }[v.kind] || 'leisure');
 // Шахта лифта: реальные этажи площадок (venue.floor) и номеров, сверху вниз, с живыми статусами
 function shaftHtml(p, latest) {
@@ -277,8 +276,8 @@ async function renderStay() {
           <div id="roomBox"></div></aside>
       </div>
       <div class="head" style="margin-top:3rem"><span class="eyebrow">Категории</span><h2>Типы номеров</h2></div><div class="types" id="types"></div><div id="cmpBox" aria-live="polite"></div></div>`;
-    const opts = { onPick: f => goFloor(f), onSpin: () => unlock('dizzy'), onHoverFloor: f => $$('#lfBtns button').forEach(b => b.classList.toggle('hv', +b.dataset.f === f)) };
-    const ready = t => { mods.tower = t; t.active(current === 'stay'); t.update(S.pub.rooms, selFloor, S.pub.types); t.setFilter?.(roomFilterIds()); if (selRoom) t.focusRoom(selRoom); if (wxNow) t.setWeather(wxNow); };
+    const opts = { onPickVenue: id => { const v = S.pub.venues.find(x => x.id === id); if (v) location.hash = '#' + venueRoute(v); }, onPick: f => goFloor(f), onSpin: () => unlock('dizzy'), onHoverFloor: f => $$('#lfBtns button').forEach(b => b.classList.toggle('hv', +b.dataset.f === f)) };
+    const ready = t => { mods.tower = t; t.active(current === 'stay'); t.setVenues?.(towerVenues()); t.update(S.pub.rooms, selFloor, S.pub.types); t.setFilter?.(roomFilterIds()); if (selRoom) t.focusRoom(selRoom); if (wxNow) t.setWeather(wxNow); };
     // 3D-башня, а если WebGL нет или сцена не создалась — фасад из DOM с тем же интерфейсом
     (hasWebGL() ? import('./skyline3d.js').then(m => ready(m.mountTower($('#tower'), opts))) : Promise.reject(null))
       .catch(e => { if (e) console.error(e); return import('./facade.js').then(f => ready(f.mountFacade($('#tower'), opts))); })
@@ -319,7 +318,7 @@ let liftTimer = 0;
 function goFloor(f) {
   if (f === selFloor || f == null) return;
   const from = selFloor; selFloor = f; selRoom = null;
-  mods.tower?.update(S.pub.rooms, selFloor, S.pub.types); mods.tower?.focusRoom(null);
+  mods.tower?.setVenues?.(towerVenues()); mods.tower?.update(S.pub.rooms, selFloor, S.pub.types); mods.tower?.focusRoom(null);
   paintLift(); $('#roomBox').innerHTML = '';
   const d = $('#lfDoors'), reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   clearTimeout(liftTimer);
