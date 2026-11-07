@@ -915,7 +915,7 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 /* звук и день/ночь в меню — на узких экранах их нет в шапке */
 .dtools{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1.4rem}
 .dtools .btn{flex:1 1 12rem;justify-content:flex-start}
-@media(max-width:480px){#sndBtn,#modeBtn{display:none}
+@media(max-width:480px){#sndBtn{display:none}
   /* переключатели не переносятся внутри «таблетки», а прокручиваются вбок */
   .seg{flex-wrap:nowrap;max-width:100%;overflow-x:auto;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}.seg button{white-space:nowrap;flex:none}}
 /* нижняя шторка на телефоне: ручка сверху, свайп вниз закрывает */
