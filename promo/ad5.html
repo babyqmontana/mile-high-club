@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ru" data-mode="night">
+<head>
+<meta charset="utf-8">
+<base href="/public/">
+<title>Mile High Club — трейлер открытия сайта</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Onest:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@1,500;1,600&display=block">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  @font-face{font-family:"Unbounded";font-weight:800;src:url(/promo/fonts/unbounded-cyrillic-800-normal.woff2) format("woff2");unicode-range:U+0400-045F}
+  @font-face{font-family:"Onest";font-weight:700;src:url(/promo/fonts/onest-cyrillic-700-normal.woff2) format("woff2");unicode-range:U+0400-045F}
+  @font-face{font-family:"Cormorant Garamond";font-style:italic;font-weight:600;src:url(/promo/fonts/cormorant-garamond-cyrillic-600-italic.woff2) format("woff2");unicode-range:U+0400-045F}
+  html,body{margin:0;background:#0D0809;overflow:hidden}
+  *{transition:none!important}
+  #stage{position:fixed;left:0;top:0;overflow:hidden;background:#0D0809;perspective:1800px;perspective-origin:50% 45%}
+  .layer,.sc{position:absolute;inset:0;transform-style:preserve-3d}
+  .sc{pointer-events:none}
+  /* фон: тёплая тьма, медленные цветные пятна, зерно, виньетка */
+  .glow{position:absolute;border-radius:50%;filter:blur(80px);opacity:.55}
+  #grain{position:absolute;inset:-50%;opacity:.07;mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+  #vig{position:absolute;inset:0;background:radial-gradient(120% 90% at 50% 45%,transparent 55%,rgba(0,0,0,.65))}
+  /* единая типографика: надзаголовок, заголовок, акцентная строка — всегда на одной сетке слева */
+  .tb{position:absolute;left:var(--mx);width:var(--tw);top:var(--ty);transform:translateY(-50%);color:#F9EDC7}
+  .eb{display:flex;align-items:center;gap:18px;font:700 var(--ebs)/1 Onest,sans-serif;letter-spacing:.34em;text-transform:uppercase;color:#F7B50A;overflow:hidden;padding-bottom:4px}
+  .eb::before{content:"";width:46px;height:2px;background:#F7B50A;flex:none}
+  .eb span{display:inline-block}
+  .h{margin:22px 0 0;font:800 var(--hs)/1.04 Unbounded,sans-serif;letter-spacing:-.01em}
+  .ln{display:block;overflow:hidden;padding-bottom:.14em;margin-bottom:-.14em}
+  .ln>span{display:inline-block;will-change:transform}
+  .ac{margin-top:20px;font:italic 600 var(--as)/1.1 "Cormorant Garamond",serif;color:#F7B50A}
+  .ac.pink{color:#F0177A}
+  /* компоненты сайта в «витринах» */
+  .comp{position:absolute;transform-style:preserve-3d}
+  .shine{position:absolute;inset:0;pointer-events:none;border-radius:inherit;background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.16) 45%,transparent 60%);background-size:300% 100%;mix-blend-mode:screen}
+  .browser{border-radius:22px;overflow:hidden;background:#140C0E;box-shadow:0 60px 120px rgba(0,0,0,.6),0 0 0 1px rgba(249,237,199,.12),0 0 120px rgba(240,23,122,.18)}
+  .browser .bar{height:52px;display:flex;align-items:center;gap:12px;padding:0 22px;background:#1B1013;border-bottom:1px solid rgba(249,237,199,.08)}
+  .browser .bar i{width:13px;height:13px;border-radius:50%;background:#3a2a2e}
+  .browser .bar .url{margin-left:22px;flex:1;height:30px;border-radius:15px;background:#0D0809;display:flex;align-items:center;padding:0 18px;font:600 15px Onest;color:#B3A792;gap:10px}
+  .browser img{display:block;width:100%}
+  .glass{background:linear-gradient(140deg,rgba(255,240,230,.10),rgba(255,240,230,.03));backdrop-filter:blur(24px) saturate(1.4);border:1px solid rgba(249,237,199,.16);border-radius:28px;box-shadow:0 40px 90px rgba(0,0,0,.5)}
+  .cursor{position:absolute;width:40px;height:56px;z-index:50}
+  .ripple{position:absolute;width:150px;height:150px;margin:-75px 0 0 -75px;border-radius:50%;border:3px solid #F7B50A;opacity:0}
+  .dc{position:absolute;padding:26px 30px;display:flex;gap:22px;align-items:center;width:var(--dw)}
+  .dc img{width:72px;height:72px;border-radius:50%}
+  .dc b{font:700 26px Onest;color:#F9EDC7}.dc .bot{font:700 13px Onest;background:#5865F2;color:#fff;border-radius:5px;padding:3px 7px;margin-left:10px;vertical-align:3px}
+  .dc p{margin:8px 0 0;font:500 22px Onest;color:#B3A792}.dc em{font-style:normal;color:#F7B50A}
+  .cta{display:inline-flex;align-items:center;gap:16px;margin-top:44px;padding:24px 44px;border-radius:999px;background:#F7B50A;color:#1a1205;font:700 30px Onest;box-shadow:0 20px 60px rgba(247,181,10,.35)}
+  .floorline{position:absolute;height:2px;background:linear-gradient(90deg,transparent,#F7B50A,transparent)}
+  /* тюнинг компонентов сайта для крупного плана */
+  .reveal{opacity:1!important;transform:none!important}
+  .loader{position:absolute!important;z-index:20}
+  .loader .ld-in{transform:scale(var(--ldk))}
+  .liftp,.cinfo,#tBox,.fboard,.type,.venue,.issue,.menu,.cloche{background-color:#1B1013}
+</style>
+<script type="importmap">{"imports":{"three":"/promo/three-hook.js","three/addons/":"/public/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="stage"></div>
+<script type="module">
+// Трейлер открытия сайта Mile High Club, 30 с, 16:9 и 9:16 (?v=1). Собран из настоящих компонентов сайта
+// (их разметка и стили — public/css/app.css), анимация на Web Animations API. seek(t) ставит любой момент,
+// поэтому кадры снимаются детерминированно и параллельно. Звук — promo/ad5_sfx.py по CUES.
+const Q = new URLSearchParams(location.search), V = Q.get('v') === '1';
+const W = V ? 1080 : 1920, H = V ? 1920 : 1080, FPS = 30, DUR = 30;
+const stage = document.getElementById('stage'); stage.style.width = W + 'px'; stage.style.height = H + 'px';
+// сетка: поля, ширина колонки текста, размеры шрифтов — одни на весь ролик
+const G = V ? { mx: 84, tw: 912, ty: 430, ebs: 22, hs: 104, as: 70, dw: 912 } : { mx: 132, tw: 760, ty: 540, ebs: 21, hs: 104, as: 66, dw: 760 };
+Object.entries(G).forEach(([k, v]) => stage.style.setProperty('--' + k, v + 'px'));
+const EASE = 'cubic-bezier(.16,1,.3,1)', INOUT = 'cubic-bezier(.65,0,.35,1)', IN = 'cubic-bezier(.7,0,.84,0)';
+const h = (tag, cls, parent = stage, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; parent.appendChild(e); return e; };
+const A = [], HOOKS = [];
+function anim(el, kf, start, dur, easing = EASE, fill = 'both') { const a = el.animate(kf, { duration: dur * 1000, delay: start * 1000, fill, easing }); a.pause(); A.push(a); return a; }
+// заголовочный блок: слова поднимаются из-под маски по очереди; out — уход вверх с размытием
+function title(parent, { eb, lines, ac, acPink, at, out, ty, acAt = .35, acDur = .9 }) {
+  const tb = h('div', 'tb', parent); if (ty) tb.style.top = ty + 'px';
+  const e = h('div', 'eb', tb, `<span>${eb}</span>`);
+  anim(e, [{ opacity: 0, transform: 'translateX(-30px)' }, { opacity: 1, transform: 'none' }], at, .7);
+  const hh = h('div', 'h', tb); let k = 0;
+  lines.forEach(l => { const ln = h('span', 'ln', hh); const s = h('span', '', ln, l); anim(s, [{ transform: 'translateY(115%)' }, { transform: 'none' }], at + .12 + k++ * .09, .9); });
+  if (ac) { const a = h('div', 'ac' + (acPink ? ' pink' : ''), tb, ac); anim(a, [{ opacity: 0, filter: 'blur(12px)', transform: 'translateY(16px)' }, { opacity: 1, filter: 'blur(0)', transform: 'none' }], at + acAt + lines.length * .09, acDur); }
+  if (out != null) anim(tb, [{ opacity: 1, transform: 'translateY(-50%)', filter: 'blur(0)' }, { opacity: 0, transform: 'translateY(calc(-50% - 60px))', filter: 'blur(14px)' }], out, .55, IN, 'forwards');
+  return tb;
+}
+function cursorAt(parent, path) { // path: [[t, x, y, press?]...]
+  const c = h('div', 'cursor', parent, `<svg viewBox="0 0 40 56"><path d="M2 2 L2 46 L13 35 L21 53 L29 49 L21 32 L36 32 Z" fill="#fff" stroke="#140a0e" stroke-width="3" stroke-linejoin="round"/></svg>`);
+  c.style.filter = 'drop-shadow(0 6px 12px rgba(0,0,0,.5))';
+  const kf = path.map(([t, x, y, s = 1]) => ({ offset: 0, transform: `translate(${x}px,${y}px) scale(${s})` }));
+  const t0 = path[0][0], t1 = path.at(-1)[0]; kf.forEach((f, i) => f.offset = (path[i][0] - t0) / (t1 - t0));
+  anim(c, kf, t0, t1 - t0, 'linear'); return c;
+}
+function ripple(parent, x, y, at, color = '#F7B50A') { const r = h('div', 'ripple', parent); r.style.left = x + 'px'; r.style.top = y + 'px'; r.style.borderColor = color; anim(r, [{ opacity: .9, transform: 'scale(.2)' }, { opacity: 0, transform: 'scale(1.6)' }], at, .6, 'cubic-bezier(.2,.8,.2,1)', 'forwards'); }
+const comp = (parent, html, { x, y, w, s = 1, z = 0 }) => { const c = h('div', 'comp', parent, html); c.style.left = x + 'px'; c.style.top = y + 'px'; c.style.width = w + 'px'; c.style.transformOrigin = '0 0'; c.style.setProperty('--s', s); return c; };
+
+let CMP;
+async function build() {
+  CMP = await (await fetch('/promo/assets/ad5-components.json')).json();
+  /* ---------- фон ---------- */
+  const bg = h('div', 'layer', stage);
+  [['#F0177A', .18, .22, 900], ['#F7B50A', .82, .3, 800], ['#59161E', .5, .9, 1200], ['#EF5617', .9, .85, 700]].forEach(([c, x, y, r], i) => {
+    const g = h('div', 'glow', bg); Object.assign(g.style, { background: c, width: r + 'px', height: r + 'px', left: (x * W - r / 2) + 'px', top: (y * H - r / 2) + 'px', opacity: .22 });
+    anim(g, [{ transform: 'translate(0,0) scale(1)' }, { transform: `translate(${(i % 2 ? -1 : 1) * 160}px,${(i < 2 ? 1 : -1) * 120}px) scale(1.15)` }], 0, DUR, 'linear');
+  });
+
+  /* ---------- 1. Лоадер сайта: лифт поднимается, двери разъезжаются (0–4) ---------- */
+  const s1 = h('div', 'sc', stage); s1.style.zIndex = 30;
+  s1.innerHTML = CMP.loader; const L = s1.querySelector('.loader'); L.style.setProperty('--ldk', V ? 2.3 : 2.1);
+  const din = L.querySelector('.ld-in'), [dl, dr] = L.querySelectorAll('.ld-door');
+  anim(din, [{ opacity: 0, transform: `scale(${V ? 2.0 : 1.8})`, filter: 'blur(10px)' }, { opacity: 1, transform: `scale(${V ? 2.3 : 2.1})`, filter: 'blur(0)' }], .1, 1.0);
+  anim(din, [{ opacity: 1, transform: `scale(${V ? 2.3 : 2.1})` }, { opacity: 0, transform: `scale(${V ? 2.6 : 2.4})`, filter: 'blur(8px)' }], 2.95, .5, IN, 'forwards');
+  anim(dl, [{ transform: 'none' }, { transform: 'translateX(-101%)' }], 3.2, 1.1, 'cubic-bezier(.7,0,.25,1)', 'forwards');
+  anim(dr, [{ transform: 'none' }, { transform: 'translateX(101%)' }], 3.2, 1.1, 'cubic-bezier(.7,0,.25,1)', 'forwards');
+  const gap = h('div', 'layer', s1); gap.style.background = 'linear-gradient(90deg,transparent 47%,rgba(255,214,140,.9) 50%,transparent 53%)'; gap.style.mixBlendMode = 'screen';
+  anim(gap, [{ opacity: 0, transform: 'scaleX(.2)' }, { opacity: 1, transform: 'scaleX(1)', offset: .25 }, { opacity: 0, transform: 'scaleX(4)' }], 3.1, 1.0, 'ease-out', 'both');
+  const needle = L.querySelector('[data-k=needle]'), pct = L.querySelector('[data-k=pct]');
+  HOOKS.push(t => { const p = Math.min(1, Math.max(0, (t - .5) / 2.3)), e = 1 - (1 - p) ** 3, lp = e * 100; needle.style.transform = `rotate(${-70 + lp * 1.4}deg)`; pct.textContent = 1 + Math.round(lp / 100 * 39); });
+
+  /* ---------- 2. Сайт открыт: браузер с главной (3.4–8.2) ---------- */
+  const s2 = h('div', 'sc', stage); s2.style.zIndex = 10;
+  title(s2, { eb: 'Mile High Club', lines: ['Двери', 'открыты'], ac: 'сайт отеля уже работает', at: 3.6, out: 7.4 });
+  const bw = V ? 960 : 900, br = h('div', 'comp browser', s2, `<div class="bar"><i></i><i></i><i></i><div class="url">🔒 Mile High Club · Отель над Лос‑Сантосом</div></div><img src="/promo/assets/desk-home.webp">`);
+  Object.assign(br.style, { width: bw + 'px', left: (V ? (W - bw) / 2 : 930) + 'px', top: (V ? 760 : 250) + 'px' });
+  anim(br, [{ opacity: 0, transform: 'translateY(380px) rotateX(38deg) rotateY(-14deg) scale(.86)' }, { opacity: 1, transform: 'translateY(0) rotateX(10deg) rotateY(-12deg) scale(1)' }], 3.5, 1.6);
+  anim(br, [{ transform: 'translateY(0) rotateX(10deg) rotateY(-12deg) scale(1)' }, { transform: 'translateY(-20px) rotateX(4deg) rotateY(-4deg) scale(1.04)' }], 5.1, 2.0, INOUT, 'forwards');
+  // нырок в экран: браузер наезжает на камеру и растворяется — из него появляется табло
+  anim(br, [{ transform: 'translateY(-20px) rotateX(4deg) rotateY(-4deg) scale(1.04)', opacity: 1, filter: 'blur(0)' }, { transform: `translate(${V ? 0 : -300}px,${V ? -200 : 40}px) rotateX(0) rotateY(0) scale(3.2)`, opacity: 0, filter: 'blur(18px)' }], 7.3, .9, IN, 'forwards');
+  const sh = h('div', 'shine', br); anim(sh, [{ backgroundPosition: '150% 0' }, { backgroundPosition: '-50% 0' }], 4.9, 1.4, INOUT);
+  // живые чипы, «вылетающие» из страницы
+  const chips = [['36/36', 'свободно сейчас'], ['Sky Pool', 'бассейн · 38 этаж'], ['Le Ciel', 'ресторан · 30 этаж']];
+  chips.forEach(([a, b], i) => {
+    const c = h('div', 'comp glass', s2, `<div style="padding:22px 28px;font:800 30px Unbounded;color:${i ? '#F9EDC7' : '#F7B50A'}">${a}<div style="font:500 19px Onest;color:#B3A792;margin-top:8px">${b}</div></div>`);
+    const pos = V ? [[84, 1420], [640, 650], [600, 1440]][i] : [[860, 760], [1560, 150], [1560, 780]][i];
+    Object.assign(c.style, { left: pos[0] + 'px', top: pos[1] + 'px', borderRadius: '24px' });
+    anim(c, [{ opacity: 0, transform: 'translateZ(-200px) translateY(60px) scale(.8)' }, { opacity: 1, transform: 'translateZ(120px) translateY(0) scale(1)' }], 4.6 + i * .18, 1.0);
+    anim(c, [{ transform: 'translateZ(120px) translateY(0)' }, { transform: 'translateZ(120px) translateY(-26px)' }], 5.6 + i * .18, 1.7, INOUT, 'forwards');
+    anim(c, [{ opacity: 1, filter: 'blur(0)' }, { opacity: 0, filter: 'blur(14px)', transform: 'translateZ(400px) translateY(-26px) scale(1.4)' }], 7.2 + i * .05, .6, IN, 'forwards');
+  });
+
+  /* ---------- 3. Табло отеля: строки перещёлкиваются (7.8–12.4) ---------- */
+  const s3 = h('div', 'sc', stage); s3.style.zIndex = 11;
+  title(s3, { eb: 'Табло отеля', lines: ['Всё, что', 'открыто'], ac: 'обновляется вживую', at: 8.0, out: 11.6 });
+  const fbS = V ? .82 : .86, fb = comp(s3, CMP.fboard, { x: V ? (W - 1248 * fbS) / 2 : 1880 - 1248 * fbS, y: V ? 820 : 300, w: 1248 });
+  fb.style.transform = `scale(${fbS})`;
+  anim(fb, [{ opacity: 0, transform: `scale(${fbS * .6}) translateZ(-400px)`, filter: 'blur(16px)' }, { opacity: 1, transform: `scale(${fbS})`, filter: 'blur(0)' }], 7.6, 1.1);
+  [...fb.querySelectorAll('.fb-row')].forEach((r, i) => {
+    r.style.transformOrigin = '50% 0'; anim(r, [{ opacity: 0, transform: 'rotateX(-80deg)' }, { opacity: 1, transform: 'none' }], 8.1 + i * .12, .8);
+    [...r.querySelectorAll('.fl')].forEach((f, j) => anim(f, [{ transform: 'rotateX(-180deg)', filter: 'brightness(2)' }, { transform: 'rotateX(0)', filter: 'brightness(1)' }], 8.35 + i * .12 + j * .05, .45, 'cubic-bezier(.3,1.4,.5,1)'));
+    anim(r, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'rotateX(80deg)' }], 11.7 + i * .05, .45, IN, 'forwards');
+  });
+  anim(fb, [{ transform: `scale(${fbS})` }, { transform: `scale(${fbS * 1.03}) translateY(-10px)` }], 8.7, 3, INOUT, 'forwards');
+  anim(fb, [{ opacity: 1 }, { opacity: 0 }], 12.0, .3, 'linear', 'forwards');
+
+  /* ---------- 4. Номера: лифт, этаж, номер, типы (12.0–19.0) ---------- */
+  const s4 = h('div', 'sc', stage); s4.style.zIndex = 12;
+  title(s4, { eb: 'Номера · 20–26 этаж', lines: ['Выбери', 'этаж', 'и номер'], ac: 'окна горят прямо на башне', at: 12.2, out: 18.3 });
+  const lk = V ? 1.9 : 1.3, lx = V ? (W - 400 * 1.9) / 2 : 1080, ly = V ? 760 : 150;
+  const lp0 = comp(s4, CMP.liftp0, { x: lx, y: ly, w: 400 }), lp1 = comp(s4, CMP.liftp23, { x: lx, y: ly, w: 400 });
+  [lp0, lp1].forEach(e => e.style.transform = `scale(${lk})`);
+  anim(lp0, [{ opacity: 0, transform: `scale(${lk}) translateY(120px) rotateX(55deg)` }, { opacity: 1, transform: `scale(${lk}) translateY(0) rotateX(0)` }], 12.1, 1.1);
+  anim(lp0, [{ opacity: 1 }, { opacity: 0 }], 14.15, .25, 'linear', 'forwards');
+  anim(lp1, [{ opacity: 0 }, { opacity: 0 }], 0, 14.15, 'linear', 'both');
+  anim(lp1, [{ opacity: 0 }, { opacity: 1 }], 14.15, .25, 'linear', 'forwards');
+  const b23b = lp1.querySelector('button[data-f="23"]'); if (b23b) anim(b23b, [{ boxShadow: '0 0 0 0 rgba(247,181,10,.8)' }, { boxShadow: '0 0 0 22px rgba(247,181,10,0)' }], 14.15, .8, 'ease-out', 'forwards');
+  [lp0, lp1].forEach(e => anim(e, [{ opacity: 1, transform: `scale(${lk})`, filter: 'blur(0)' }, { opacity: 0, transform: `scale(${lk}) translateX(-300px) rotateY(25deg)`, filter: 'blur(14px)' }], 15.6, .6, IN, 'forwards'));
+  // курсор нажимает «23»
+  const b23 = lp0.querySelector('button[data-f="23"]');
+  const bx = lx + (b23.offsetLeft + b23.offsetWidth / 2) * lk, by = ly + (b23.offsetTop + b23.offsetHeight / 2) * lk;
+  cursorAt(s4, [[13.2, bx + 300, by + 260, 1], [13.95, bx - 6, by - 6, 1], [14.05, bx - 6, by - 6, .85], [14.2, bx - 6, by - 6, 1], [14.6, bx + 60, by + 120, 1], [14.9, bx + 60, by + 120, 1]]).style.opacity = 1;
+  const cur4 = s4.lastChild; anim(cur4, [{ opacity: 0 }, { opacity: 1 }], 13.2, .2); anim(cur4, [{ opacity: 1 }, { opacity: 0 }], 14.7, .25, 'linear', 'forwards');
+  ripple(s4, bx, by, 14.05);
+  // карточки типов номеров — веером справа (в вертикали — ниже лифта)
+  const typesDiv = document.createElement('div'); typesDiv.innerHTML = CMP.types; const tbtn = id => typesDiv.querySelector(`button[data-t="${id}"]`).outerHTML;
+  ['dlx', 'ste', 'ph'].forEach((id, i) => {
+    const k = V ? 1.25 : 1.22, x = V ? 70 + i * 318 : 930 + i * 315, y = V ? 900 : 250;
+    const c = comp(s4, tbtn(id), { x, y, w: 240 }); c.style.transform = `scale(${k})`;
+    const rot = (i - 1) * 3;
+    anim(c, [{ opacity: 0, transform: `translateX(700px) translateY(80px) rotate(${rot * 4}deg) rotateY(-40deg) scale(${k * .9})` }, { opacity: 1, transform: `translateY(0) rotate(${rot}deg) scale(${k})` }], 15.75 + i * .14, 1.1);
+    anim(c, [{ transform: `translateY(0) rotate(${rot}deg) scale(${k})` }, { transform: `translateY(-20px) rotate(${rot * .5}deg) scale(${k})` }], 16.85 + i * .14, 1.3, INOUT, 'forwards');
+    anim(c, [{ opacity: 1, filter: 'blur(0)' }, { opacity: 0, filter: 'blur(12px)', transform: `translateX(${V ? -900 : -1300}px) rotate(${rot}deg) rotateY(30deg) scale(${k})` }], 18.15 + i * .08, .7, IN, 'forwards');
+  });
+  // золотая черта этажа, проезжающая вверх — «лифт едет»
+  const fl = h('div', 'floorline', s4); Object.assign(fl.style, { left: '0', width: W + 'px', top: H * .82 + 'px' });
+  anim(fl, [{ opacity: 0, transform: 'translateY(0)' }, { opacity: 1, offset: .2 }, { opacity: 0, transform: `translateY(${-H * .7}px)` }], 14.1, 1.0, INOUT, 'both');
+
+  /* ---------- 5. Выше 20-го этажа: лента площадок (18.6–24.2) ---------- */
+  const s5 = h('div', 'sc', stage); s5.style.zIndex = 13;
+  const items = [
+    ['venue', 'Отдых · 38 этаж', ['Sky Pool'], 'диджей у воды до 18:00', 407],
+    ['cloche', 'Ресторан · 30 этаж', ['Le Ciel'], 'ужин прямо в номер', 1248],
+    ['cinfo', 'Сигарный клуб · 31 этаж', ['Хьюмидор'], 'девять сигар дома отеля', 492],
+    ['issue', 'Mile High Journal', ['Журнал'], 'первый выпуск — «Высота»', 237]
+  ];
+  const step = 1.45, t5 = 18.7;
+  items.forEach(([k, eb, lines, ac, w], i) => {
+    const at = t5 + i * step;
+    title(s5, { eb, lines, ac, at: at + .05, out: at + step - .42, acAt: .12, acDur: .55 });
+    const scl = { venue: V ? 2.05 : 1.35, cloche: V ? .8 : .74, cinfo: V ? 1.75 : 1.12, issue: V ? 2.6 : 1.7 }[k];
+    const html = k === 'cloche' ? `<div style="display:grid;gap:18px">${CMP.cloche}${CMP.menu}</div>` : CMP[k];
+    const cx = V ? W / 2 : 1340, cy = V ? 1290 : 560;
+    const c = comp(s5, html, { x: 0, y: 0, w });
+    c.style.left = (cx - w * scl / 2) + 'px'; c.style.top = (cy - (k === 'cloche' ? 600 : k === 'issue' ? 394 : k === 'cinfo' ? 576 : 502) * scl / 2) + 'px';
+    const base = `scale(${scl})`;
+    anim(c, [{ opacity: 0, transform: `translateX(${V ? 700 : 900}px) rotateY(-35deg) ${base}`, filter: 'blur(10px)' }, { opacity: 1, transform: `translateX(0) rotateY(-8deg) ${base}`, filter: 'blur(0)' }], at - .15, .85);
+    anim(c, [{ transform: `translateX(0) rotateY(-8deg) ${base}` }, { transform: `translateX(-40px) rotateY(4deg) ${base}` }], at + .7, step - .9, 'linear', 'forwards');
+    anim(c, [{ opacity: 1, filter: 'blur(0)' }, { opacity: 0, transform: `translateX(${V ? -800 : -1000}px) rotateY(35deg) ${base}`, filter: 'blur(10px)' }], at + step - .3, .6, IN, 'forwards');
+    const sh5 = h('div', 'shine', c); anim(sh5, [{ backgroundPosition: '150% 0' }, { backgroundPosition: '-50% 0' }], at + .3, .9, INOUT);
+  });
+  // счётчик ленты 01/04
+  const cnt = h('div', '', s5); Object.assign(cnt.style, { position: 'absolute', left: G.mx + 'px', top: (V ? 120 : 120) + 'px', font: '800 24px Unbounded', color: '#B3A792', letterSpacing: '.1em' });
+  anim(cnt, [{ opacity: 0 }, { opacity: 1 }], t5, .4); anim(cnt, [{ opacity: 1 }, { opacity: 0 }], t5 + step * 4 - .3, .3, 'linear', 'forwards');
+  HOOKS.push(t => { const i = Math.min(3, Math.max(0, Math.floor((t - t5 + .2) / step))); cnt.innerHTML = `<span style="color:#F7B50A">0${i + 1}</span> / 04`; });
+  // клош на столе: крышка поднимается, как на сайте
+  const lid = s5.querySelector('.cloche .lid'); if (lid) anim(lid, [{ transform: 'none' }, { transform: 'translateY(-46%) rotate(-8deg)' }], t5 + step + .35, .7, 'cubic-bezier(.3,1.3,.5,1)', 'forwards');
+
+  /* ---------- 6. Заявки: форма и ответ в Discord (24.5–27.8) ---------- */
+  const s6 = h('div', 'sc', stage); s6.style.zIndex = 14;
+  title(s6, { eb: 'Заявки', lines: ['Вопрос?', 'Ответим'], ac: 'в Discord или прямо на сайте', at: 24.6, out: 27.3 });
+  const tk = V ? 1.5 : 1.3, tx = V ? (W - 614 * tk) / 2 : 1000, ty = V ? 760 : 230;
+  const tb = comp(s6, CMP.tbox, { x: tx, y: ty, w: 614 }); tb.style.transform = `scale(${tk})`;
+  anim(tb, [{ opacity: 0, transform: `translateX(900px) rotateY(-30deg) scale(${tk})` }, { opacity: 1, transform: `translateX(0) rotateY(-6deg) scale(${tk})` }], 24.4, .9);
+  anim(tb, [{ opacity: 1, filter: 'blur(0)' }, { opacity: 0, transform: `scale(${tk * .9}) rotateY(-6deg)`, filter: 'blur(14px)' }], 27.2, .6, IN, 'forwards');
+  const inp = tb.querySelector('#tDiscord'), nm = tb.querySelector('#tName');
+  HOOKS.push(t => { const s = 'guest.ls', n = 'Джейк Мерсер'; inp.value = s.slice(0, Math.max(0, Math.floor((t - 25.1) / .07))); nm.value = n.slice(0, Math.max(0, Math.floor((t - 25.8) / .055))); });
+  const dc = h('div', 'dc glass', s6, `<img src="/brand/emblem.png"><div><b>Mile High Club</b><span class="bot">BOT</span><p>Тикет открыт: <em>#тикет-guest</em> — управляющие уже рядом</p></div>`);
+  Object.assign(dc.style, V ? { left: G.mx + 'px', top: '1570px' } : { left: G.mx + 'px', top: '760px' });
+  anim(dc, [{ opacity: 0, transform: 'translateY(80px) scale(.9)' }, { opacity: 1, transform: 'none' }], 26.5, .7, 'cubic-bezier(.3,1.4,.5,1)');
+  anim(dc, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(-40px)', filter: 'blur(10px)' }], 27.25, .5, IN, 'forwards');
+
+  /* ---------- 7. Финал: двери лифта закрываются с логотипом (27.4–30) ---------- */
+  const s7 = h('div', 'sc', stage); s7.style.zIndex = 40;
+  const d7 = document.createElement('div'); d7.innerHTML = CMP.loader; const L7 = d7.querySelector('.loader'); s7.appendChild(L7);
+  L7.querySelector('.ld-in').remove();
+  const [cl, cr] = L7.querySelectorAll('.ld-door');
+  anim(cl, [{ transform: 'translateX(-101%)' }, { transform: 'none' }], 27.2, .85, 'cubic-bezier(.7,0,.25,1)');
+  anim(cr, [{ transform: 'translateX(101%)' }, { transform: 'none' }], 27.2, .85, 'cubic-bezier(.7,0,.25,1)');
+  const fin = h('div', '', s7); Object.assign(fin.style, { position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 30 });
+  const box = h('div', '', fin); Object.assign(box.style, { textAlign: 'center', color: '#F9EDC7' });
+  const lg = h('img', '', box); lg.src = 'img/logo.webp?v=3'; Object.assign(lg.style, { width: (V ? 640 : 560) + 'px', display: 'block', margin: '0 auto', filter: 'drop-shadow(0 30px 60px rgba(0,0,0,.6))' });
+  anim(lg, [{ opacity: 0, transform: 'scale(.86)', filter: 'blur(14px)' }, { opacity: 1, transform: 'scale(1)', filter: 'blur(0) drop-shadow(0 30px 60px rgba(0,0,0,.6))' }], 27.75, .9);
+  const ac7 = h('div', 'ac', box, 'Ночь только начинается'); ac7.style.fontSize = (V ? 76 : 64) + 'px'; ac7.style.marginTop = '10px';
+  anim(ac7, [{ opacity: 0, transform: 'translateY(20px)', filter: 'blur(10px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }], 28.05, .7);
+  const cta = h('div', 'cta', box, 'Сайт уже открыт — бронируй'); anim(cta, [{ opacity: 0, transform: 'scale(.7)' }, { opacity: 1, transform: 'scale(1)' }], 28.35, .6, 'cubic-bezier(.3,1.5,.5,1)');
+  const gl7 = h('div', 'layer', s7); gl7.style.background = 'linear-gradient(90deg,transparent 47%,rgba(255,214,140,.8) 50%,transparent 53%)'; gl7.style.mixBlendMode = 'screen'; gl7.style.zIndex = 31;
+  anim(gl7, [{ opacity: 0 }, { opacity: 1, offset: .5 }, { opacity: 0, transform: 'scaleX(3)' }], 27.7, .6, 'ease-out', 'both');
+
+  /* ---------- непрерывный лёгкий наезд камеры на каждую сцену ---------- */
+  [[s2, 3.4, 8.2], [s3, 7.6, 12.4], [s4, 12.0, 19.0], [s5, 18.6, 24.7], [s6, 24.3, 27.9]].forEach(([el, a, b]) => { el.style.transformOrigin = '50% 50%'; anim(el, [{ transform: 'scale(1)' }, { transform: 'scale(1.06)' }], a, b - a, 'linear'); });
+  /* ---------- зерно и виньетка поверх всего ---------- */
+  const top = h('div', 'layer', stage); top.style.zIndex = 99; h('div', '', top).id = 'vig'; const gr = h('div', '', top); gr.id = 'grain';
+  HOOKS.push(t => { const f = Math.floor(t * FPS); gr.style.transform = `translate(${(f * 37) % 120 - 60}px,${(f * 53) % 120 - 60}px)`; });
+  const fade = h('div', 'layer', stage); fade.style.zIndex = 100; fade.style.background = '#000';
+  anim(fade, [{ opacity: 1 }, { opacity: 0 }], 0, .35, 'linear'); anim(fade, [{ opacity: 0 }, { opacity: 1 }], DUR - .4, .4, 'linear', 'forwards');
+}
+
+function seek(t) {
+  const ms = t * 1000;
+  for (const a of document.getAnimations()) { if (window.CSSTransition && a instanceof CSSTransition) { a.finish(); continue; } a.pause(); a.currentTime = a.effect?.getTiming?.().iterations === Infinity ? ms % 1e7 : ms; }
+  HOOKS.forEach(f => f(t));
+}
+let built = null;
+const ready = () => built ||= (async () => { await build(); await document.fonts.ready; await Promise.all([...document.images].map(i => i.decode().catch(() => {}))); seek(0); })();
+
+// звуковые события (promo/ad4_sfx.py — тот же набор звуков)
+const CUES = [
+  { t: .15, type: 'hum', dur: 2.8 }, ...Array.from({ length: 12 }, (_, i) => ({ t: .55 + i * .19, type: 'tick', pitch: 1 + i * .02 })), { t: 2.9, type: 'ding' },
+  { t: 3.15, type: 'whoosh', dur: 1.1 }, { t: 3.2, type: 'boom' }, { t: 3.6, type: 'swish' }, { t: 3.75, type: 'air', dur: 1.2 },
+  { t: 4.6, type: 'glass', pitch: 1 }, { t: 4.78, type: 'glass', pitch: 1.12 }, { t: 4.96, type: 'glass', pitch: 1.24 }, { t: 4.9, type: 'shimmer' },
+  { t: 7.2, type: 'riser', dur: .55 }, { t: 7.7, type: 'whoosh', dur: .7, up: true }, { t: 8.0, type: 'swish' },
+  ...Array.from({ length: 9 }, (_, i) => ({ t: 8.15 + i * .12, type: 'tick', pitch: 1.2 + (i % 3) * .1 })),
+  { t: 11.7, type: 'whoosh', dur: .6 }, { t: 12.1, type: 'glass', pitch: .9 }, { t: 12.25, type: 'swish' },
+  { t: 14.05, type: 'click' }, { t: 14.08, type: 'button' }, { t: 14.15, type: 'ding' }, { t: 14.2, type: 'whoosh', dur: .9, up: true },
+  { t: 15.6, type: 'whoosh', dur: .6 }, { t: 15.75, type: 'glass', pitch: 1 }, { t: 15.89, type: 'glass', pitch: 1.1 }, { t: 16.03, type: 'glass', pitch: 1.2 },
+  { t: 18.1, type: 'whoosh', dur: .7 }, ...[0, 1, 2, 3].map(i => ({ t: 18.6 + i * 1.45, type: 'swish' })), ...[0, 1, 2, 3].map(i => ({ t: 18.75 + i * 1.45, type: 'select' })),
+  { t: 20.55, type: 'glass', pitch: .8 }, { t: 24.4, type: 'whoosh', dur: .7 }, { t: 24.6, type: 'swish' },
+  ...Array.from({ length: 8 }, (_, i) => ({ t: 25.1 + i * .07, type: 'hover' })), ...Array.from({ length: 12 }, (_, i) => ({ t: 25.8 + i * .055, type: 'hover' })),
+  { t: 26.5, type: 'notify' }, { t: 27.2, type: 'whoosh', dur: .9 }, { t: 27.9, type: 'boom' }, { t: 27.75, type: 'shimmer' }, { t: 28.35, type: 'chime' }
+].map(c => ({ ...c, t: +c.t.toFixed(3) }));
+window.AD = { W, H, FPS, DUR, CUES, ready, seek };
+if (!Q.has('still')) ready().then(() => { const st = performance.now(); const loop = () => { seek(((performance.now() - st) / 1000) % DUR); requestAnimationFrame(loop); }; loop(); });
+</script>
+</body>
+</html>
