@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
 const ROOT = path.resolve(__dirname, '..'), out = path.resolve(process.argv[2] || 'promo-out');
 const arg = k => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.woff2': 'font/woff2', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.woff2': 'font/woff2', '.webp': 'image/webp', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json' };
 const srv = http.createServer((req, res) => {
   const p = path.join(ROOT, decodeURIComponent(new URL(req.url, 'http://x').pathname));
   if (!p.startsWith(ROOT) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.writeHead(404); return res.end(); }
@@ -13,12 +13,12 @@ const srv = http.createServer((req, res) => {
 });
 srv.listen(0, async () => {
   const port = srv.address().port; fs.mkdirSync(out, { recursive: true });
-  const pageName = arg('--page') || 'ad.html', vertical = /nostalgia|ad2/.test(pageName);
+  const pageName = arg('--page') || 'ad.html', vertical = /nostalgia|ad2\.|v=1/.test(pageName);
     // флаги SwiftShader нужны только 3D-ролику: 2D-холст с ними рисуется в разы медленнее
-  const b = await chromium.launch(/nostalgia/.test(pageName) ? { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] } : {});
+  const b = await chromium.launch(/nostalgia|ad4/.test(pageName) ? { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] } : {});
   const page = await b.newPage({ viewport: vertical ? { width: 540, height: 960 } : { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   const errs = []; page.on('pageerror', e => errs.push(e.message)); page.on('console', m => m.type() === 'error' && errs.push(m.text()));
-  await page.goto(`http://localhost:${port}/promo/${pageName}?still=1`); await page.evaluate(() => window.AD.ready());
+  await page.goto(`http://localhost:${port}/promo/${pageName}${pageName.includes('?') ? '&' : '?'}still=1`); await page.evaluate(() => window.AD.ready());
   const meta = await page.evaluate(() => ({ FPS: AD.FPS, DUR: AD.DUR, BPM: AD.BPM, CUES: AD.CUES, SHOTS: AD.SHOTS }));
   fs.writeFileSync(path.join(out, 'cues.json'), JSON.stringify(meta, null, 1));
   const grab = async (frame, name) => {
