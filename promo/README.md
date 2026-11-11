@@ -83,3 +83,30 @@ ffmpeg -framerate 30 -i promo-out/a2/f%04d.png -i promo-out/a2/sfx.wav -c:v libx
 ```
 
 Горизонтальная версия 16:9 (1920×1080): тот же сценарий, тайминги и звук, другая раскладка сцен. Рендер: `node promo/render.cjs promo-out/a2w --page ad2-wide.html`.
+
+---
+
+# Ролик v3 (16:9, ~38 с, с голосом за кадром)
+
+Светлое продуктовое промо по референсу:
+- слова проявляются из размытия строго в момент, когда их произносит голос;
+- вокруг «хаоса» выпрыгивают эмодзи;
+- вылетают карточки номеров, ужина и вечеринки;
+- курсор нажимает «+»;
+- настоящие экраны сайта (последняя версия) показаны в 3D-наклоне;
+- слово «первым» выделяется, как текст в редакторе;
+- иконки отеля летают по орбитам, в финале логотип и слоган сайта «Ночь только начинается».
+
+Голос синтезирован: Piper, женский голос `ru_RU-irina-medium`. У набора данных этого голоса лицензия не указана.
+
+```bash
+pip install piper-tts                                     # и скачать ru_RU-irina-medium.onnx(.json) из rhasspy/piper-voices
+python3 promo/vo.py ru_RU-irina-medium.onnx out/vo        # реплики, vo.wav, timeline.json
+cp out/vo/timeline.json promo/assets/ad3-timeline.json    # анимация читает тайминги отсюда
+node promo/render.cjs out/a3 --page ad3.html              # 1140 кадров; можно делить --from/--to
+python3 promo/ad3_audio.py out/a3/cues.json out/vo out/a3audio   # music, sfx, voice, mix
+ffmpeg -framerate 30 -i out/a3/f%04d.png -i out/a3audio/mix.wav -c:v libx264 -crf 17 -pix_fmt yuv420p -c:a aac -b:a 256k -shortest mhc-promo-v3.mp4
+```
+
+Тексты реплик и паузы задаются в `promo/vo.py`, экранные надписи и сцены — в `promo/ad3.html`.
+

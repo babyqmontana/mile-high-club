@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Mile High Club — рекламный ролик v3 (с голосом)</title>
+<style>
+  @font-face{font-family:"Unbounded";font-weight:800;src:url(fonts/unbounded-cyrillic-800-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Unbounded";font-weight:800;src:url(fonts/unbounded-latin-800-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Onest";font-weight:400;src:url(fonts/onest-cyrillic-400-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Onest";font-weight:400;src:url(fonts/onest-latin-400-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Onest";font-weight:700;src:url(fonts/onest-cyrillic-700-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Onest";font-weight:700;src:url(fonts/onest-latin-700-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  @font-face{font-family:"Cormorant Garamond";font-style:italic;font-weight:600;src:url(fonts/cormorant-garamond-cyrillic-600-italic.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Cormorant Garamond";font-style:italic;font-weight:600;src:url(fonts/cormorant-garamond-latin-600-italic.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+  html,body{margin:0;background:#FBF7F2;overflow:hidden}
+  canvas{display:block;width:100vw;height:auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// Ролик v3: светлое продуктовое промо с женским голосом за кадром. Слова проявляются из размытия
+// ровно тогда, когда их произносит голос (тайминги — assets/ad3-timeline.json, его пишет promo/vo.py).
+// Экраны — настоящий сайт Mile High Club последней версии. Все цифры — из данных сайта.
+const W = 1920, H = 1080, FPS = 30;
+let DUR = 38, TL = null, L = {};
+const C = { bg: '#FBF7F2', ink: '#1d1013', mut: '#7d6b62', wine: '#7A1E26', pink: '#E0136F', gold: '#E2A400', card: '#ffffff', line: 'rgba(29,16,19,.08)' };
+const BODY = 'Onest', DISP = 'Unbounded', SERIF = 'Cormorant Garamond';
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const acc = document.createElement('canvas'); acc.width = W; acc.height = H; const actx = acc.getContext('2d');
+const IMG = {}; const load = (k, src) => { const i = new Image(); i.src = src; IMG[k] = i; return i.decode().catch(() => {}); };
+
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, x) => a + (b - a) * x;
+const eo3 = x => 1 - (1 - x) ** 3, eo5 = x => 1 - (1 - x) ** 5, ein = x => x * x * x;
+const eio = x => x < .5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+const back = (x, s = 1.8) => x <= 0 ? 0 : 1 + (s + 1) * (x - 1) ** 3 + s * (x - 1) ** 2;
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const TAU = Math.PI * 2;
+// время слова i реплики key (по голосу); off — небольшое опережение, чтобы слово появлялось вместе со звуком
+const wt = (key, i, off = -.06) => (L[key].words[Math.min(i, L[key].words.length - 1)].t + off);
+
+/* ---------- рисование ---------- */
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function font(size, w = 700, fam = BODY, style = '') { ctx.font = `${style} ${w} ${size}px "${fam}"`; }
+function tw(s, size, w = 700, fam = BODY, style = '') { font(size, w, fam, style); return ctx.measureText(s).width; }
+function glow(x, y, r, rgb, a) { if (a <= 0) return; const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); }
+function gradFill(x0, x1) { const g = ctx.createLinearGradient(x0, 0, x1, 0); g.addColorStop(0, C.pink); g.addColorStop(.55, '#B0123F'); g.addColorStop(1, C.wine); return g; }
+// строка слов: каждое слово проявляется из размытия в свой момент; exit — общее исчезновение строки
+// tokens: [текст, время, {accent, size, fam, style, w}]
+function wordsLine(tokens, cx, cy, t, { size = 100, exit = null, exitDir = -1, gap = .28, maxW = W - 220 } = {}) {
+  let ws = tokens.map(([s, , o = {}]) => tw(s, o.size || size, o.w || 700, o.fam || BODY, o.style || ''));
+  let sp = size * gap, total = ws.reduce((a, b) => a + b, 0) + sp * (tokens.length - 1);
+  // длинная строка ужимается по ширине кадра
+  const fit = Math.min(1, maxW / total); if (fit < 1) { ws = ws.map(v => v * fit); sp *= fit; total *= fit; }
+  let x = cx - total / 2; const pos = [];
+  const ex = exit ? eio(prog(t, exit, exit + .45)) : 0;
+  tokens.forEach(([s, at, o = {}], i) => {
+    const p = eo3(prog(t, at, at + .42)); pos.push([x, ws[i]]);
+    if (p > 0 && ex < 1) {
+      const sz = (o.size || size) * fit, blur = (1 - p) * 16 + ex * 18;
+      ctx.save(); ctx.globalAlpha *= p * (1 - ex); if (blur > .3) ctx.filter = `blur(${blur.toFixed(1)}px)`;
+      font(sz, o.w || 700, o.fam || BODY, o.style || ''); ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+      ctx.fillStyle = o.accent ? gradFill(x, x + ws[i]) : (o.color || C.ink);
+      ctx.fillText(s, x, cy + 26 * (1 - p) + exitDir * 40 * ex); ctx.restore();
+    }
+    x += ws[i] + sp;
+  });
+  return pos;
+}
+function card(x, y, w, h, a, draw, rot = 0) {
+  if (a <= 0) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(x + w / 2, y + h / 2); ctx.rotate(rot); ctx.translate(-w / 2, -h / 2);
+  ctx.shadowColor = 'rgba(122,30,38,.16)'; ctx.shadowBlur = 50; ctx.shadowOffsetY = 18; rr(0, 0, w, h, 22); ctx.fillStyle = C.card; ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.lineWidth = 1.5; ctx.strokeStyle = C.line; ctx.stroke(); draw(w, h); ctx.restore();
+}
+function txt(s, x, y, size, color, o = {}) { font(size, o.w || 700, o.fam || BODY, o.style || ''); ctx.fillStyle = color; ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'alphabetic'; ctx.fillText(s, x, y); }
+function pill(x, y, label, bg, fg, size = 20, h = 40) { const w = tw(label, size) + 30; rr(x, y, w, h, h / 2); ctx.fillStyle = bg; ctx.fill(); txt(label, x + w / 2, y + h / 2 + 1, size, fg, { align: 'center', base: 'middle' }); return w; }
+function emoji(e, x, y, size, a = 1, rot = 0) { if (a <= 0) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate(rot); ctx.font = `${size}px "Noto Color Emoji"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(e, 0, 0); ctx.restore(); }
+function cursor(x, y, press = 0, a = 1) {
+  if (a <= 0) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.scale(1 - .15 * press, 1 - .15 * press);
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 44); ctx.lineTo(11, 33); ctx.lineTo(19, 51); ctx.lineTo(27, 47); ctx.lineTo(19, 30); ctx.lineTo(34, 30); ctx.closePath();
+  ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 4; ctx.fillStyle = '#fff'; ctx.fill(); ctx.shadowColor = 'transparent'; ctx.lineWidth = 3; ctx.strokeStyle = C.ink; ctx.stroke(); ctx.restore();
+}
+function emblem(x, y, r, a = 1) { const i = IMG.emblem; if (!i?.complete || a <= 0) return; ctx.save(); ctx.globalAlpha *= a; ctx.drawImage(i, x - r, y - r, r * 2, r * 2); ctx.restore(); }
+// экран сайта в 3D-наклоне: рисуем полосками с перспективным сужением кверху
+function screen(img, cx, cy, w, { tilt = .25, rot = 0, a = 1, glowA = 1 } = {}) {
+  if (!img?.complete || a <= 0) return; const h = w * img.height / img.width;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(cx, cy); ctx.rotate(rot);
+  // радужный ореол как у референса, в палитре отеля
+  ctx.save(); ctx.filter = 'blur(40px)'; ctx.globalAlpha *= .55 * glowA; const g = ctx.createLinearGradient(-w / 2, 0, w / 2, 0); g.addColorStop(0, C.pink); g.addColorStop(.5, '#F7B50A'); g.addColorStop(1, '#9b5cff');
+  ctx.fillStyle = g; rr(-w / 2 * .96, -h / 2 + 30, w * .96, h * .95, 40); ctx.fill(); ctx.restore();
+  const n = 90, topK = 1 - tilt * .42, hk = 1 - tilt * .3, H2 = h * hk;
+  for (let i = 0; i < n; i++) {
+    const v0 = i / n, v1 = (i + 1) / n, k0 = lerp(topK, 1, v0), k1 = lerp(topK, 1, v1), k = (k0 + k1) / 2;
+    const yy = -H2 / 2 + H2 * (v0 * v0 * tilt * .5 + v0 * (1 - tilt * .5)), yy1 = -H2 / 2 + H2 * (v1 * v1 * tilt * .5 + v1 * (1 - tilt * .5));
+    ctx.drawImage(img, 0, img.height * v0, img.width, img.height / n + 1, -w * k / 2, yy, w * k, yy1 - yy + 1);
+  }
+  ctx.restore();
+}
+
+/* ---------- фон: слоновая кость, мягкие цветные пятна дрейфуют ---------- */
+function backdrop(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const blobs = [[.18, .25, '240,23,122', .07], [.82, .3, '247,181,10', .09], [.55, .85, '122,30,38', .05], [.85, .8, '155,92,255', .05]];
+  blobs.forEach(([x, y, c, a], i) => glow(W * x + 90 * Math.sin(t * .3 + i * 2), H * y + 60 * Math.cos(t * .25 + i), 700, c, a));
+}
+
+/* ================= сцены ================= */
+// 1. «Вечер в Лос‑Сантосе. Сплошной хаос.» — хаос в розовом свечении, вокруг выпрыгивают эмодзи
+const CHAOS = ['🍸', '🚕', '🎲', '💸', '🎉', '🚨', '🌴', '📱'];
+function sChaos(t) {
+  const l = L.chaos, x3 = wt('chaos', 3);
+  wordsLine([['Вечер', wt('chaos', 0)], ['в', wt('chaos', 1)], ['Лос‑Сантосе', wt('chaos', 2)]], W / 2, H / 2 + 30, t, { exit: x3 - .15 });
+  const hx = wt('chaos', 4), ex = eio(prog(t, L.what.start - .45, L.what.start - .05));
+  if (t > x3 - .1 && ex < 1) {
+    // «Сплошной» мелко сверху, «хаос.» крупно в розовом свечении, с дрожью
+    ctx.save(); ctx.globalAlpha = 1 - ex; ctx.filter = ex > 0 ? `blur(${(ex * 16).toFixed(1)}px)` : 'none';
+    wordsLine([['Сплошной', x3, { size: 54, color: C.mut }]], W / 2, H / 2 - 70, t);
+    const p = back(prog(t, hx, hx + .4), 2.4), sh = t > hx + .3 ? Math.sin(t * 40) * 3 * (1 - prog(t, hx + .3, hx + 1.2)) : 0;
+    if (p > 0) {
+      glow(W / 2, H / 2 + 20, 360, '240,23,122', .25 * clamp(p) + .05 * Math.sin(t * 6));
+      ctx.save(); ctx.translate(W / 2 + sh, H / 2 + 60); ctx.scale(p, p); ctx.rotate(sh * .004);
+      const w = tw('хаос.', 170, 800, DISP); font(170, 800, DISP); ctx.fillStyle = gradFill(-w / 2, w / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText('хаос.', 0, 0); ctx.restore();
+      CHAOS.forEach((e, i) => { const at = hx + .08 + i * .07, q = back(prog(t, at, at + .35), 2.6); const ang = -2.6 + i * .78, R = 320 + 40 * hash(i);
+        emoji(e, W / 2 + Math.cos(ang) * R * clamp(q) + Math.sin(t * 3 + i) * 8, H / 2 + Math.sin(ang) * R * .58 * clamp(q), 66, clamp(q * 2), Math.sin(t * 4 + i) * .25); });
+    }
+    ctx.restore();
+  }
+}
+// 2. «А что, если всё может быть проще?»
+function sWhat(t) {
+  const w = i => wt('what', i), toks = [['А', w(0)], ['что,', w(1)], ['если', w(2)], ['всё', w(3)], ['может', w(4)], ['быть', w(5)], ['проще?', w(6), { accent: true }]];
+  wordsLine(toks, W / 2, H / 2 + 30, t, { exit: L.three.start - .35 });
+}
+// 3. «Номера. Ужин. Вечеринки.» и карточки с сайта
+function roomCard(w, h) { txt('ДЕЛЮКС · 22–23 ЭТАЖ', 28, 46, 17, C.mut); txt('$4 000', 26, 112, 56, C.ink, { fam: DISP, w: 800 }); txt('за ночь', 28, 146, 19, C.mut, { w: 400 }); pill(26, h - 62, 'Свободно 12 из 12', 'rgba(226,164,0,.16)', '#8a6200', 17, 36); }
+function cielCard(w, h) { txt('LE CIEL · 30 ЭТАЖ', 28, 46, 17, C.mut); txt('Устрицы Жиллардо', 26, 98, 34, C.ink, { fam: SERIF, style: 'italic', w: 600 }); txt('$180', w - 28, 98, 26, C.wine, { align: 'right' }); txt('Турнедо Россини', 26, 146, 34, C.ink, { fam: SERIF, style: 'italic', w: 600 }); txt('$420', w - 28, 146, 26, C.wine, { align: 'right' }); rr(26, h - 64, w - 52, 44, 22); ctx.fillStyle = C.pink; ctx.fill(); txt('Заказать в номер', w / 2, h - 41, 19, '#fff', { align: 'center', base: 'middle' }); }
+function partyCard(w, h) { txt('NIGHT POOL · 40 ЭТАЖ', 28, 46, 17, C.mut); txt('Вечеринка', 26, 102, 40, C.ink); txt('22:00 – 04:00', 26, 146, 24, C.mut, { w: 400 }); pill(w - 100, 24, 'LIVE', 'rgba(224,19,111,.14)', C.pink, 16, 32); emoji('🎉', w - 58, h - 50, 46); }
+const CARDS = [[roomCard, 330, 210, 120, 140, -.05, 0], [cielCard, 380, 250, 1400, 640, .04, 1], [partyCard, 330, 200, 1440, 120, .05, 2]];
+function sThree(t) {
+  const w = i => wt('three', i), gone = eio(prog(t, L.once.start + .05, L.once.start + .6));
+  wordsLine([['Номера.', w(0)], ['Ужин.', w(1), { accent: true }], ['Вечеринки.', w(2)]], W / 2, H / 2 + 30, t, { exit: L.once.start - .3 });
+  CARDS.forEach(([fn, cw, ch, x, y, rot, i]) => {
+    const at = w(i) + .1, p = eo5(prog(t, at, at + .7)); if (p <= 0) return;
+    const fx = lerp(x, W / 2 - cw / 2, gone), fy = lerp(y, H / 2 - ch / 2, gone), dx = (1 - p) * (x < W / 2 ? -260 : 260), fl = Math.sin(t * 1.3 + i) * 8;
+    ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(1 - .6 * gone, 1 - .6 * gone); ctx.translate(-W / 2, -H / 2);
+    card(fx + dx, fy + fl + (1 - p) * 40, cw, ch, p * (1 - gone), fn, rot * (1 - gone)); ctx.restore();
+  });
+}
+// 4. «Всё — в одном месте.» → кнопка «+», курсор нажимает
+function sOnce(t) {
+  const w = i => wt('once', i), end = L.once.end;
+  wordsLine([['Всё', w(0)], ['—', w(0) + .15, { color: C.mut }], ['в', w(1)], ['одном', w(2)], ['месте.', w(3), { accent: true }]], W / 2, H / 2 + 30, t, { exit: end + .05 });
+  const bp = back(prog(t, end + .25, end + .6), 2.2), click = end + .95, press = Math.exp(-(((t - click) / .06) ** 2));
+  if (bp > 0) {
+    const s = clamp(bp) * (1 - .12 * press) * (1 + 10 * ein(prog(t, click + .05, click + .45)));
+    const a = 1 - prog(t, click + .2, click + .45);
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(W / 2, H / 2); ctx.scale(s, s);
+    glow(0, 0, 160, '240,23,122', .25 + .3 * press); ctx.shadowColor = 'rgba(122,30,38,.2)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
+    rr(-52, -52, 104, 104, 30); ctx.fillStyle = '#fff'; ctx.fill(); ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = C.wine; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(20, 0); ctx.moveTo(0, -20); ctx.lineTo(0, 20); ctx.stroke(); ctx.restore();
+    const cp = eo3(prog(t, end + .35, click - .05));
+    cursor(lerp(W / 2 + 260, W / 2 + 10, cp), lerp(H / 2 + 220, H / 2 + 12, cp), press, prog(t, end + .3, end + .45) * (1 - prog(t, click + .2, click + .4)));
+    // волна от нажатия
+    const rp = prog(t, click, click + .5); if (rp > 0 && rp < 1) { ctx.save(); ctx.globalAlpha = 1 - rp; ctx.strokeStyle = C.pink; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(W / 2, H / 2, 60 + 500 * eo3(rp), 0, TAU); ctx.stroke(); ctx.restore(); }
+  }
+}
+// 5. Экраны сайта: башня с номерами, затем Le Ciel; подписи крупно сверху
+function sScreens(t) {
+  const t0 = L.rooms.start - .5, sw = L.dinner.start - .25, out = eio(prog(t, L.first.start - .55, L.first.start - .15));
+  const ent = eo5(prog(t, t0, t0 + 1.1)), sp = eio(prog(t, sw, sw + .8));
+  ctx.save(); ctx.globalAlpha = 1 - out; ctx.translate(0, -60 * out);
+  // задний экран для глубины
+  screen(IMG.journal, W / 2 + 520 - 80 * sp, 700 + 200 * (1 - ent), 900, { tilt: .3, rot: .05, a: .55 * ent, glowA: .4 });
+  screen(IMG.stay, W / 2 - 900 * sp + 60 * (1 - ent), lerp(1000, 650, ent) - 10 * Math.sin(t), 1280 * lerp(.9, 1, ent), { tilt: lerp(.42, .18, ent), rot: lerp(-.08, -.02, ent), a: 1 - sp * .9 });
+  if (sp > 0) screen(IMG.dining, W / 2 + 900 * (1 - sp), 650 - 10 * Math.sin(t), 1280, { tilt: lerp(.42, .18, sp), rot: lerp(.08, -.02, sp), a: sp });
+  // подписи
+  const r = i => wt('rooms', i), d = i => wt('dinner', i);
+  wordsLine([['Номера,', r(0)], ['которые', r(1)], ['светятся', r(2), { accent: true }], ['прямо', r(3)], ['на', r(4)], ['башне.', r(5)]], W / 2, 150, t, { size: 66, exit: sw - .25 });
+  wordsLine([['Ужин', d(0)], ['из', d(1)], ['Le Ciel', d(3), { accent: true }], ['—', d(5) - .1, { color: C.mut }], ['сразу', d(5)], ['в', d(6)], ['номер.', d(7)]], W / 2, 150, t, { size: 66, exit: L.first.start - .5 });
+  ctx.restore();
+}
+// 6. «И вечеринки, о которых узнаёшь первым.» — «первым» выделяется как текст в редакторе
+function sFirst(t) {
+  const f = i => wt('first', i), exit = L.fromto.start - .35;
+  const pos = wordsLine([['И', f(0)], ['вечеринки,', f(1)], ['о', f(2)], ['которых', f(3)], ['узнаёшь', f(4)], ['первым.', f(5), { accent: true }]], W / 2, H / 2 + 30, t, { exit });
+  const sel = eo3(prog(t, f(5) + .35, f(5) + .7)), ex = eio(prog(t, exit, exit + .45));
+  if (sel > 0 && ex < 1) {
+    const [x, w] = pos[5]; ctx.save(); ctx.globalAlpha = 1 - ex;
+    ctx.globalCompositeOperation = 'multiply'; rr(x - 10, H / 2 - 50, (w + 20) * sel, 104, 8); ctx.fillStyle = 'rgba(247,181,10,.45)'; ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = C.gold; ctx.fillRect(x - 12, H / 2 - 56, 4, 116); ctx.beginPath(); ctx.arc(x - 10, H / 2 - 60, 8, 0, TAU); ctx.fill();
+    if (sel > .98) { ctx.fillRect(x + w + 8, H / 2 - 56, 4, 116); ctx.beginPath(); ctx.arc(x + w + 10, H / 2 + 64, 8, 0, TAU); ctx.fill(); }
+    ctx.restore();
+  }
+}
+// 7. «От быстрой брони — до целой ночи над городом.»
+function sFromTo(t) {
+  const f = i => wt('fromto', i), mid = f(3) - .2;
+  wordsLine([['От', f(0)], ['быстрой', f(1)], ['брони', f(2), { accent: true }]], W / 2, H / 2 + 30, t, { exit: mid, size: 100 });
+  wordsLine([['до', f(3)], ['целой', f(4)], ['ночи', f(5), { accent: true }], ['над', f(6)], ['городом.', f(7)]], W / 2, H / 2 + 30, t, { exit: L.roof.start - .75, size: 100 });
+}
+// 8. Орбиты с иконками отеля вокруг верблюда → «Всё под одной крышей.»
+const ORBIT = ['🛎️', '🍸', '🔑', '🏊', '🍽️', '🎶', '📰', '🥂'];
+function sRoof(t) {
+  const t0 = L.roof.start - .8, p = eo5(prog(t, t0, t0 + .8)), shrink = eio(prog(t, L.roof.start + .05, L.roof.start + .6)), rot = t * .6;
+  if (shrink < 1) {
+    ctx.save(); ctx.globalAlpha = p * (1 - shrink);
+    [[420, 0], [300, 1], [190, 2]].forEach(([R0, i]) => {
+      const R = R0 * lerp(.6, 1, p) * (1 - .9 * shrink), a0 = rot * (i % 2 ? -1 : 1) + i;
+      const g = ctx.createConicGradient(a0, W / 2, H / 2); g.addColorStop(0, 'rgba(240,23,122,0)'); g.addColorStop(.35, 'rgba(240,23,122,.9)'); g.addColorStop(.6, 'rgba(247,181,10,.9)'); g.addColorStop(.85, 'rgba(155,92,255,.8)'); g.addColorStop(1, 'rgba(155,92,255,0)');
+      ctx.save(); ctx.strokeStyle = g; ctx.lineWidth = 10 - i * 2; ctx.filter = 'blur(1px)'; ctx.beginPath(); ctx.arc(W / 2, H / 2, R, a0, a0 + 4.6); ctx.stroke(); ctx.filter = 'blur(14px)'; ctx.globalAlpha *= .5; ctx.stroke(); ctx.restore();
+    });
+    ORBIT.forEach((e, i) => { const R = [420, 300, 190][i % 3] * lerp(.6, 1, p) * (1 - .9 * shrink), a = rot * (i % 2 ? -1 : 1) + i * .8 + (i % 3);
+      const x = W / 2 + Math.cos(a) * R, y = H / 2 + Math.sin(a) * R; ctx.save(); ctx.shadowColor = 'rgba(122,30,38,.2)'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(x, y, 42, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore(); emoji(e, x, y + 2, 44); });
+    emboss(W / 2, H / 2, 70 * p * (1 - shrink));
+    ctx.restore();
+  }
+  const r = i => wt('roof', i);
+  if (shrink > 0) glow(W / 2, H / 2, 420, '240,23,122', .18 * shrink * (1 - prog(t, L.logo.start - .5, L.logo.start)));
+  wordsLine([['Всё', r(0)], ['под', r(1)], ['одной', r(2)], ['крышей.', r(3), { accent: true }]], W / 2, H / 2 + 30, t, { exit: L.logo.start - .45, size: 100 });
+}
+function emboss(x, y, r) { if (r <= 1) return; ctx.save(); ctx.shadowColor = 'rgba(122,30,38,.3)'; ctx.shadowBlur = 30; ctx.beginPath(); ctx.arc(x, y, r + 6, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore(); emblem(x, y, r); }
+// 9. Логотип: верблюд, Mile High Club, слоган сайта; в конце остаётся один верблюд и всё гаснет
+function sLogo(t) {
+  const g = i => wt('logo', i), t0 = L.logo.start - .2;
+  const ep = back(prog(t, t0, t0 + .45), 2.2), slide = eio(prog(t, g(0) + .15, g(0) + .7)), fin = eio(prog(t, L.logo.end + .15, L.logo.end + .75));
+  const wm = 'Mile High Club', wmS = 96, wmW = tw(wm, wmS, 800, DISP), R = 92, gw = R * 2 + 40 + wmW;
+  const ex = lerp(W / 2, W / 2 - gw / 2 + R, slide * (1 - fin)), ey = H / 2 - 40 + 40 * fin;
+  if (ep > 0) { glow(ex, ey, 380, '240,23,122', .16 * clamp(ep)); ctx.save(); ctx.translate(ex, ey); ctx.scale(ep * (1 + .25 * fin), ep * (1 + .25 * fin)); emboss(0, 0, R); ctx.restore(); }
+  if (slide > 0 && fin < 1) { const x = ex + R + 40; ctx.save(); ctx.globalAlpha = 1 - fin; ctx.beginPath(); ctx.rect(x - 4, ey - 90, wmW * slide + 8, 180); ctx.clip(); font(wmS, 800, DISP); ctx.fillStyle = gradFill(x, x + wmW); ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(wm, x, ey + 6); ctx.restore(); }
+  ctx.save(); ctx.globalAlpha = 1 - fin;
+  wordsLine([['Отель', g(3)], ['над', g(4)], ['Лос‑Сантосом.', g(5)]], W / 2, ey + 175, t, { size: 46, gap: .25 });
+  wordsLine([['Ночь', g(6)], ['только', g(7)], ['начинается.', g(8), { accent: true }]], W / 2, ey + 270, t, { size: 64, gap: .25 });
+  ctx.restore();
+}
+
+function scene(t) {
+  if (t < L.what.start) sChaos(t);
+  if (t > L.what.start - .2 && t < L.three.start) sWhat(t);
+  if (t > L.three.start - .2 && t < L.once.start + .7) sThree(t);
+  if (t > L.once.start - .2 && t < L.rooms.start - .2) sOnce(t);
+  if (t > L.rooms.start - .6 && t < L.first.start) sScreens(t);
+  if (t > L.first.start - .2 && t < L.fromto.start + .2) sFirst(t);
+  if (t > L.fromto.start - .2 && t < L.roof.start) sFromTo(t);
+  if (t > L.roof.start - .9 && t < L.logo.start) sRoof(t);
+  if (t > L.logo.start - .3) sLogo(t);
+}
+function render(frame, K = 3) {
+  const t0 = frame / FPS; actx.clearRect(0, 0, W, H);
+  for (let k = 0; k < K; k++) {
+    const t = t0 + (k / K) * (.5 / FPS);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.globalCompositeOperation = 'source-over';
+    backdrop(t); scene(Math.min(t, DUR - 1e-3));
+    actx.globalAlpha = 1 / (k + 1); actx.drawImage(cv, 0, 0);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.drawImage(acc, 0, 0);
+  const fade = Math.min(prog(t0, 0, .3), 1 - prog(t0, DUR - .5, DUR)); if (fade < 1) { ctx.fillStyle = `rgba(251,247,242,${1 - fade})`; ctx.fillRect(0, 0, W, H); }
+}
+// звуковые события: появляются вместе с анимацией (см. promo/ad3_audio.py)
+function cues() {
+  const c = [], w = (k, i) => wt(k, i, 0);
+  ['chaos', 'what', 'once', 'rooms', 'dinner', 'first', 'fromto', 'roof'].forEach(k => L[k].words.forEach((_, i) => c.push({ t: w(k, i) - .05, type: 'tick', gain: .25 })));
+  c.push({ t: w('chaos', 4), type: 'pop', gain: 1 }); CHAOS.forEach((_, i) => c.push({ t: w('chaos', 4) + .08 + i * .07, type: 'bubble', pitch: 1 + i * .08 }));
+  c.push({ t: L.what.start - .45, type: 'whoosh', dur: .4 });
+  [0, 1, 2].forEach(i => { c.push({ t: w('three', i) + .1, type: 'swish' }); c.push({ t: w('three', i), type: 'pop', gain: .6 }); });
+  c.push({ t: L.once.start + .05, type: 'whoosh', dur: .5 });
+  c.push({ t: L.once.end + .25, type: 'pop', gain: .7 }, { t: L.once.end + .95, type: 'click' }, { t: L.once.end + .97, type: 'boom' });
+  c.push({ t: L.rooms.start - .5, type: 'whoosh', dur: .9 }, { t: L.dinner.start - .25, type: 'whoosh', dur: .7 }, { t: L.first.start - .5, type: 'whoosh', dur: .4 });
+  c.push({ t: w('first', 5) + .35, type: 'select' });
+  c.push({ t: w('fromto', 3) - .2, type: 'whoosh', dur: .4 });
+  c.push({ t: L.roof.start - .8, type: 'shimmer', dur: 1.2 }, { t: L.roof.start + .05, type: 'whoosh', dur: .5, up: true });
+  c.push({ t: L.logo.start - .2, type: 'chime' }, { t: w('logo', 0) + .15, type: 'swish' }, { t: L.logo.end + .15, type: 'whoosh', dur: .6, up: true });
+  return c.sort((a, b) => a.t - b.t).map(x => ({ ...x, t: +x.t.toFixed(3) }));
+}
+const FACES = ['800 40px "Unbounded"', '400 40px "Onest"', '700 40px "Onest"', 'italic 600 40px "Cormorant Garamond"', '40px "Noto Color Emoji"'];
+const ready = async () => {
+  TL = await (await fetch('assets/ad3-timeline.json')).json(); TL.lines.forEach(l => L[l.key] = l); DUR = TL.duration;
+  window.AD.DUR = DUR; window.AD.CUES = cues();
+  await Promise.all([...FACES.map(f => document.fonts.load(f, 'Абвгд Abc 0123$🍸')), load('emblem', '../brand/emblem.png'),
+    ...['home', 'stay', 'dining', 'cigars', 'journal'].map(k => load(k, `assets/desk-${k}.webp`))]);
+};
+window.AD = { W, H, FPS, DUR, CUES: [], render, ready };
+const q = new URLSearchParams(location.search);
+ready().then(() => {
+  if (q.has('t')) return render(Math.round(+q.get('t') * FPS));
+  if (q.has('still')) return;
+  const st = performance.now(); const loop = () => { render(Math.floor(((performance.now() - st) / 1000 % DUR) * FPS), 1); requestAnimationFrame(loop); }; loop();
+});
+</script>
+</body>
+</html>
