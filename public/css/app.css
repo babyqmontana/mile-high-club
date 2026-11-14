@@ -1006,3 +1006,12 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 @media(max-width:640px){.tower.flat .hud{display:none}.facade{padding-top:1.2rem}}
 .hum.flat .loading{padding:2rem;text-align:center;line-height:1.5}
 .hum .btn[hidden]{display:none}
+
+/* политика конфиденциальности: спокойный текстовый документ */
+.legal{max-width:46rem}
+.legal h2{margin:.3rem 0 .2rem}
+.legal h3{font-size:1.05rem;margin:1.8rem 0 .5rem}
+.legal p,.legal li{line-height:1.6;overflow-wrap:anywhere}
+.legal p{margin:.5rem 0}
+.legal ul{padding-left:1.2rem;margin:.5rem 0;display:grid;gap:.35rem}
+.legal code{font-size:.9em;padding:.05rem .3rem;border-radius:.3rem;background:var(--bg2)}
