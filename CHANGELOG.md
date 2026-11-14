@@ -1,6 +1,6 @@
 # Что сделано
 
-Сводка работы над сайтом и Discord-ботом Mile High Club. Подробности в истории ветки `claude/stage1-audit-research`.
+Сводка работы над сайтом и Discord-ботом Mile High Club. Подробности в истории коммитов.
 
 ## Discord
 
