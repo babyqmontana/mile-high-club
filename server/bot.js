@@ -19,6 +19,8 @@ export async function startBot({ core, store, env, hooks }) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildScheduledEvents, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] , 
     // Кэш discord.js по умолчанию хранит всё подряд. Боту нужны роли, каналы и участники для проверки прав,
     // а сообщения, реакции, эмодзи, голосовые состояния и прочее — нет: держим минимум и регулярно чистим.
+    // по умолчанию бот никого не упоминает массово: текст гостя с @everyone или @роль не разбудит сервер
+    allowedMentions: { parse: ['users'], repliedUser: false },
     makeCache: Options.cacheWithLimits({ ...Options.DefaultMakeCacheSettings, MessageManager: 25, ReactionManager: 0, ReactionUserManager: 0, PresenceManager: 0, VoiceStateManager: 0,
       GuildEmojiManager: 0, GuildStickerManager: 0, GuildInviteManager: 0, GuildBanManager: 0, StageInstanceManager: 0, ThreadMemberManager: 0, AutoModerationRuleManager: 0, ApplicationCommandManager: 0 }),
     sweepers: { ...Options.DefaultSweeperSettings,

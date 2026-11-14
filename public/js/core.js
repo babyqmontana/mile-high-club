@@ -26,7 +26,7 @@ export function weatherNow(s = {}, t = Date.now()) {
 export const ROOM_STATUS = { free: 'Свободен', booked: 'Забронирован', occupied: 'Заселён', cleaning: 'Уборка', repair: 'Ремонт' };
 export const BOOKING_STATUS = { new: 'Новая', confirmed: 'Подтверждена', checkedin: 'Заселён', done: 'Завершена', cancelled: 'Отменена' };
 export const ORDER_STATUS = { new: 'Новый', cooking: 'Готовится', delivering: 'Несём в номер', done: 'Доставлен', cancelled: 'Отменён' };
-export const TICKET_STATUS = { checking: 'Проверка', open: 'Открыто', closed: 'Закрыто' };
+export const TICKET_STATUS = { checking: 'Проверка', opening: 'Открывается', open: 'Открыто', closed: 'Закрыто' };
 export const CIGAR_SHAPES = { robusto: 'Робусто', corona: 'Корона', churchill: 'Черчилль', torpedo: 'Торпедо', belicoso: 'Беликозо', lancero: 'Лансеро', perfecto: 'Перфекто' };
 
 // Что может редактировать каждая роль через общий редактор
@@ -40,11 +40,12 @@ const PUBLIC_SETTINGS = ['deckUrl', 'staffExtras', 'weather', 'theme', 'hotelNam
 
 export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const bad = m => { throw new HttpError(400, m); };
-const need = (user, role) => { if (!user || (ROLES[user.role] ?? 0) < ROLES[role]) throw new HttpError(user ? 403 : 401, user ? 'Недостаточно прав' : 'Нужен вход через Discord'); };
+// неизвестная роль в требовании — это ошибка в коде, а не «можно всем»
+const need = (user, role) => { if (!Object.hasOwn(ROLES, role)) throw new HttpError(403, 'Недостаточно прав'); if (!user || (ROLES[user.role] ?? 0) < ROLES[role]) throw new HttpError(user ? 403 : 401, user ? 'Недостаточно прав' : 'Нужен вход через Discord'); };
 const str = (v, max = 500) => String(v ?? '').trim().slice(0, max);
 const num = (v, d = 0) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
 const uid = (p = '') => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-const code = () => 'MHC-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+const code = () => 'MHC-' + Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, '0');
 
 export function minutesOf(hhmm) { const [h, m] = String(hhmm || '0:0').split(':').map(Number); return ((h || 0) * 60 + (m || 0)) % 1440; }
 export function inSpan(m, a, b) { return a === b ? true : a < b ? m >= a && m < b : m >= a || m < b; }
@@ -96,8 +97,8 @@ export function createCore(store, hooks = {}) {
     };
   }
 
-  const routes = [];
-  const on = (method, pattern, fn) => routes.push({ method, re: new RegExp('^' + pattern.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'), fn });
+  const routes = [], closing = new Set();
+  const on = (method, pattern, fn) => routes.push({ method, generic: pattern.includes(':col'), re: new RegExp('^' + pattern.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'), fn });
 
   /* ---------- публичное ---------- */
   on('GET', '/public', () => publicData());
@@ -116,7 +117,9 @@ export function createCore(store, hooks = {}) {
     let room = str(body.room, 10) || null;
     if (room) { const r = store.get('rooms', room); if (!r || r.type !== t.id || r.status !== 'free') room = null; }
     if (!store.all('rooms').some(r => r.type === t.id && r.status === 'free')) bad(`Свободных номеров «${t.name}» сейчас нет`);
-    const b = { id: uid('b'), code: code(), type: t.id, typeName: t.name, preferredRoom: room, room: null, name, discord, phone: str(body.phone, 20), date, nights, guests: Math.min(12, Math.max(1, Math.round(num(body.guests, 1)))), note: str(body.note, 600), total: t.price * nights, status: 'new', owner: ownerOf(user, guestKey), discordId: user?.id || null, createdAt: Date.now() };
+    // код брони должен быть уникальным: по нему гость и персонал находят бронь
+    let bc = code(); for (let k = 0; k < 20 && store.all('bookings').some(x => x.code === bc); k++) bc = code();
+    const b = { id: uid('b'), code: bc, type: t.id, typeName: t.name, preferredRoom: room, room: null, name, discord, phone: str(body.phone, 20), date, nights, guests: Math.min(12, Math.max(1, Math.round(num(body.guests, 1)))), note: str(body.note, 600), total: t.price * nights, status: 'new', owner: ownerOf(user, guestKey), discordId: user?.id || null, createdAt: Date.now() };
     store.put('bookings', b.id, b); log(`Новая бронь ${b.code}: ${t.name}, ${date}, ${b.name}`, 'booking');
     emit(['bookings', 'log']); call('notify', 'booking', b);
     return { booking: b };
@@ -143,11 +146,16 @@ export function createCore(store, hooks = {}) {
   const myTicket = (id, user, guestKey) => { const t = store.get('tickets', id); if (!t || (!isOwner(t, user, guestKey) && !(user && ROLES[user.role] >= 1))) throw new HttpError(404, 'Обращение не найдено'); return t; };
   on('POST', '/tickets/:id/recheck', async ({ params, user, guestKey }) => { const t = myTicket(params.id, user, guestKey); const m = await call('checkMember', t.discord, t.discordId); return { member: m === null ? null : !!m }; });
   on('POST', '/tickets/:id/mode', async ({ params, body, user, guestKey }) => {
-    const t = myTicket(params.id, user, guestKey); const mode = body.mode === 'discord' ? 'discord' : 'site';
-    t.mode = mode; t.status = 'open'; t.lastAt = Date.now();
+    const t0 = myTicket(params.id, user, guestKey); const mode = body.mode === 'discord' ? 'discord' : 'site';
+    // способ связи выбирается один раз: повтор (двойной клик, повторная отправка) не создаёт второй канал
+    if (t0.status !== 'checking') return { ticket: t0, fallback: false };
+    t0.status = 'opening'; store.put('tickets', t0.id, t0);
     // Канал не создался (бот недоступен или гостя нет на сервере): обращение уходит в чат на сайте, а не теряется
-    let fallback = false;
-    if (t.mode === 'discord') { t.channel = (await call('createTicketChannel', t)) || null; if (!t.channel) { t.mode = 'site'; fallback = true; } }
+    let fallback = false, channel = null;
+    if (mode === 'discord') { channel = (await call('createTicketChannel', t0)) || null; if (!channel) fallback = true; }
+    // пока ждали Discord, тикет мог измениться: берём свежую запись и меняем только своё
+    const t = store.get('tickets', t0.id) || t0;
+    t.mode = channel ? 'discord' : 'site'; t.channel = channel; t.status = 'open'; t.lastAt = Date.now(); if (t0.discordId) t.discordId = t0.discordId;
     if (t.mode === 'site' && !t.messages.length) t.messages.push({ from: 'guest', text: t.text, at: Date.now() });
     store.put('tickets', t.id, t); log(`Обращение от ${t.discord}: ${t.topic} (${t.mode === 'discord' ? 'тикет в Discord' : 'чат на сайте'})`, 'ticket'); emit(['tickets', 'log']);
     call('notify', t.mode === 'discord' ? 'ticket_discord' : 'ticket_site', t);
@@ -176,7 +184,8 @@ export function createCore(store, hooks = {}) {
   on('POST', '/admin/tickets/purge', ({ user }) => { need(user, 'admin'); const list = store.all('tickets').filter(t => t.status === 'closed'); list.forEach(t => store.del('tickets', t.id)); log(`${user.username} удалил закрытые обращения: ${list.length}`, 'danger', user.username); emit(['tickets', 'log']); return { deleted: list.length }; });
   on('DELETE', '/admin/tickets/:id', ({ params, user }) => { need(user, 'admin'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения'); if (t.status !== 'closed') bad('Сначала закройте обращение'); store.del('tickets', t.id); log(`${user.username} удалил обращение ${t.discord}: ${t.topic}`, 'danger', user.username); emit(['tickets', 'log']); return { ok: true }; });
   on('PUT', '/admin/:col/:id', ({ params, body, user }) => {
-    const role = EDITABLE[params.col]; if (!role) bad('Этот раздел так не редактируется'); need(user, role);
+    // только собственные ключи: «constructor», «__proto__» и т.п. не должны проходить как раздел
+    const role = Object.hasOwn(EDITABLE, params.col) && EDITABLE[params.col]; if (!role) bad('Этот раздел так не редактируется'); need(user, role);
     const id = params.id === 'new' ? uid(params.col.slice(0, 2)) : str(params.id, 60);
     const prev = store.get(params.col, id) || {};
     const doc = { ...prev, ...clean(params.col, body || {}), id, updatedAt: Date.now() };
@@ -185,7 +194,7 @@ export function createCore(store, hooks = {}) {
     emit([params.col, 'log']); return { doc };
   });
   on('DELETE', '/admin/:col/:id', ({ params, user }) => {
-    const role = EDITABLE[params.col]; if (!role || params.col === 'settings') bad('Нельзя удалить'); need(user, role);
+    const role = Object.hasOwn(EDITABLE, params.col) && EDITABLE[params.col]; if (!role || params.col === 'settings') bad('Нельзя удалить'); need(user, role);
     const d = store.get(params.col, params.id); if (!d) throw new HttpError(404, 'Не найдено');
     if (params.col === 'types' && store.all('rooms').some(r => r.type === params.id)) bad('Сначала переназначьте номера этого типа');
     store.del(params.col, params.id); log(`${user.username} удалил ${label(params.col)}: ${d.name || d.title || d.id}`, 'edit', user.username); emit([params.col, 'log']); return { ok: true };
@@ -205,7 +214,7 @@ export function createCore(store, hooks = {}) {
     if (!store.get('types', type)) bad('Нет такого типа номера');
     if (newId !== r.id && store.get('rooms', newId)) bad(`Номер ${newId} уже существует`);
     const doc = { ...r, id: newId, type, floor: Math.round(num(body.floor, r.floor)), note: str(body.note ?? r.note, 200) };
-    if (newId !== r.id) store.del('rooms', r.id);
+    if (newId !== r.id) { store.del('rooms', r.id); store.all('bookings').filter(b => b.room === r.id || b.preferredRoom === r.id).forEach(b => store.put('bookings', b.id, { ...b, room: b.room === r.id ? newId : b.room, preferredRoom: b.preferredRoom === r.id ? newId : b.preferredRoom })); emit(['bookings']); }
     store.put('rooms', newId, doc); log(`${user.username} изменил номер ${r.id}${newId !== r.id ? ' → ' + newId : ''}`, 'edit', user.username); roomsChanged(); emit(['log']); return { room: doc };
   });
   on('POST', '/admin/rooms', ({ body, user }) => {
@@ -213,7 +222,8 @@ export function createCore(store, hooks = {}) {
     if (!/^[\w-]{1,10}$/.test(id) || !Number.isFinite(floor)) bad('Укажите номер и этаж'); if (store.get('rooms', id)) bad(`Номер ${id} уже есть`); if (!store.get('types', type)) bad('Выберите тип');
     const r = { id, floor, type, status: 'free', createdAt: Date.now() }; store.put('rooms', id, r); roomsChanged(); emit(['log']); log(`${user.username} добавил номер ${id}`, 'edit', user.username); return { room: r };
   });
-  on('DELETE', '/admin/rooms/:id', ({ params, user }) => { need(user, 'admin'); if (!store.get('rooms', params.id)) throw new HttpError(404, 'Нет номера'); store.del('rooms', params.id); log(`${user.username} удалил номер ${params.id}`, 'edit', user.username); roomsChanged(); emit(['log']); return { ok: true }; });
+  const busy = r => ['booked', 'occupied'].includes(r.status) || store.all('bookings').some(b => b.room === r.id && ['confirmed', 'checkedin'].includes(b.status));
+  on('DELETE', '/admin/rooms/:id', ({ params, user }) => { need(user, 'admin'); const rr = store.get('rooms', params.id); if (!rr) throw new HttpError(404, 'Нет номера'); if (busy(rr)) bad('В номере бронь или гость — сначала завершите или перенесите бронь'); store.del('rooms', params.id); log(`${user.username} удалил номер ${params.id}`, 'edit', user.username); roomsChanged(); emit(['log']); return { ok: true }; });
   on('POST', '/admin/floors', ({ body, user }) => {
     need(user, 'admin'); const floor = Math.round(num(body.floor, NaN)), count = Math.min(40, Math.max(1, Math.round(num(body.count, 1)))), type = str(body.type, 40);
     if (!Number.isFinite(floor) || floor < -5 || floor > 300) bad('Укажите этаж'); if (!store.get('types', type)) bad('Выберите тип номеров');
@@ -221,16 +231,22 @@ export function createCore(store, hooks = {}) {
     for (let i = 0; i < count; i++) { const id = String(start + i); if (store.get('rooms', id)) continue; store.put('rooms', id, { id, floor, type, status: 'free', createdAt: Date.now() }); made.push(id); }
     log(`${user.username} добавил ${made.length} номеров на ${floor} этаже`, 'edit', user.username); roomsChanged(); emit(['log']); return { made };
   });
-  on('DELETE', '/admin/floors/:floor', ({ params, user }) => { need(user, 'admin'); const f = Math.round(num(params.floor, NaN)); const rs = store.all('rooms').filter(r => r.floor === f); rs.forEach(r => store.del('rooms', r.id)); log(`${user.username} удалил ${f} этаж (${rs.length} номеров)`, 'edit', user.username); roomsChanged(); emit(['log']); return { removed: rs.length }; });
+  on('DELETE', '/admin/floors/:floor', ({ params, user }) => { need(user, 'admin'); const f = Math.round(num(params.floor, NaN)); const rs = store.all('rooms').filter(r => r.floor === f); if (rs.some(busy)) bad('На этаже есть брони или гости — сначала завершите их'); rs.forEach(r => store.del('rooms', r.id)); log(`${user.username} удалил ${f} этаж (${rs.length} номеров)`, 'edit', user.username); roomsChanged(); emit(['log']); return { removed: rs.length }; });
 
   // брони
   on('POST', '/admin/bookings/:id/action', async ({ params, body, user }) => {
     need(user, 'mod'); const b = store.get('bookings', params.id); if (!b) throw new HttpError(404, 'Бронь не найдена');
-    const act = str(body.act, 20), setRoom = (id, st, extra = {}) => { const r = store.get('rooms', id); if (!r) return; Object.assign(r, { status: st, updatedAt: Date.now() }, extra); if (st === 'free' || st === 'cleaning') Object.assign(r, { guest: null, discord: null, bookingId: null }); store.put('rooms', id, r); };
-    if (act === 'confirm') { const room = str(body.room, 10); const r = store.get('rooms', room); if (!r || r.status !== 'free') bad('Выберите свободный номер'); if (b.room && b.room !== room) setRoom(b.room, 'free'); b.room = room; b.status = 'confirmed'; setRoom(room, 'booked', { guest: b.name, discord: b.discord, bookingId: b.id }); }
+    const act = str(body.act, 20);
+    // допустимые переходы: нельзя «подтвердить» отменённую или «отменить» уже завершённую бронь
+    const FROM = { confirm: ['new', 'confirmed'], checkin: ['confirmed'], checkout: ['checkedin'], cancel: ['new', 'confirmed', 'checkedin'] };
+    if (FROM[act] && !FROM[act].includes(b.status)) bad(`Бронь сейчас «${BOOKING_STATUS[b.status]}» — это действие недоступно`);
+    // номер освобождаем, только если он всё ещё за этой бронью: его могли отдать другому гостю
+    const release = (id, st) => { const r = store.get('rooms', id); if (r && (!r.bookingId || r.bookingId === b.id)) setRoom(id, st); };
+    const setRoom = (id, st, extra = {}) => { const r = store.get('rooms', id); if (!r) return; Object.assign(r, { status: st, updatedAt: Date.now() }, extra); if (st === 'free' || st === 'cleaning') Object.assign(r, { guest: null, discord: null, bookingId: null }); store.put('rooms', id, r); };
+    if (act === 'confirm') { const room = str(body.room, 10); const r = store.get('rooms', room); if (!r || r.status !== 'free') bad('Выберите свободный номер'); if (b.room && b.room !== room) release(b.room, 'free'); b.room = room; b.status = 'confirmed'; setRoom(room, 'booked', { guest: b.name, discord: b.discord, bookingId: b.id }); }
     else if (act === 'checkin') { if (!b.room) bad('Сначала назначьте номер'); b.status = 'checkedin'; setRoom(b.room, 'occupied', { guest: b.name, discord: b.discord, bookingId: b.id }); }
-    else if (act === 'checkout') { b.status = 'done'; if (b.room) setRoom(b.room, 'cleaning'); }
-    else if (act === 'cancel') { b.status = 'cancelled'; if (b.room) setRoom(b.room, 'free'); }
+    else if (act === 'checkout') { b.status = 'done'; if (b.room) release(b.room, 'cleaning'); }
+    else if (act === 'cancel') { b.status = 'cancelled'; if (b.room) release(b.room, 'free'); }
     else bad('Неизвестное действие');
     b.updatedAt = Date.now(); b.handledBy = user.username; store.put('bookings', b.id, b);
     log(`${user.username}: бронь ${b.code} → ${BOOKING_STATUS[b.status]}${b.room ? ', номер ' + b.room : ''}`, 'booking', user.username);
@@ -239,8 +255,12 @@ export function createCore(store, hooks = {}) {
   on('POST', '/admin/orders/:id/status', ({ params, body, user }) => { need(user, 'mod'); const o = store.get('orders', params.id); if (!o) throw new HttpError(404, 'Заказ не найден'); const st = str(body.status, 20); if (!ORDER_STATUS[st]) bad('Неверный статус'); o.status = st; o.updatedAt = Date.now(); store.put('orders', o.id, o); emit(['orders']); call('notify', 'order_status', o); return { order: o }; });
   on('POST', '/admin/tickets/:id/close', async ({ params, user }) => { need(user, 'mod'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения');
     if (t.status === 'closed') return { ticket: t };
+    if (closing.has(t.id)) bad('Обращение уже закрывается'); closing.add(t.id);
+    try {
     if (t.channel && hooks.closeTicketChannel) { let history; try { history = await hooks.closeTicketChannel(t, user.username); } catch (e) { bad('Обращение не закрыто: ' + e.message); } if (history.length) t.messages = [{ from: 'guest', by: t.name || t.discord, text: t.text, at: t.createdAt }, ...history.filter(m => m.from !== 'bot')].slice(-300); t.channel = null; }
-    t.status = 'closed'; t.closedBy = user.username; t.lastAt = Date.now(); store.put('tickets', t.id, t); log(`${user.username} закрыл обращение ${t.discord}`, 'ticket', user.username); emit(['tickets', 'log']); call('notify', 'ticket_update', t); return { ticket: t }; });
+    const fresh = store.get('tickets', t.id) || t; Object.assign(fresh, { messages: t.messages, channel: t.channel, status: 'closed', closedBy: user.username, lastAt: Date.now() });
+    store.put('tickets', fresh.id, fresh); log(`${user.username} закрыл обращение ${fresh.discord}`, 'ticket', user.username); emit(['tickets', 'log']); call('notify', 'ticket_update', fresh); return { ticket: fresh };
+    } finally { closing.delete(t.id); } });
 
   // события
   on('POST', '/admin/events/sync', async ({ user }) => { need(user, 'mod'); const r = await call('syncEvents'); emit(['events']); return { synced: r ?? 0, connected: !!hooks.syncEvents }; });
@@ -296,26 +316,33 @@ export function createCore(store, hooks = {}) {
   function clean(col, b) {
     const o = {};
     const pick = (k, f) => { if (k in b) o[k] = f(b[k]); };
+    // ссылки и картинки: только http(s), пути сайта, якоря и встроенные картинки — никаких javascript: и подобного
+    const U = n => v => { const x = str(v, n); return !x || /^(https?:\/\/|\/(?!\/)|img\/|models\/|uploads\/|#[\w-]*$|data:image\/(png|jpe?g|webp|gif);base64,)/i.test(x) ? x : ''; };
+    const H = v => { const x = str(v, 9); return /^#[0-9a-f]{3,8}$/i.test(x) ? x : ''; };  // цвета: только #hex
     const S = n => v => str(v, n), N = v => num(v), B = v => !!v, A = v => (Array.isArray(v) ? v : String(v || '').split(',')).map(x => str(x, 40)).filter(Boolean).slice(0, 12);
-    if (col === 'types') { pick('name', S(40)); pick('price', N); pick('desc', S(400)); pick('image', S(400)); pick('capacity', N); pick('order', N); pick('features', A); }
-    if (col === 'venues') { pick('name', S(40)); pick('kind', S(20)); pick('floor', S(20)); pick('gameFloor', S(40)); pick('staffOnly', B); pick('desc', S(500)); pick('image', S(400)); pick('order', N); pick('keywords', S(200)); pick('comingSoon', B); pick('accent', S(10)); if ('schedule' in b) o.schedule = (Array.isArray(b.schedule) ? b.schedule : []).slice(0, 8).map(s => ({ from: str(s.from, 5), to: str(s.to, 5), label: str(s.label, 80), state: ['live', 'open', 'calm', 'closed'].includes(s.state) ? s.state : 'open' })); }
-    if (col === 'menu') { pick('cat', S(30)); pick('name', S(60)); pick('desc', S(200)); pick('price', N); pick('order', N); pick('image', S(400)); }
-    if (col === 'cigars') { pick('name', S(40)); pick('origin', S(40)); pick('shape', v => CIGAR_SHAPES[v] ? v : 'robusto'); pick('length', N); pick('ring', N); pick('wrapper', S(9)); pick('band', S(9)); pick('band2', S(9)); pick('bandStyle', v => ['classic', 'medallion', 'double', 'foot', 'stripe'].includes(v) ? v : 'classic'); pick('bandText', S(14)); pick('bandText2', S(14)); pick('strength', v => Math.min(5, Math.max(1, Math.round(num(v, 3))))); pick('notes', A); pick('price', N); pick('order', N); pick('desc', S(400)); }
-    if (col === 'team') { pick('name', S(60)); pick('position', S(60)); pick('dept', S(40)); pick('photo', S(400)); pick('bio', S(600)); pick('since', S(40)); pick('discord', S(40)); pick('quote', S(160)); pick('order', N); pick('hidden', B); pick('example', B); }
-    if (col === 'offers') { pick('title', S(80)); pick('tag', S(30)); pick('desc', S(400)); pick('price', S(40)); pick('image', S(400)); pick('order', N); pick('active', B); pick('cta', S(30)); pick('link', S(120)); }
+    if (col === 'types') { pick('name', S(40)); pick('price', N); pick('desc', S(400)); pick('image', U(400)); pick('capacity', N); pick('order', N); pick('features', A); }
+    if (col === 'venues') { pick('name', S(40)); pick('kind', S(20)); pick('floor', S(20)); pick('gameFloor', S(40)); pick('staffOnly', B); pick('desc', S(500)); pick('image', U(400)); pick('order', N); pick('keywords', S(200)); pick('comingSoon', B); pick('accent', H); if ('schedule' in b) o.schedule = (Array.isArray(b.schedule) ? b.schedule : []).slice(0, 8).map(s => ({ from: str(s.from, 5), to: str(s.to, 5), label: str(s.label, 80), state: ['live', 'open', 'calm', 'closed'].includes(s.state) ? s.state : 'open' })); }
+    if (col === 'menu') { pick('cat', S(30)); pick('name', S(60)); pick('desc', S(200)); pick('price', N); pick('order', N); pick('image', U(400)); }
+    if (col === 'cigars') { pick('name', S(40)); pick('origin', S(40)); pick('shape', v => CIGAR_SHAPES[v] ? v : 'robusto'); pick('length', N); pick('ring', N); pick('wrapper', H); pick('band', H); pick('band2', H); pick('bandStyle', v => ['classic', 'medallion', 'double', 'foot', 'stripe'].includes(v) ? v : 'classic'); pick('bandText', S(14)); pick('bandText2', S(14)); pick('strength', v => Math.min(5, Math.max(1, Math.round(num(v, 3))))); pick('notes', A); pick('price', N); pick('order', N); pick('desc', S(400)); }
+    if (col === 'team') { pick('name', S(60)); pick('position', S(60)); pick('dept', S(40)); pick('photo', U(400)); pick('bio', S(600)); pick('since', S(40)); pick('discord', S(40)); pick('quote', S(160)); pick('order', N); pick('hidden', B); pick('example', B); }
+    if (col === 'offers') { pick('title', S(80)); pick('tag', S(30)); pick('desc', S(400)); pick('price', S(40)); pick('image', U(400)); pick('order', N); pick('active', B); pick('cta', S(30)); pick('link', U(120)); }
     if (col === 'faq') { pick('q', S(160)); pick('a', S(800)); pick('order', N); }
-    if (col === 'depts') { pick('name', S(40)); pick('color', S(9)); pick('accent', S(9)); pick('desc', S(400)); pick('order', N); pick('gender', v => v === 'female' ? 'female' : 'male'); pick('duties', S(400)); pick('model', S(400)); pick('shirt', S(9)); if ('items' in b) o.items = (Array.isArray(b.items) ? b.items : []).slice(0, 8).map(it => ({ name: str(it.name, 40), kind: ['jacket', 'shirt', 'pants', 'tie', 'apron', 'vest', 'hat', 'shoes'].includes(it.kind) ? it.kind : 'jacket', color: str(it.color, 9), accent: str(it.accent, 9), frames: (Array.isArray(it.frames) ? it.frames : []).slice(0, 72).map(u => str(u, 400)) })); }
-    if (col === 'media') { pick('url', S(2_000_000)); pick('name', S(80)); }
-    if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', S(400)); pick('date', N); pick('published', B); pick('accent', S(9)); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: str(p.image, 400), cat: str(p.cat, 30) })); }
-    if (col === 'events') { pick('name', S(100)); pick('desc', S(1000)); pick('start', N); pick('end', N); pick('location', S(100)); pick('venueId', S(40)); pick('image', S(400)); pick('status', v => ['scheduled', 'active', 'completed', 'cancelled'].includes(v) ? v : 'scheduled'); if (!('source' in o)) o.source = 'manual'; }
-    if (col === 'senders') { pick('name', S(80)); pick('avatar', S(400)); pick('color', v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : '#F0177A'); pick('order', N); }
-    if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'address', 'footer', 'deckUrl']) pick(k, S(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
+    if (col === 'depts') { pick('name', S(40)); pick('color', H); pick('accent', H); pick('desc', S(400)); pick('order', N); pick('gender', v => v === 'female' ? 'female' : 'male'); pick('duties', S(400)); pick('model', U(400)); pick('shirt', H); if ('items' in b) o.items = (Array.isArray(b.items) ? b.items : []).slice(0, 8).map(it => ({ name: str(it.name, 40), kind: ['jacket', 'shirt', 'pants', 'tie', 'apron', 'vest', 'hat', 'shoes'].includes(it.kind) ? it.kind : 'jacket', color: H(it.color), accent: H(it.accent), frames: (Array.isArray(it.frames) ? it.frames : []).slice(0, 72).map(u => U(400)(u)).filter(Boolean) })); }
+    if (col === 'media') { pick('url', U(2_000_000)); pick('name', S(80)); }
+    if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', U(400)); pick('date', N); pick('published', B); pick('accent', H); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: U(400)(p.image), cat: str(p.cat, 30) })); }
+    if (col === 'events') { pick('name', S(100)); pick('desc', S(1000)); pick('start', N); pick('end', N); pick('location', S(100)); pick('venueId', S(40)); pick('image', U(400)); pick('status', v => ['scheduled', 'active', 'completed', 'cancelled'].includes(v) ? v : 'scheduled'); if (!('source' in o)) o.source = 'manual'; }
+    if (col === 'senders') { pick('name', S(80)); pick('avatar', U(400)); pick('color', v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : '#F0177A'); pick('order', N); }
+    if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'address', 'footer']) pick(k, S(400)); for (const k of ['heroDay', 'heroNight', 'discordInvite', 'deckUrl']) pick(k, U(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
     return o;
   }
   const label = c => ({ types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие', senders: 'отправителя' }[c] || c);
 
+  // Сначала точные маршруты (/admin/rooms/:id), потом общий редактор (/admin/:col/:id) — иначе общий перехватывал
+  // удаление и правку номеров и этажей и отвечал «Нельзя удалить»
+  let ordered = null;
   async function handle(method, path, ctx = {}) {
-    for (const r of routes) {
+    ordered ||= [...routes.filter(r => !r.generic), ...routes.filter(r => r.generic)];
+    for (const r of ordered) {
       if (r.method !== method) continue; const m = path.match(r.re); if (!m) continue;
       return await r.fn({ params: m.groups || {}, body: ctx.body || {}, user: ctx.user || null, guestKey: ctx.guestKey || null });
     }

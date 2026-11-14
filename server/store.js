@@ -34,6 +34,7 @@ export function openStore(file) {
     del: (c, id) => { const m = col(c), k = String(id); if (!m.has(k)) return; qDel.run(c, k); m.delete(k); bump(c); },
     clear: c => { qClear.run(c); cache.set(c, new Map()); bump(c); },
     rev: cols => cols.reduce((s, c) => s + (revs.get(c) || 0), 0),
+    backup: dest => db.backup(dest),   // целая копия базы, без остановки сервера
     close: () => db.close()
   };
 }
