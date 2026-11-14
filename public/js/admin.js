@@ -341,13 +341,20 @@ function postPreview(p) {
 }
 function discord(m) {
   const dc = A.discord || {}, s = A.settingsFull || {}, admin = isAdmin();
-  if (!dMeta) { dMeta = { channels: [], roles: [] }; if (dc.connected) api('GET', '/admin/discord/meta').then(r => { dMeta = r; paint(); }).catch(fail); }
-  const chOpts = sel => dMeta.channels.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${c.parent ? esc(c.parent) + ' / ' : ''}${esc(c.name)}</option>`).join('');
+  // список каналов запрашиваем, когда бот онлайн; пустой или неудачный ответ не запоминаем навсегда — его можно обновить
+  if (!dMeta || (!dMeta.loaded && !dMeta.loading && dc.connected)) {
+    dMeta = { channels: [], roles: [], loading: dc.connected };
+    if (dc.connected) api('GET', '/admin/discord/meta').then(r => { dMeta = { ...r, loaded: true }; paint(); }).catch(e => { dMeta = { channels: [], roles: [], loaded: true, error: e.message }; paint(); });
+  }
+  const chOpts = (sel, post) => dMeta.channels.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''} ${post && c.canPost === false ? 'disabled' : ''}>${c.parent ? esc(c.parent) + ' / ' : ''}${esc(c.name)}${post && c.canPost === false ? ' — нет права «Управлять вебхуками»' : ''}</option>`).join('');
+  const postable = dMeta.channels.filter(c => c.canPost !== false).length;
+  const chNote = !dc.connected ? '' : dMeta.loading ? '<p class="note">Загружаем каналы сервера…</p>' : dMeta.error ? `<p class="note">Каналы не загрузились: ${esc(dMeta.error)}. <button type="button" class="btn ghost sm" data-meta>Повторить</button></p>`
+    : !postable ? `<p class="note">${dMeta.channels.length ? 'Бот видит каналы, но ни в одном не может создать вебхук: выдайте его роли право «Управлять вебхуками».' : 'Бот не видит ни одного текстового канала: проверьте его права на сервере.'} <button type="button" class="btn ghost sm" data-meta>Обновить список</button></p>` : '';
   const roleBox = (id, on) => `<div class="stack" id="${id}" style="gap:.35rem;max-height:13rem;overflow:auto">${dMeta.roles.map(r => `<label class="check"><input type="checkbox" value="${esc(r.id)}" ${on?.includes(r.id) ? 'checked' : ''}><span style="color:${esc(r.color || 'inherit')}">${esc(r.name)}</span></label>`).join('') || '<span class="note">Роли появятся, когда бот будет онлайн.</span>'}</div>`;
   m.innerHTML = head('Discord', '', 'Сайт главный: посты, вебхуки и доступ настраиваются здесь. Сервер получает посты, уведомления персоналу и тикеты, а события с сервера появляются в афише на сайте.') + `
     <div class="g2" style="align-items:start">
       <form class="card pad stack" id="dForm"><h3 style="font-size:1rem">${dEdit ? 'Правка поста' : 'Новый пост'}</h3>
-        ${dEdit ? `<p class="note">Канал ${esc(dEdit.channelName)}, отправитель ${esc(dEdit.senderName)}. Они не меняются при правке.</p>` : `<div class="g2"><label class="field"><span>Канал</span><select id="dCh"><option value="">Выберите канал</option>${chOpts(dChannel)}</select></label><label class="field"><span>Отправитель</span><select id="dSn">${(A.senders || []).map(x => `<option value="${esc(x.id)}" ${x.id === dSender ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label></div>`}
+        ${dEdit ? `<p class="note">Канал ${esc(dEdit.channelName)}, отправитель ${esc(dEdit.senderName)}. Они не меняются при правке.</p>` : `<div class="g2"><label class="field"><span>Канал</span><select id="dCh"><option value="">Выберите канал</option>${chOpts(dChannel, true)}</select></label><label class="field"><span>Отправитель</span><select id="dSn">${(A.senders || []).map(x => `<option value="${esc(x.id)}" ${x.id === dSender ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label></div>${chNote}`}
         <label class="field"><span>Сообщение над карточкой</span><textarea id="f_content">${esc(dPost.content)}</textarea></label>
         <div class="g2">${PF.map(f => field(f, dPost[f.k])).join('')}</div>
         <div class="row" style="gap:.4rem" aria-label="Палитра сайта">${PALETTE.map(([c, n]) => `<button type="button" class="btn ghost sm" data-col="${c}" title="${n}" aria-label="${n}" style="width:2rem;min-width:0;padding:0;background:${c}"></button>`).join('')}</div>
@@ -369,6 +376,7 @@ function discord(m) {
     if ($('#dCh')) { dChannel = $('#dCh').value; dSender = $('#dSn').value; }
     $('#dPrev').innerHTML = postPreview(dPost);
   };
+  $$('[data-meta]').forEach(b => b.onclick = () => { dMeta = null; paint(); });
   $('#dForm').oninput = read; $('#dForm').onchange = read;
   $$('[data-col]').forEach(b => b.onclick = () => { $('#f_color').value = b.dataset.col; read(); });
   $('#dSn') && ($('#dSn').onchange = () => { const c = A.senders?.find(x => x.id === $('#dSn').value)?.color; if (c) $('#f_color').value = c; read(); });

@@ -408,3 +408,16 @@ test('заявка на работу помечена темой', async () => {
   assert.match(store.all('tickets')[0].topic, /Трудоустройство: Бармен/);
   assert.match(i.replies[0].content, /<#chan2>/);
 });
+
+test('бот, не подключившийся к серверу, гасится целиком — нет «живого» клиента без функций сайта', async () => {
+  const { Client } = await import('discord.js'); const { startBot } = await import('../server/bot.js');
+  const login = Client.prototype.login, destroy = Client.prototype.destroy; let destroyed = 0;
+  Client.prototype.login = async function () { setImmediate(() => this.emit('clientReady', this)); return 'ok'; };
+  Client.prototype.destroy = async function () { destroyed++; };
+  try {
+    const { store, core, hooks } = makeCore(); hooks.changed = () => {};
+    // сервер (guild) недоступен: без сети запрос к Discord падает
+    await assert.rejects(startBot({ core, store, hooks, env: { DISCORD_BOT_TOKEN: 'x', GUILD_ID: '1' } }));
+    assert.equal(destroyed, 1, 'клиент закрыт, кнопки в Discord не обрабатываются «полуживым» ботом');
+  } finally { Client.prototype.login = login; Client.prototype.destroy = destroy; }
+});

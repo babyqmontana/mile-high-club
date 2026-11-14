@@ -150,11 +150,12 @@ export async function startBot({ core, store, env, hooks }) {
 
   // что показать в панели: куда можно писать и какие роли есть
   hooks.guildMeta = async () => {
-    await guild.channels.fetch(); await guild.roles.fetch();
-    const me = await guild.members.fetchMe(), need = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageWebhooks];
-    const list = [...guild.channels.cache.values()].filter(c => [ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(c.type) && c.permissionsFor(me).has(need)).sort((a, b) => (a.parent?.position ?? -1) - (b.parent?.position ?? -1) || a.position - b.position);
+    await guild.channels.fetch().catch(e => console.error('Discord channels:', e.message)); await guild.roles.fetch().catch(() => {});
+    const me = await guild.members.fetchMe();
+    // показываем все текстовые каналы, которые бот видит; где писать через вебхук нельзя — помечаем причиной, а не прячем
+    const list = [...guild.channels.cache.values()].filter(c => [ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(c.type) && c.permissionsFor(me)?.has(PermissionFlagsBits.ViewChannel)).sort((a, b) => (a.parent?.position ?? -1) - (b.parent?.position ?? -1) || a.position - b.position);
     return {
-      channels: list.map(c => ({ id: c.id, name: c.name, parent: c.parent?.name || '' })),
+      channels: list.map(c => ({ id: c.id, name: c.name, parent: c.parent?.name || '', canPost: c.permissionsFor(me).has(PermissionFlagsBits.ManageWebhooks) })),
       roles: snapshotRoles(guild).sort((a, b) => b.position - a.position).map(r => ({ id: r.id, name: r.name, color: r.color ? '#' + r.color.toString(16).padStart(6, '0') : '' }))
     };
   };
@@ -263,23 +264,30 @@ export async function startBot({ core, store, env, hooks }) {
     return { channels: c.channels.length, categories: c.categories.length, roles: c.roles.length, kept: c.kept.length };
   };
 
-  const interact = createInteractions({ core, resolveRole: id => hooks.resolveRole(id) });
+  // функции берём сразу, а не через общий объект hooks: его может изменить сервер, а кнопки должны работать всегда
+  const resolveRole = hooks.resolveRole;
+  const interact = createInteractions({ core, resolveRole });
   client.on(Events.InteractionCreate, i => { if (i.guildId === env.GUILD_ID) interact(i); });
 
-  await new Promise((resolve, reject) => { client.once(Events.ClientReady, resolve); client.login(env.DISCORD_BOT_TOKEN).catch(reject); });
-  guild = await client.guilds.fetch(env.GUILD_ID);
+  // Если бот не смог подключиться к серверу, клиент гасим: иначе он продолжал бы принимать нажатия кнопок,
+  // а сайт уже считал бы его выключенным и убрал его функции («hooks.resolveRole is not a function»).
+  try {
+    await new Promise((resolve, reject) => { client.once(Events.ClientReady, resolve); client.login(env.DISCORD_BOT_TOKEN).catch(reject); });
+    guild = await client.guilds.fetch(env.GUILD_ID);
+  } catch (e) { guild = null; try { await client.destroy(); } catch { } throw e; }
   await guild.roles.fetch().catch(() => {});
   await guild.channels.fetch().catch(() => {});
   console.log(`Discord: бот ${client.user.tag} подключён к «${guild.name}»`);
   hooks.syncEvents().catch(e => console.error('events sync:', e.message));
   // события приходят от Discord сразу; опрос — лишь страховка от пропущенных, поэтому раз в 15 минут
-  setInterval(() => hooks.syncEvents().catch(() => {}), 15 * 60e3).unref();
-  // заявки, которые не дошли, пока бот был выключен
+  const syncEvents = hooks.syncEvents;
+  setInterval(() => syncEvents().catch(() => {}), 15 * 60e3).unref();
+  // заявки, которые не дошли, пока бот был выключен (необязательный шаг: его сбой не выключает подключённого бота)
   for (const t of store.all('tickets').filter(x => x.status === 'open' && x.mode === 'discord' && !x.channel)) {
     const channelId = await hooks.createTicketChannel(t).catch(e => { console.error('Discord ticket:', e.message); return null; });
     if (channelId) { const doc = { ...t, channel: channelId }; store.put('tickets', t.id, doc); hooks.notify('ticket_update', doc).catch(() => {}); }
   }
   await guild.commands.set(buildCommands()).catch(e => console.error('Discord commands:', e.message));
-  client.user.setActivity(site && /^https:/.test(site) ? site.replace(/^https:\/\//, '') : 'Отель над Лос-Сантосом', { type: ActivityType.Watching });
+  try { client.user.setActivity(site && /^https:/.test(site) ? site.replace(/^https:\/\//, '') : 'Отель над Лос-Сантосом', { type: ActivityType.Watching }); } catch (e) { console.error('Discord activity:', e.message); }
   return client;
 }
