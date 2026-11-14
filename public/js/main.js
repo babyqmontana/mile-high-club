@@ -27,8 +27,8 @@ function shell() {
     </div>
   </div></header>
   <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button></div></nav>
-  <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
-  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a></span></div><div class="wrap kon" aria-hidden="true">↑ ↑ ↓ ↓ ← → ← → B A</div></footer>
+  <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['privacy'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
+  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#privacy">Конфиденциальность</a></span></div><div class="wrap kon" aria-hidden="true">↑ ↑ ↓ ↓ ← → ← → B A</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
   const drawer = $('#drawer'), closeDrawer = () => { if (!drawer.classList.contains('on')) return; drawer.classList.remove('on'); popLayer(drawer); $('#burger').setAttribute('aria-expanded', 'false'); };
   $('#burger').setAttribute('aria-controls', 'drawer'); $('#burger').setAttribute('aria-expanded', 'false');
@@ -76,7 +76,7 @@ function onScroll() { }
 
 /* ---------------- маршруты ---------------- */
 // «Этажи» разделов: по ним выбирается направление перехода-лифта (вверх или вниз)
-const FLOOR = { admin: -1, home: 0, staff: 1, me: 2, journal: 3, issue: 3, lost: 4, contact: 20, stay: 23, dining: 30, cigars: 31, leisure: 39 };
+const FLOOR = { admin: -1, home: 0, staff: 1, me: 2, journal: 3, issue: 3, lost: 4, privacy: 5, contact: 20, stay: 23, dining: 30, cigars: 31, leisure: 39 };
 const VT = typeof document.startViewTransition === 'function';
 if (VT) document.documentElement.classList.add('vt');
 let booted = false, vtRunning = null;
@@ -132,7 +132,7 @@ function doRoute() {
 const viewMod = h => ({ stay: 'tower', cigars: 'hum', staff: 'staff', issue: 'book', leisure: 'deck' }[h]);
 function render(h = current) {
   if (!S.pub) return;
-  try { ({ home: renderHome, stay: renderStay, leisure: renderLeisure, dining: renderDining, cigars: renderCigars, journal: renderJournal, issue: renderIssue, staff: renderStaff, contact: renderContact, me: renderMe, admin: renderAdmin, lost: renderLost }[h] || renderHome)(); }
+  try { ({ home: renderHome, stay: renderStay, leisure: renderLeisure, dining: renderDining, cigars: renderCigars, journal: renderJournal, issue: renderIssue, staff: renderStaff, contact: renderContact, me: renderMe, admin: renderAdmin, privacy: renderPrivacy, lost: renderLost }[h] || renderHome)(); }
   catch (e) { console.error(e); }
   reveal($(`.view[data-view="${h}"]`));
 }
@@ -428,7 +428,7 @@ function openBooking(type, room) {
       <label class="field"><span>Телефон в игре</span><input id="bPhone" autocomplete="off" placeholder="Необязательно"></label>
       <label class="field"><span>Пожелания</span><textarea id="bNote" placeholder="Вид на Вайнвуд, шампанское к заезду, поздний выезд"></textarea></label>
       <div class="tot"><span>Итого</span><span class="num" id="bTot"></span></div>
-      <button class="btn" type="submit" data-sfx="">Отправить бронь</button><p class="note">Управляющий подтвердит бронь и назначит номер. Бот напишет вам в Discord.</p></form>`;
+      <button class="btn" type="submit" data-sfx="">Отправить бронь</button><p class="note">Управляющий подтвердит бронь и назначит номер. Бот напишет вам в Discord.</p><p class="note">Указывайте игровые данные. Что мы храним — в <a href="#privacy">политике конфиденциальности</a>.</p></form>`;
   el.querySelector('.x').onclick = () => closeSheet('bookSheet');
   const upd = () => { t = T.find(x => x.id === $('#bType').value); const free = p.rooms.filter(r => r.type === t.id && r.status === 'free'); $('#bRoom').innerHTML = `<option value="">Любой свободный (${free.length})</option>` + free.map(r => `<option ${r.id === room ? 'selected' : ''}>${esc(r.id)}</option>`).join(''); $('#bTot').textContent = money(t.price * Math.max(1, +$('#bNights').value || 1)); };
   $('#bType').onchange = () => { room = null; upd(); }; $('#bNights').oninput = upd; upd();
@@ -545,6 +545,13 @@ function wireCloche() {
   const b = $('#clocheBtn'); if (!b) return;
   b.onclick = () => { clocheOpen = !clocheOpen; play(clocheOpen ? 'cloche' : 'clocheDown'); if (clocheOpen) unlock('chef'); const el = $('#cloche'), tmp = document.createElement('div'); tmp.innerHTML = clocheHtml(); el.querySelector('.ctext').replaceWith(tmp.querySelector('.ctext')); el.classList.toggle('open', clocheOpen); b.setAttribute('aria-label', clocheOpen ? 'Накрыть блюдо' : 'Поднять клош и узнать блюдо дня'); $('#clocheAdd')?.addEventListener('click', e => { const d = dishOfDay(); if (d) addCart(d.id, e.currentTarget); }); };
   $('#clocheAdd')?.addEventListener('click', e => { const d = dishOfDay(); if (d) addCart(d.id, e.currentTarget); });
+}
+// политика конфиденциальности: текст в отдельном модуле, грузится только при открытии страницы
+function renderPrivacy() {
+  const v = view('privacy'); if (v.dataset.ready) return;
+  v.innerHTML = '<div class="wrap sec legal"><p class="mut">Загружаем…</p></div>';
+  import('./privacy.js').then(m => { v.innerHTML = `<article class="wrap sec legal">${m.privacyHtml()}</article>`; v.dataset.ready = '1'; })
+    .catch(() => { v.innerHTML = '<div class="wrap sec legal"><p class="mut">Страница не загрузилась. Обновите страницу.</p></div>'; });
 }
 function renderLost() {
   const p = String(S.lostPath || '').replace(/[^\wа-яё-]/gi, '').slice(0, 30), room = (p.match(/\d{3,4}/) || ['404'])[0];
@@ -763,7 +770,7 @@ function paintTicketStep() {
   if (ticketStep === 1) {
     box.innerHTML = `${bar}<h3 style="font-size:1.2rem">1. Заявка</h3><form id="tForm" class="stack" novalidate><div class="g2"><label class="field"><span>Discord</span><input id="tDiscord" required autocomplete="off" placeholder="nickname" value="${esc(S.me?.username || '')}"></label><label class="field"><span>Имя персонажа</span><input id="tName" autocomplete="off" placeholder="Как к вам обращаться"></label></div>
       <label class="field"><span>Тема</span><select id="tTopic"><option>Бронь и проживание</option><option>Мероприятие в отеле</option><option>Работа в отеле</option><option>Спа</option><option>Жалоба</option><option>Другое</option></select></label>
-      <label class="field"><span>Сообщение</span><textarea id="tText" required placeholder="Опишите, что нужно"></textarea></label><button class="btn" type="submit" data-sfx="">Отправить</button></form>`;
+      <label class="field"><span>Сообщение</span><textarea id="tText" required placeholder="Опишите, что нужно"></textarea></label><button class="btn" type="submit" data-sfx="">Отправить</button><p class="note">Указывайте игровые данные. Что мы храним — в <a href="#privacy">политике конфиденциальности</a>.</p></form>`;
     $('#tForm').onsubmit = async e => { e.preventDefault(); const b = $('#tForm button'); b.disabled = true;
       try { const r = await api('POST', '/tickets', { discord: $('#tDiscord').value, name: $('#tName').value, topic: $('#tTopic').value, text: $('#tText').value }); curTicket = r.ticket; ticketStep = 2; play('open'); paintCheck(r.member); loadItems(); } catch (err) { fail(err); b.disabled = false; } };
   } else if (ticketStep === 2) paintCheck(ticketMember);
