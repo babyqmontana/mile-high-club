@@ -60,7 +60,9 @@ export function venueState(venue, events, now = Date.now()) {
 
 export function createCore(store, hooks = {}) {
   const emit = cols => hooks.changed?.(cols); // бот подключается позже и оборачивает hooks.changed
-  const log = (text, kind = 'info', by) => { const id = uid('l'); store.put('log', id, { id, text, kind, by: by || null, at: Date.now() }); trimLog(); };
+  // журнал подрезается не на каждой записи, а раз в 25: сортировка всего журнала — лишняя работа
+  let logN = 0;
+  const log = (text, kind = 'info', by) => { const id = uid('l'); store.put('log', id, { id, text, kind, by: by || null, at: Date.now() }); if (++logN % 25 === 1) trimLog(); };
   const trimLog = () => { const all = store.all('log').sort((a, b) => b.at - a.at); all.slice(400).forEach(l => store.del('log', l.id)); };
   const settings = () => store.get('settings', 'main') || {};
   const call = async (name, ...args) => { try { return hooks[name] ? await hooks[name](...args) : null; } catch (e) { log(`Discord: ${name} не выполнено (${e.message})`, 'error'); return null; } };
@@ -321,10 +323,16 @@ export function createCore(store, hooks = {}) {
   }
   // для бота: событие Discord → площадка по ключевым словам
   function matchVenue(text) { const t = String(text || '').toLowerCase(); return store.all('venues').find(v => [v.name, ...(String(v.keywords || '').split(','))].map(x => x.trim().toLowerCase()).filter(Boolean).some(k => t.includes(k)))?.id || null; }
-  function upsertEvent(e) { const prev = store.get('events', e.id) || {}; const doc = { ...prev, ...e, venueId: e.venueId ?? matchVenue(`${e.location} ${e.name}`), source: 'discord', updatedAt: Date.now() }; store.put('events', doc.id, doc); emit(['events']); return doc; }
+  // событие из Discord: если ничего не поменялось, не пишем в базу и не заставляем всех гостей перезагружать данные
+  function upsertEvent(e) {
+    const prev = store.get('events', e.id) || {}; const doc = { ...prev, ...e, venueId: e.venueId ?? matchVenue(`${e.location} ${e.name}`), source: 'discord' };
+    const same = JSON.stringify({ ...doc, updatedAt: 0 }) === JSON.stringify({ ...prev, updatedAt: 0 });
+    if (same) return prev;
+    doc.updatedAt = Date.now(); store.put('events', doc.id, doc); emit(['events']); return doc;
+  }
   // сообщение из тикет-канала Discord: копия для панели сайта
   function ticketMessage(id, m) { const t = store.get('tickets', id); if (!t) return; t.messages.push(m); if (t.messages.length > 300) t.messages = t.messages.slice(-300); t.lastAt = m.at; t.lastFrom = m.from; store.put('tickets', t.id, t); emit(['tickets']); call('notify', 'ticket_update', t); }
-  function removeEvent(id) { store.del('events', id); emit(['events']); }
+  function removeEvent(id) { if (!store.get('events', id)) return; store.del('events', id); emit(['events']); }
 
   return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store };
 }

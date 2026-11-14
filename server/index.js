@@ -5,6 +5,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import zlib from 'node:zlib';
+import { promisify } from 'node:util';
 import { openStore } from './store.js';
 import { createCore, seed, HttpError } from '../public/js/core.js';
 import { startBot } from './bot.js';
@@ -120,14 +122,31 @@ app.post('/api/admin/upload', upload.array('files', 60), async (req, res) => {
 /* ---- поток изменений ---- */
 app.get('/api/stream', (req, res) => {
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-  res.flushHeaders(); res.write('retry: 3000\n\n'); clients.add(res);
-  const ping = setInterval(() => res.write(': ping\n\n'), 25000);
-  req.on('close', () => { clearInterval(ping); clients.delete(res); });
+  res.flushHeaders(); res.write('retry: 5000\n\n'); clients.add(res);
+  req.on('close', () => clients.delete(res));
 });
+// один общий таймер «пинга» на всех подключённых, а не по таймеру на каждого
+setInterval(() => { for (const r of clients) r.write(': ping\n\n'); }, 25000).unref();
 
 /* ---- API ---- */
 const hits = new Map();
 const limited = (ip) => { const now = Date.now(), h = (hits.get(ip) || []).filter(t => t > now - 60e3); h.push(now); hits.set(ip, h); return h.length > 40; };
+setInterval(() => { const old = Date.now() - 60e3; for (const [ip, h] of hits) if (!h.length || h[h.length - 1] < old) hits.delete(ip); }, 60e3).unref();
+// Публичные данные одинаковы для всех гостей: собираем их один раз на версию данных (и раз в минуту — из-за
+// времени событий), сжимаем один раз и отдаём с ETag. Повторный запрос браузера получает 304 без тела.
+const PUBLIC_COLS = ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'team', 'offers', 'faq', 'issues', 'events', 'media'];
+let pubCache = null;
+app.get('/api/public', (req, res, next) => {
+  try {
+    const key = store.rev(PUBLIC_COLS) + ':' + Math.floor(Date.now() / 60e3);
+    if (!pubCache || pubCache.key !== key) {
+      const raw = Buffer.from(JSON.stringify(core.publicData()));
+      const etag = '"p' + crypto.createHash('sha1').update(raw).digest('base64url').slice(0, 16) + '"';
+      pubCache = pubCache?.etag === etag ? { ...pubCache, key } : { key, etag, raw, br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } }), gz: zlib.gzipSync(raw, { level: 6 }) };
+    }
+    sendBuf(req, res, pubCache, 'application/json; charset=utf-8', 'no-cache');
+  } catch (e) { next(e); }
+});
 app.all('/api/*', async (req, res) => {
   try {
     if (req.method !== 'GET' && !req.path.startsWith('/api/admin') && limited(req.ip)) return res.status(429).json({ error: 'Слишком много запросов, подождите минуту' });
@@ -147,13 +166,43 @@ app.all('/api/*', async (req, res) => {
 const PUBLIC = path.join(ROOT, 'public');
 const INDEX_HTML = renderIndex();
 app.use('/uploads', express.static(UPLOADS, { maxAge: '30d', immutable: true }));
+// Текстовая статика (js, css, svg, json) сжимается один раз — brotli и gzip — и дальше отдаётся из памяти,
+// а не пережимается на каждый запрос. Сжатие идёт в пуле потоков, сервер не замирает.
+const brotli = promisify(zlib.brotliCompress), gzip = promisify(zlib.gzip), staticCache = new Map();
+const TEXT = { '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8' };
+app.use(async (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const type = TEXT[path.extname(req.path)]; if (!type) return next();
+  let file; try { file = path.join(PUBLIC, decodeURIComponent(req.path)); } catch { return next(); }
+  if (!file.startsWith(PUBLIC + path.sep)) return next();
+  let st; try { st = fs.statSync(file); } catch { return next(); } if (!st.isFile()) return next();
+  const id = file + ':' + st.mtimeMs + ':' + st.size;
+  let entry = staticCache.get(file);
+  if (!entry || entry.id !== id) {
+    const raw = fs.readFileSync(file);
+    entry = { id, raw, etag: '"s' + crypto.createHash('sha1').update(raw).digest('base64url').slice(0, 16) + '"', ready: Promise.all([brotli(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } }), gzip(raw, { level: 9 })]) };
+    staticCache.set(file, entry);
+    entry.ready.then(([br, gz]) => { entry.br = br; entry.gz = gz; }).catch(() => {});
+  }
+  if (!entry.br) await entry.ready.catch(() => {});
+  const cc = req.query.v ? 'public, max-age=31536000, immutable' : 'public, max-age=3600';
+  sendBuf(req, res, entry, type, cc);
+});
 app.get(['/', '/index.html'], sendIndex);
 app.use(express.static(PUBLIC, { index: false, maxAge: '1h', setHeaders: (res, p) => {
   if (res.req.query.v) res.set('Cache-Control', 'public, max-age=31536000, immutable');
   else if (/\.(glb|webp|jpg|png|woff2)$/.test(p)) res.set('Cache-Control', 'public, max-age=604800');
 } }));
 app.get('*', sendIndex);
-function sendIndex(req, res) { res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }).send(INDEX_HTML); }
+const INDEX_BUF = (() => { const raw = Buffer.from(INDEX_HTML); return { raw, etag: '"i' + crypto.createHash('sha1').update(raw).digest('base64url').slice(0, 16) + '"', br: zlib.brotliCompressSync(raw), gz: zlib.gzipSync(raw, { level: 9 }) }; })();
+function sendIndex(req, res) { sendBuf(req, res, INDEX_BUF, 'text/html; charset=utf-8', 'no-cache'); }
+// Отдать заранее сжатый буфер: 304 по ETag, иначе brotli/gzip по Accept-Encoding
+function sendBuf(req, res, e, type, cacheControl) {
+  res.set({ 'Content-Type': type, 'Cache-Control': cacheControl, ETag: e.etag, Vary: 'Accept-Encoding' });
+  if (req.headers['if-none-match'] === e.etag) return res.status(304).end();
+  const ae = String(req.headers['accept-encoding'] || ''), body = e.br && /\bbr\b/.test(ae) ? (res.set('Content-Encoding', 'br'), e.br) : e.gz && /\bgzip\b/.test(ae) ? (res.set('Content-Encoding', 'gzip'), e.gz) : e.raw;
+  res.set('Content-Length', body.length); return req.method === 'HEAD' ? res.end() : res.end(body);
+}
 function renderIndex() {
   const files = [];
   const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); if (e.isDirectory()) walk(f); else if (/\.(js|css)$/.test(e.name)) files.push(f); } };

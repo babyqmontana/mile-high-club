@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType } from 'discord.js';
+import { Client, GatewayIntentBits, Events, Options, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType } from 'discord.js';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export async function startBot({ core, store, env, hooks }) {
   if (!env.DISCORD_BOT_TOKEN || !env.GUILD_ID) return null;
-  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildScheduledEvents, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildScheduledEvents, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] , 
+    // Кэш discord.js по умолчанию хранит всё подряд. Боту нужны роли, каналы и участники для проверки прав,
+    // а сообщения, реакции, эмодзи, голосовые состояния и прочее — нет: держим минимум и регулярно чистим.
+    makeCache: Options.cacheWithLimits({ ...Options.DefaultMakeCacheSettings, MessageManager: 25, ReactionManager: 0, ReactionUserManager: 0, PresenceManager: 0, VoiceStateManager: 0,
+      GuildEmojiManager: 0, GuildStickerManager: 0, GuildInviteManager: 0, GuildBanManager: 0, StageInstanceManager: 0, ThreadMemberManager: 0, AutoModerationRuleManager: 0, ApplicationCommandManager: 0 }),
+    sweepers: { ...Options.DefaultSweeperSettings,
+      messages: { interval: 900, lifetime: 1800 },
+      users: { interval: 3600, filter: () => u => u.id !== u.client.user.id },
+      guildMembers: { interval: 3600, filter: () => m => m.id !== m.client.user.id } } });
   let guild = null;
   const site = (env.PUBLIC_URL || '').replace(/\/$/, '');
   const S = () => core.settings();
@@ -83,9 +91,12 @@ export async function startBot({ core, store, env, hooks }) {
   };
   // ответ из панели сайта уходит в тикет-канал
   hooks.ticketReply = async (t, text, by) => { const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) throw new Error('канал тикета не найден'); await c.send({ content: `**${by}** (с сайта): ${text}`, allowedMentions: { parse: [] } }); };
+  // канал → открытый тикет; пересобирается, только когда тикеты менялись
+  let tIdx = null, tRev = -1;
+  const ticketByChannel = ch => { const r = store.rev ? store.rev(['tickets']) : NaN; if (!tIdx || r !== tRev) { tIdx = new Map(store.all('tickets').filter(x => x.channel && x.status !== 'closed').map(x => [x.channel, x])); tRev = r; } return tIdx.get(ch) || null; };
   client.on(Events.MessageCreate, m => {
     if (m.guildId !== env.GUILD_ID || m.author.bot || m.system) return;
-    const t = store.all('tickets').find(x => x.channel === m.channelId && x.status !== 'closed');
+    const t = ticketByChannel(m.channelId);
     if (t) core.ticketMessage(t.id, { from: authorKind(t, m), by: m.member?.displayName || m.author.username, text: textOf(m) || 'вложение', at: m.createdTimestamp });
   });
 
@@ -259,7 +270,8 @@ export async function startBot({ core, store, env, hooks }) {
   await guild.channels.fetch().catch(() => {});
   console.log(`Discord: бот ${client.user.tag} подключён к «${guild.name}»`);
   hooks.syncEvents().catch(e => console.error('events sync:', e.message));
-  setInterval(() => hooks.syncEvents().catch(() => {}), 5 * 60e3);
+  // события приходят от Discord сразу; опрос — лишь страховка от пропущенных, поэтому раз в 15 минут
+  setInterval(() => hooks.syncEvents().catch(() => {}), 15 * 60e3).unref();
   // заявки, которые не дошли, пока бот был выключен
   for (const t of store.all('tickets').filter(x => x.status === 'open' && x.mode === 'discord' && !x.channel)) {
     const channelId = await hooks.createTicketChannel(t).catch(e => { console.error('Discord ticket:', e.message); return null; });
