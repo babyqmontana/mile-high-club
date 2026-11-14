@@ -881,7 +881,9 @@ async function boot() {
     let done = 0; const jobs = [document.fonts?.ready, preload('img/logo.webp?v=3'), preload(hero), heroLayers(hero)].map(p => Promise.resolve(p).catch(() => {}).then(() => set(45 + (++done / 4) * 50)));
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов
     if (hasWebGL()) ((location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')).catch(() => {});
-    await Promise.all(jobs);
+    // картинки и шрифты — украшение: если телефон их не отдал быстро, страница всё равно показывается
+    // (раньше при повторном открытии без заставки ожидание было бесконечным — видны были только шапка и фон)
+    await Promise.race([Promise.all(jobs), new Promise(r => setTimeout(r, 2500))]);
     applyMode(); route();
   });
   if (failed) { $('#main').innerHTML = `<div class="gate"><h2>Сайт недоступен</h2><p class="mut">${esc(failed.message)}</p><button class="btn" onclick="location.reload()">Обновить</button></div>`; return; }
@@ -889,7 +891,14 @@ async function boot() {
   addEventListener('hashchange', route); booted = true;
   // раздел «Отдых» собирается заранее в простое: плееру нужно время на загрузку
   setTimeout(() => { if (!view('leisure').querySelector('#venuesList')) renderLeisure(); }, 2500);
-  subscribe(onChange);
+  const unsubscribe = subscribe(onChange);
+  // Уход со страницы или перезагрузка: закрываем поток обновлений и отдаём видеопамять 3D-сцен.
+  // На iPhone Safari иначе держит память старой страницы, и после пары перезагрузок подряд вкладка падает.
+  addEventListener('pagehide', e => {
+    if (e.persisted) return;   // страница уходит в кэш «назад-вперёд» и может вернуться живой — ничего не трогаем
+    unsubscribe();
+    document.querySelectorAll('canvas').forEach(c => { for (const t of ['webgl2', 'webgl']) { try { const gl = c.getContext(t); if (gl) { gl.getExtension('WEBGL_lose_context')?.loseContext(); break; } } catch { } } });
+  });
   setInterval(() => { applyMode(); const c = $('#clock'); if (c) c.innerHTML = flap('clock', hhmm(Date.now())); applyWeather(); if (current === 'leisure' && !focusedIn(view('leisure'))) { renderLeisure(); $$('.view[data-view="leisure"] .reveal').forEach(e => e.classList.add('in')); } }, 20000);
   if (DEMO && !pref.get('mhc-demo-hint')) { pref.set('mhc-demo-hint', '1'); setTimeout(() => toast('Демо-версия: данные хранятся только в этом браузере'), 1200); }
 }
