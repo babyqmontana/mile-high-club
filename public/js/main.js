@@ -88,6 +88,7 @@ function viewOf(hash) {
 }
 function route() {
   const next = viewOf(location.hash);
+  if (itemsDirty && (next === 'contact' || next === 'me')) loadItems();
   if (next === 'contact' && current !== 'contact' && ticketStep === 3) { ticketStep = 1; curTicket = null; } // вернулись после отправки: снова чистая форма
   const animate = VT && booted && next !== current && document.visibilityState === 'visible' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (!animate) return doRoute();
@@ -837,8 +838,11 @@ function renderAdmin() {
 /* ---------------- данные ---------------- */
 async function loadPublic() { S.pub = await api('GET', '/public'); paintNav(); }
 async function loadMe() { try { S.me = (await api('GET', '/me')).user; } catch { S.me = null; } paintNav(); }
-async function loadItems() { try { S.items = await api('GET', '/me/items'); } catch { } if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
+let itemsDirty = true;
+async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
 let refT = null, refCols = new Set();
+// Изменение на сервере видят все открытые вкладки сразу. Чтобы они не пришли за данными в одну и ту же
+// миллисекунду, каждая ждёт случайные 0,25–1,75 с. Ответ /api/public кэширован на сервере и приходит 304, если не менялся.
 function onChange(cols) {
   cols.forEach(c => refCols.add(c)); clearTimeout(refT);
   refT = setTimeout(async () => {
@@ -846,10 +850,11 @@ function onChange(cols) {
     try {
       if (c.includes('me')) { await loadMe(); if (current === 'admin') { mods.admin?.unmount?.(); renderAdmin(); } if (current === 'me') renderMe(); }
       if (c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq'].includes(x))) { await loadPublic(); applyWeather(); if (!['contact', 'admin', 'me'].includes(current)) render(); updFab(); }
-      if (c.some(x => ['bookings', 'tickets', 'orders'].includes(x))) await loadItems();
+      // свои брони и заявки нужны только на страницах «Заявка» и «Мои брони»: на остальных просто помечаем устаревшими
+      if (c.some(x => ['bookings', 'tickets', 'orders'].includes(x))) { if (['contact', 'me'].includes(current)) await loadItems(); else itemsDirty = true; }
       if (current === 'admin') mods.admin?.refresh?.(c);
     } catch (e) { console.error(e); }
-  }, 250);
+  }, DEMO ? 250 : 250 + Math.random() * 1500);
 }
 
 // загрузчик: логотип заполняется по мере загрузки, затем «раскрывается» дырой в форме логотипа
@@ -877,10 +882,10 @@ async function boot() {
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов
     if (hasWebGL()) ((location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')).catch(() => {});
     await Promise.all(jobs);
-    applyMode(); route(); loadItems();
+    applyMode(); route();
   });
   if (failed) { $('#main').innerHTML = `<div class="gate"><h2>Сайт недоступен</h2><p class="mut">${esc(failed.message)}</p><button class="btn" onclick="location.reload()">Обновить</button></div>`; return; }
-  if (!$('.view.on')) { applyMode(); route(); loadItems(); }
+  if (!$('.view.on')) { applyMode(); route(); }
   addEventListener('hashchange', route); booted = true;
   // раздел «Отдых» собирается заранее в простое: плееру нужно время на загрузку
   setTimeout(() => { if (!view('leisure').querySelector('#venuesList')) renderLeisure(); }, 2500);

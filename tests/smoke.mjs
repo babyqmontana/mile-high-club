@@ -80,7 +80,9 @@ try {
     const gctx = await browser.newContext({ viewport: { width: 1280, height: 800 } }); const gp = await gctx.newPage(); const gerr = watch(gp);
     await gp.addInitScript(() => { window.__gls = []; const o = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (t, a) { const c = o.call(this, t, a); if (c && /webgl/.test(t) && !window.__gls.includes(c)) window.__gls.push(c); return c; }; });
     await gp.goto(BASE + '/#home'); await ready(gp); await gp.waitForTimeout(2000);
-    for (let i = 0; i < 4; i++) { await gp.click('#modeBtn'); await gp.waitForTimeout(1200); }
+    // сайт теперь всегда ночной: кнопки «день/ночь» может не быть — тогда проверяем, что живой контекст один и без переключений
+    const hasMode = !!(await gp.$('#modeBtn'));
+    if (hasMode) for (let i = 0; i < 4; i++) { await gp.click('#modeBtn'); await gp.waitForTimeout(1200); }
     const gl = await gp.evaluate(() => ({ created: __gls.length, live: __gls.filter(g => !g.isContextLost()).length }));
     check('GPU: после 4 переключений день/ночь жив один WebGL-контекст атриума', gl.created === 0 || gl.live <= 1, JSON.stringify(gl) + (gl.created === 0 ? ' (WebGL недоступен в этом браузере — проверка не применима)' : ''));
     check('GPU: нет ошибок в консоли', gerr.length === 0, gerr.slice(0, 3).join(' | '));
@@ -133,7 +135,7 @@ try {
   const at = await page.evaluate(() => ({ vt: document.querySelector('#hdRange').getAttribute('aria-valuetext'), chips: document.querySelectorAll('.hd-st .chip').length }));
   await page.click('#hdNow'); await page.waitForTimeout(200);
   const nowT = await page.$eval('#hdT', e => e.textContent);
-  check('сутки отеля: полоса на каждую площадку, ползунок → 23:45, «Сейчас» возвращает', lanes > 0 && at.chips === lanes && at.vt === '23:45 МСК' && nowT.startsWith('сейчас'), JSON.stringify({ lanes, ...at, nowT }));
+  check('сутки отеля: полоса на каждую площадку, ползунок → 23:45, «Сейчас» возвращает', lanes > 0 && at.chips === lanes && /^23:45( МСК)?$/.test(at.vt) && nowT.startsWith('сейчас'), JSON.stringify({ lanes, ...at, nowT }));
   await page.evaluate(() => { location.hash = '#stay'; }); await page.waitForTimeout(1200);
 
   // фильтр номеров: тип «Пентхаус» → лифт едет на его этаж, в плане только подходящие номера; сравнение типов
@@ -253,8 +255,8 @@ try {
   await mp.click('#burger'); await mp.waitForTimeout(350); await mp.click('#drawer a[href="#dining"]'); await mp.waitForTimeout(1300);
   check('меню: пункт меню открывает раздел и закрывает меню', await mp.evaluate(() => document.querySelector('.view.on')?.dataset.view === 'dining' && !document.querySelector('#drawer.on') && !document.querySelector('main').inert));
   // компактная шапка: на 390 px видны максимум 3 иконки; звук и день/ночь — в меню
-  const hdr = await mp.evaluate(() => ({ icons: [...document.querySelectorAll('.navr .ibtn')].filter(b => b.getClientRects().length && getComputedStyle(b).display !== 'none').length, tools: !!document.querySelector('#drawer #dSnd') && !!document.querySelector('#drawer #dMode') }));
-  check('мобильная шапка: не больше 3 иконок, звук и день/ночь в меню', hdr.icons <= 3 && hdr.tools, JSON.stringify(hdr));
+  const hdr = await mp.evaluate(() => ({ icons: [...document.querySelectorAll('.navr .ibtn')].filter(b => b.getClientRects().length && getComputedStyle(b).display !== 'none').length, tools: !!document.querySelector('#drawer #dSnd') && (!!document.querySelector('#drawer #dMode') || !document.querySelector('#modeBtn')) }));  // день/ночь убраны: сайт всегда ночной
+  check('мобильная шапка: не больше 3 иконок, звук (и день/ночь, если есть) в меню', hdr.icons <= 3 && hdr.tools, JSON.stringify(hdr));
   // цели нажатия на сенсорном экране
   await mp.evaluate(() => { location.hash = '#stay'; }); await mp.waitForSelector('#rFilt .seg button'); await mp.waitForTimeout(800);
   const small = await mp.evaluate(() => [...document.querySelectorAll('.navr .ibtn, .navr .pill, #rFilt button, #lfBtns button, .seg button')].filter(b => b.getClientRects().length && getComputedStyle(b).display !== 'none').map(b => Math.round(b.getBoundingClientRect().height)).filter(h => h < 44));

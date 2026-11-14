@@ -8,7 +8,8 @@
     "dev": "DEMO_LOGIN=true node server/index.js",
     "smoke": "node tests/smoke.mjs",
     "test:discord": "node --test tests/discord.test.mjs",
-    "discord:cleanup": "node server/cleanup.js"
+    "discord:cleanup": "node server/cleanup.js",
+    "test:server": "node --test tests/server.test.mjs"
   },
   "license": "ISC",
   "dependencies": {
