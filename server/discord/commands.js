@@ -8,7 +8,13 @@ const ticketModal = (id, title, topicLabel) => ({ custom_id: id, title, componen
 /** ctx: { core, resolveRole } */
 export function createInteractions({ core, resolveRole }) {
   const say = (i, content) => (i.deferred || i.replied ? i.editReply({ content }) : i.reply({ content, ephemeral: true }));
+  // защита от спама: не чаще раза в 2 минуты и не больше 3 открытых обращений на человека
+  const lastAt = new Map();
   const openTicket = async (i, topic) => {
+    const now = Date.now(), open = core.store.all('tickets').filter(t => t.discordId === i.user.id && t.status !== 'closed').length;
+    if (open >= 3) return i.reply({ content: 'У вас уже три открытых обращения — дождитесь ответа по ним.', ephemeral: true });
+    if (now - (lastAt.get(i.user.id) || 0) < 120e3) return i.reply({ content: 'Новое обращение можно открыть через пару минут.', ephemeral: true });
+    lastAt.set(i.user.id, now);
     await i.deferReply({ ephemeral: true });
     const user = { id: i.user.id, username: i.user.username, role: await resolveRole(i.user.id) };
     const { ticket } = await core.handle('POST', '/tickets', { user, body: { name: i.fields.getTextInputValue('name'), topic, text: i.fields.getTextInputValue('text') } });

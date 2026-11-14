@@ -34,7 +34,7 @@ export function archiveCard(t, log, by, memberId) {
   };
 }
 
-const html = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const html = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const stamp = t => new Date(t).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
 
 // Транскрипт: один html-файл без внешних зависимостей, открывается в любом браузере

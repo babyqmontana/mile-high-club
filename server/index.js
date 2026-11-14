@@ -18,8 +18,16 @@ const PORT = +env.PORT || 3000;
 const DATA = path.resolve(ROOT, env.DATA_DIR || 'data');
 const UPLOADS = path.join(DATA, 'uploads');
 fs.mkdirSync(UPLOADS, { recursive: true });
-const SECRET = env.SESSION_SECRET || (() => { const f = path.join(DATA, '.secret'); if (!fs.existsSync(f)) fs.writeFileSync(f, crypto.randomBytes(32).toString('hex')); return fs.readFileSync(f, 'utf8'); })();
-const DEMO = env.DEMO_LOGIN === 'true';
+// Ключ сессий: заготовка из .env.example или короткая строка — это не секрет, подписи можно подделать.
+// Тогда берём случайный ключ из data/.secret и предупреждаем.
+const weakSecret = !env.SESSION_SECRET || env.SESSION_SECRET.length < 32 || /замените|change.?me/i.test(env.SESSION_SECRET);
+if (env.SESSION_SECRET && weakSecret) console.warn('SESSION_SECRET слабый или не заменён — используется случайный ключ из data/.secret');
+const SECRET = !weakSecret ? env.SESSION_SECRET : (() => { const f = path.join(DATA, '.secret'); if (!fs.existsSync(f)) fs.writeFileSync(f, crypto.randomBytes(32).toString('hex')); return fs.readFileSync(f, 'utf8'); })();
+// Демо-вход даёт права администратора любому: в боевом режиме (NODE_ENV=production) он выключен,
+// включить его там можно только явным ALLOW_DEMO_IN_PRODUCTION=true
+const DEMO = env.DEMO_LOGIN === 'true' && (env.NODE_ENV !== 'production' || env.ALLOW_DEMO_IN_PRODUCTION === 'true');
+if (env.DEMO_LOGIN === 'true' && !DEMO) console.warn('DEMO_LOGIN проигнорирован: в боевом режиме демо-вход выключен');
+else if (DEMO) console.warn('ВНИМАНИЕ: включён демо-вход — любой посетитель может войти администратором');
 const OAUTH = !!(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.DISCORD_REDIRECT_URI);
 
 const store = openStore(path.join(DATA, 'mhc.sqlite'));
@@ -32,6 +40,18 @@ const hooks = {
   changed(cols) { cols.forEach(c => pending.add(c)); clearTimeout(flushT); flushT = setTimeout(() => { const msg = `data: ${JSON.stringify({ cols: [...pending] })}\n\n`; pending = new Set(); for (const r of clients) r.write(msg); }, 200); }
 };
 const core = createCore(store, hooks);
+// Обращение, у которого процесс упал посреди открытия канала, возвращаем гостю на выбор, а не держим в «открывается»
+for (const t of store.all('tickets').filter(x => x.status === 'opening')) store.put('tickets', t.id, { ...t, status: 'checking' });
+// Резервные копии базы: при запуске и раз в сутки, хранится 7 последних (data/backups)
+const BACKUPS = path.join(DATA, 'backups');
+async function backupDb() {
+  try {
+    fs.mkdirSync(BACKUPS, { recursive: true });
+    const name = `mhc-${new Date().toISOString().slice(0, 10)}.sqlite`; await store.backup(path.join(BACKUPS, name));
+    fs.readdirSync(BACKUPS).filter(f => /^mhc-.*\.sqlite$/.test(f)).sort().reverse().slice(7).forEach(f => fs.rmSync(path.join(BACKUPS, f), { force: true }));
+  } catch (e) { console.error('Резервная копия не сделана:', e.message); }
+}
+setTimeout(backupDb, 60e3).unref(); setInterval(backupDb, 24 * 3600e3).unref();
 // Бот не поднялся: его хуки убираем, иначе сайт будет считать заявки отправленными
 const bot = await startBot({ core, store, env, hooks }).catch(e => { console.error('Discord-бот не запустился:', e.message); Object.keys(hooks).filter(k => k !== 'changed').forEach(k => delete hooks[k]); return null; });
 
@@ -39,7 +59,8 @@ const bot = await startBot({ core, store, env, hooks }).catch(e => { console.err
 const sign = v => crypto.createHmac('sha256', SECRET).update(v).digest('base64url');
 const encode = obj => { const v = Buffer.from(JSON.stringify(obj)).toString('base64url'); return v + '.' + sign(v); };
 const decode = s => { if (!s) return null; const [v, sig] = s.split('.'); if (!v || !sig) return null; const a = Buffer.from(sign(v)), b = Buffer.from(sig); if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null; try { const o = JSON.parse(Buffer.from(v, 'base64url').toString()); return o.exp > Date.now() ? o : null; } catch { return null; } };
-const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=').map(decodeURIComponent)).filter(p => p[0]));
+const dec = v => { try { return decodeURIComponent(v); } catch { return v; } };  // кривой % в cookie не должен ронять запрос
+const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').map(c => { const i = c.indexOf('='); return i < 0 ? [c.trim(), ''] : [c.slice(0, i).trim(), dec(c.slice(i + 1).trim())]; }).filter(p => p[0]));
 const secure = (env.PUBLIC_URL || '').startsWith('https');
 const setCookie = (res, name, val, maxAge) => res.append('Set-Cookie', `${name}=${encodeURIComponent(val)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`);
 
@@ -59,7 +80,21 @@ app.set('trust proxy', 1);
 // gzip/brotli для всего, кроме потока событий: сжатие буферизует SSE и события перестают приходить
 app.use(compression({ filter: (req, res) => req.path !== '/api/stream' && compression.filter(req, res) }));
 app.use(express.json({ limit: '1mb' }));
-app.use((req, res, next) => { res.set('X-Content-Type-Options', 'nosniff'); res.set('Referrer-Policy', 'same-origin'); next(); });
+app.use((req, res, next) => {
+  res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'SAMEORIGIN', 'Cross-Origin-Opener-Policy': 'same-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()', 'Content-Security-Policy': "frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self' https://discord.com" });
+  if (secure) res.set('Strict-Transport-Security', 'max-age=15552000');
+  next();
+});
+// Защита от подделки запросов с чужих сайтов: изменяющий запрос должен прийти с нашего же адреса.
+// Браузер всегда шлёт Origin для POST/PUT/DELETE через fetch; запросы без Origin (curl, бот на сервере) не трогаем.
+app.use((req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const o = req.get('origin'); if (!o) return next();
+  let host; try { host = new URL(o).host; } catch { return res.status(403).json({ error: 'Запрос отклонён' }); }
+  if (host !== req.get('host') && host !== req.get('x-forwarded-host')) return res.status(403).json({ error: 'Запрос с чужого сайта отклонён' });
+  next();
+});
 
 /* ---- вход через Discord ---- */
 app.get('/auth/config', (req, res) => res.json({ oauth: OAUTH, demo: DEMO }));
@@ -70,6 +105,7 @@ app.get('/auth/discord', (req, res) => {
   res.redirect('https://discord.com/oauth2/authorize?' + q);
 });
 app.get('/auth/callback', async (req, res) => {
+  if (limited('auth:' + req.ip)) return res.redirect('/#login-error');
   try {
     const [state, next] = (cookies(req).mhc_state || '').split('|');
     if (!req.query.code || !state || state !== req.query.state) throw new Error('state');
@@ -100,15 +136,21 @@ app.get('/auth/demo', (req, res) => {
 app.post('/auth/logout', (req, res) => { setCookie(res, 'mhc_s', '', 0); res.json({ ok: true }); });
 
 /* ---- загрузка картинок ---- */
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 40, fields: 10, parts: 60 } });
 const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'model/gltf-binary': 'glb', 'application/octet-stream': 'glb' };
-app.post('/api/admin/upload', upload.array('files', 60), async (req, res) => {
-  const user = await currentUser(req, res);
-  if (!user || !['admin', 'mod'].includes(user.role)) return res.status(403).json({ error: 'Нужен вход персонала' });
+// тип файла проверяется по содержимому, а не по тому, что прислал браузер
+const MAGIC = { jpg: b => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff, png: b => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  webp: b => b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP', gif: b => /^GIF8[79]a$/.test(b.toString('latin1', 0, 6)), glb: b => b.toString('latin1', 0, 4) === 'glTF' };
+// права проверяются ДО приёма файлов: иначе любой мог бы прислать сотни мегабайт в память сервера
+const staffOnly = async (req, res, next) => { try { const user = await currentUser(req, res); if (!user || !['admin', 'mod'].includes(user.role)) return res.status(403).json({ error: 'Нужен вход персонала' }); req.user = user; next(); } catch (e) { next(e); } };
+let uploading = 0;
+const uploadSlot = (req, res, next) => { if (uploading >= 3) return res.status(503).json({ error: 'Сервер занят загрузкой, повторите через минуту' }); uploading++; res.on('close', () => uploading--); next(); };
+app.post('/api/admin/upload', staffOnly, uploadSlot, (req, res, next) => upload.array('files', 40)(req, res, e => e ? res.status(400).json({ error: e.code === 'LIMIT_FILE_SIZE' ? 'Файл больше 10 МБ' : 'Файлы не приняты' }) : next()), async (req, res) => {
+  const user = req.user;
   const out = [];
   for (const f of req.files || []) {
     const isGlb = /\.glb$/i.test(f.originalname);
-    const ext = isGlb ? 'glb' : EXT[f.mimetype]; if (!ext || (ext === 'glb' && !isGlb)) continue;
+    const ext = isGlb ? 'glb' : EXT[f.mimetype]; if (!ext || (ext === 'glb' && !isGlb) || !MAGIC[ext]?.(f.buffer)) continue;
     if (isGlb && user.role !== 'admin') continue;
     const id = crypto.randomBytes(8).toString('hex'), name = `${id}.${ext}`;
     fs.writeFileSync(path.join(UPLOADS, name), f.buffer);
@@ -120,7 +162,11 @@ app.post('/api/admin/upload', upload.array('files', 60), async (req, res) => {
 });
 
 /* ---- поток изменений ---- */
+const perIp = new Map(), MAX_STREAMS = 5000, MAX_PER_IP = 12;
 app.get('/api/stream', (req, res) => {
+  const ip = req.ip, n = perIp.get(ip) || 0;
+  if (clients.size >= MAX_STREAMS || n >= MAX_PER_IP) return res.status(429).end();
+  perIp.set(ip, n + 1); res.on('close', () => { const k = (perIp.get(ip) || 1) - 1; if (k) perIp.set(ip, k); else perIp.delete(ip); });
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.flushHeaders(); res.write('retry: 5000\n\n'); clients.add(res);
   req.on('close', () => clients.delete(res));
@@ -227,6 +273,9 @@ function renderIndex() {
   return html;
 }
 
+app.use((err, req, res, next) => { console.error(err); if (res.headersSent) return res.end(); res.status(500).json({ error: 'Ошибка сервера' }); });
+process.on('unhandledRejection', e => console.error('Необработанная ошибка:', e));
+process.on('uncaughtException', e => { console.error('Непойманное исключение, перезапуск:', e); process.exit(1); });  // systemd поднимет заново
 app.listen(PORT, () => console.log(`Mile High Club: http://localhost:${PORT}  (Discord-вход: ${OAUTH ? 'включён' : 'не настроен'}, демо-вход: ${DEMO ? 'включён' : 'выключен'}, бот: ${bot ? 'запущен' : 'не запущен'})`));
 
 function loadEnv(file) {
