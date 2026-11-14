@@ -1,6 +1,7 @@
 import { S, $, $$, esc, money, when, plural, I, bg, toast, fail, modal, confirmBox } from './ui.js';
 import { api, upload, DEMO } from './api.js';
 import { play } from './sound.js';
+import { discordPreview } from './dcpreview.js';
 import { ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, venueState, roomGameFloor } from './core.js';
 
 const SECTIONS = [
@@ -332,12 +333,9 @@ const PALETTE = [['#F0177A', 'Розовый'], ['#F7B50A', 'Золотой'], [
 let dMeta = null, dPost = POST0(), dEdit = null, dChannel = '', dSender = '';
 const PF = [{ k: 'title', label: 'Заголовок' }, { k: 'url', label: 'Ссылка заголовка' }, { k: 'description', label: 'Текст', type: 'textarea' }, { k: 'color', label: 'Цвет полосы', type: 'color' }, { k: 'footer', label: 'Подпись снизу' }, { k: 'image', label: 'Картинка', type: 'image' }, { k: 'thumbnail', label: 'Миниатюра', type: 'image' }];
 function postPreview(p) {
-  const sender = A.senders?.find(x => x.id === (dEdit?.sender || dSender)) || A.senders?.[0], img = u => (u ? `<img src="${esc(u)}" alt="" style="max-width:100%;border-radius:.4rem;margin-top:.5rem">` : '');
-  const box = p.title || p.description || p.image || p.fields.length;
-  return `<div class="row" style="gap:.6rem;align-items:flex-start;flex-wrap:nowrap"><img src="${esc(sender?.avatar || '')}" alt="" style="width:2.5rem;height:2.5rem;border-radius:50%;flex:none;background:var(--bg2)"><div class="stack" style="gap:.3rem;min-width:0;flex:1">
-    <div class="row" style="gap:.4rem"><b>${esc(sender?.name || 'Отправитель')}</b><span class="chip m">Вебхук</span></div>${p.content ? `<div style="white-space:pre-wrap">${esc(p.content)}</div>` : ''}
-    ${box ? `<div style="border-left:4px solid ${esc(p.color)};background:var(--bg2);border-radius:.3rem;padding:.7rem .8rem;overflow-wrap:anywhere">${p.title ? `<b>${esc(p.title)}</b>` : ''}${p.description ? `<div style="white-space:pre-wrap;font-size:.9rem;margin-top:.25rem">${esc(p.description)}</div>` : ''}${p.fields.map(f => `<div style="margin-top:.45rem;font-size:.88rem"><b>${esc(f.name)}</b><div>${esc(f.value)}</div></div>`).join('')}${img(p.image)}${p.footer ? `<div class="note" style="margin-top:.45rem">${esc(p.footer)}</div>` : ''}</div>` : ''}
-    ${p.button.label ? `<div><span class="btn ghost sm">${esc(p.button.label)}</span></div>` : ''}</div></div>`;
+  const sender = A.senders?.find(x => x.id === (dEdit?.sender || dSender)) || A.senders?.[0];
+  const channelName = dEdit?.channelName || dMeta?.channels.find(c => c.id === dChannel)?.name || '';
+  return discordPreview(p, { sender, channelName, at: dEdit?.at });
 }
 function discord(m) {
   const dc = A.discord || {}, s = A.settingsFull || {}, admin = isAdmin();
@@ -362,8 +360,8 @@ function discord(m) {
         <div class="g2"><label class="field"><span>Текст кнопки-ссылки</span><input id="dBl" value="${esc(dPost.button.label)}"></label><label class="field"><span>Адрес кнопки</span><input id="dBu" value="${esc(dPost.button.url)}" placeholder="https://"></label></div>
         <div class="row"><button class="btn" ${dc.connected ? '' : 'disabled'}>${dEdit ? 'Сохранить правку' : 'Отправить'}</button>${dEdit ? '<button type="button" class="btn ghost" id="dCancel">Отменить</button>' : '<button type="button" class="btn ghost" id="dClear">Очистить</button>'}</div>
         ${dc.connected ? '<p class="note">Картинки видны в Discord, только если сайт открыт по публичному https-адресу.</p>' : `<p class="note">${DEMO || dc.demo ? 'Это демо-версия: отправка работает только на вашем сервере.' : 'Отправка заработает, когда бот будет подключён.'}</p>`}</form>
-      <div class="stack" style="gap:1rem"><div class="card pad stack"><h3 style="font-size:1rem">Как это будет выглядеть</h3><div id="dPrev">${postPreview(dPost)}</div></div>
-        <div class="card pad stack"><h3 style="font-size:1rem">Отправленные</h3>${(A.posts || []).length ? `<div class="stack" style="gap:.3rem">${A.posts.map(p => `<div class="row" style="justify-content:space-between;flex-wrap:nowrap"><span class="note" style="min-width:0;overflow-wrap:anywhere"><b>${esc(p.post.title || p.post.content.slice(0, 50) || 'Без заголовка')}</b><br>${esc(p.channelName)} · ${esc(p.senderName)} · ${when(p.at)}</span><button type="button" class="btn ghost sm" data-edit="${esc(p.id)}">Изменить</button></div>`).join('')}</div>` : '<span class="note">Постов ещё не было.</span>'}</div>
+      <div class="stack" style="gap:1rem"><div class="card pad stack"><h3 style="font-size:1rem">Как это будет выглядеть в Discord</h3><div id="dPrev">${postPreview(dPost)}</div></div>
+        <div class="card pad stack"><h3 style="font-size:1rem">Отправленные</h3>${(A.posts || []).length ? `<div class="stack" style="gap:.3rem">${A.posts.map(p => `<div class="row" style="justify-content:space-between;flex-wrap:nowrap"><span class="note" style="min-width:0;overflow-wrap:anywhere"><b>${esc(p.post.title || p.post.content.slice(0, 50) || 'Без заголовка')}</b><br>${esc(p.channelName)} · ${esc(p.senderName)} · ${when(p.at)}</span><span class="row" style="gap:.3rem;flex-wrap:nowrap"><button type="button" class="btn ghost sm" data-view-post="${esc(p.id)}">Просмотр</button><button type="button" class="btn ghost sm" data-edit="${esc(p.id)}">Изменить</button></span></div>`).join('')}</div>` : '<span class="note">Постов ещё не было.</span>'}</div>
         <div class="card pad stack"><h3 style="font-size:1rem">Состояние</h3><div class="row"><span class="chip ${dc.connected ? 'ok' : 'm'}"><span class="d"></span>${dc.connected ? 'Бот онлайн' : 'Бот не подключён'}</span>${dc.connected ? `<span class="note">${esc(dc.bot || '')} · ${esc(dc.guild || '')}</span>` : ''}</div>
           ${admin ? `<div class="row"><button type="button" class="btn ghost sm" id="dSetup" ${dc.connected ? '' : 'disabled'}>Обновить структуру</button><button type="button" class="btn ghost sm" id="dProf" ${dc.connected ? '' : 'disabled'}>Профиль сервера</button><button type="button" class="btn ghost sm" id="dClean" ${dc.connected ? '' : 'disabled'}>Убрать лишнее</button></div><p class="note">Перед каждым действием бот покажет список изменений.</p>` : ''}</div></div></div>
     ${admin ? `<form class="card pad stack" id="dAcc" style="margin-top:1rem"><h3 style="font-size:1rem">Доступ и анонсы</h3><div class="g2"><div class="field"><span>Администраторы</span>${roleBox('dAdm', s.adminRoles)}</div><div class="field"><span>Директора</span>${roleBox('dDir', s.directorRoles)}</div><div class="field"><span>Персонал отеля</span>${roleBox('dMod', s.modRoles)}</div><div class="field"><span>Разработка (тестовый канал)</span>${roleBox('dDev', s.devRoles)}</div></div>
@@ -384,6 +382,9 @@ function discord(m) {
   $$('#dFields [data-del]').forEach(b => b.onclick = () => { read(); dPost.fields.splice(+b.dataset.del, 1); paint(); });
   $('#dClear') && ($('#dClear').onclick = () => { dPost = POST0(); paint(); });
   $('#dCancel') && ($('#dCancel').onclick = () => { dEdit = null; dPost = POST0(); paint(); });
+  // отправленный пост: как он выглядит в Discord сейчас (последняя сохранённая версия)
+  $$('[data-view-post]').forEach(b => b.onclick = () => { const x = A.posts.find(p => p.id === b.dataset.viewPost); if (!x) return;
+    modal(`<h3>Пост в Discord</h3><p class="note">${esc(x.channelName)} · ${esc(x.senderName)} · ${when(x.at)}${x.editedAt ? ' · изменён' : ''}</p>${discordPreview({ ...POST0(), ...x.post }, { sender: A.senders?.find(s => s.id === x.sender) || { name: x.senderName }, channelName: x.channelName, at: x.at })}<div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Закрыть</button></div>`, { wide: true }); });
   $$('[data-edit]').forEach(b => b.onclick = () => { dEdit = A.posts.find(p => p.id === b.dataset.edit); dPost = { ...POST0(), ...structuredClone(dEdit.post) }; paint(); });
   $('#dForm').onsubmit = async e => { e.preventDefault(); read(); const r = await run(() => api('POST', '/admin/discord/send', { id: dEdit?.id, channel: dChannel, sender: dSender || A.senders?.[0]?.id, post: dPost }), dEdit ? 'Пост изменён' : 'Отправлено'); if (r) { dEdit = null; dPost = POST0(); await load(); paint(); } };
   const checked = id => $$(`#${id} input:checked`).map(i => i.value);
