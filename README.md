@@ -206,3 +206,9 @@ Node.js 20, Express, SQLite (better-sqlite3), discord.js 14, three.js, page-flip
 
 - Манекены `public/models/male.glb` и `female.glb` — X Bot и Y Bot из примеров three.js (Mixamo), уменьшены, с позой ожидания. Модель формы отдела загружается в панели (`.glb`), фото вещи на 360° — серия из 24–36 кадров по кругу.
 - Слои атриума лежат в `public/img/layers`. Своя картинка главной из панели показывается одной плоскостью с мягким движением.
+
+## Авторство
+
+© 2026 babymontana. Все права защищены, подробности в [LICENSE](LICENSE).
+
+Mile High Club — ролевой проект: в игре (IC) создатель сайта — **Louis Cruze**, реальный автор сайта и бота (OOC) — **babymontana**.

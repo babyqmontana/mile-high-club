@@ -1054,3 +1054,8 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 .dcm-btn svg{width:16px;height:16px}
 .dcm-empty{color:#949ba4;font-style:italic;font-size:14px}
 @media (max-width:560px){.dcm-field{grid-column:1 / -1 !important}.dcm-msg{gap:12px;padding:9.6px 12px 12.8px}.dcm-embed.has-thumb{padding-right:calc(64px + 24px)}.dcm-thumb{width:64px;height:64px;right:12px}.dcm-embed.has-thumb .dcm-image{margin-right:calc(-64px - 12px);max-width:calc(100% + 64px + 12px)}}
+
+/* подвал: авторство сайта (IC — создатель в игре, OOC — реальный автор) */
+footer .wrap.credits{padding-block:0 1rem;margin-top:-1rem;font-size:.75rem;color:var(--mut);opacity:.8;gap:.4rem 1rem}
+footer .credits .ooc{display:inline-flex;align-items:center;gap:.45rem}
+footer .credits .ooc b{font:700 .6rem var(--body);letter-spacing:.12em;padding:.1rem .35rem;border:1px solid var(--line2);border-radius:.25rem;color:var(--mut)}

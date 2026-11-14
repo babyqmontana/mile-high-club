@@ -1,0 +1,17 @@
+Copyright © 2026 babymontana. Все права защищены.
+
+Сайт и Discord-бот Mile High Club: исходный код, дизайн, тексты, логотипы,
+изображения, анимации и промо-материалы в этом репозитории.
+
+Копирование, распространение, изменение и использование целиком или по частям,
+в том числе на других серверах и проектах, без письменного разрешения автора
+запрещены. Публичный доступ к репозиторию разрешает только просмотр.
+
+Mile High Club — ролевой (IC) проект. Внутриигровой создатель сайта — Louis Cruze.
+Реальный автор сайта и бота (OOC) — babymontana.
+
+Сторонние компоненты распространяются по своим лицензиям и этим файлом не покрываются:
+- three.js (public/vendor/three) — MIT License, © 2010-2023 Three.js Authors
+- page-flip (public/vendor/page-flip.browser.js) — MIT License, © Oleg Litovski (StPageFlip)
+- манекены public/models/male.glb и female.glb — X Bot и Y Bot (Mixamo, Adobe), из примеров three.js
+- шрифты Unbounded, Onest, Cormorant Garamond — SIL Open Font License, загружаются с Google Fonts
