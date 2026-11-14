@@ -6,6 +6,8 @@ import { unlock, burst, openCabinet, count as achCount, LIST as ACH, onChange as
 import { venueState, mskMinutes, weatherNow, ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, minutesOf, inSpan, roomGameFloor } from './core.js';
 
 document.documentElement.classList.add('js');
+// авторство сайта: IC — создатель в игре (Louis Cruze), OOC — реальный автор (babymontana)
+const COPY_YEARS = (y => (y > 2026 ? `2026–${y}` : '2026'))(new Date().getFullYear());
 const ROUTES = [['home', 'Главная'], ['stay', 'Номера'], ['leisure', 'Отдых'], ['dining', 'Le Ciel'], ['cigars', 'Сигары'], ['journal', 'Журнал'], ['staff', 'Персонал'], ['contact', 'Заявка']];
 const STATE_CHIP = { live: ['Live', 'p live'], open: ['Открыто', 'ok'], calm: ['Тихо', 'warn'], closed: ['Закрыто', 'm'], event: ['Событие', 'v live'], soon: ['Скоро', 't'] };
 const KIND_LABEL = { pool: 'Бассейн', bar: 'Бар', restaurant: 'Ресторан', club: 'Клуб', spa: 'Спа' };
@@ -28,7 +30,7 @@ function shell() {
   </div></header>
   <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button></div></nav>
   <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['privacy'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
-  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#privacy">Конфиденциальность</a></span></div><div class="wrap kon" aria-hidden="true">↑ ↑ ↓ ↓ ← → ← → B A</div></footer>
+  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#privacy">Конфиденциальность</a></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana</span></div><div class="wrap kon" aria-hidden="true">↑ ↑ ↓ ↓ ← → ← → B A</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
   const drawer = $('#drawer'), closeDrawer = () => { if (!drawer.classList.contains('on')) return; drawer.classList.remove('on'); popLayer(drawer); $('#burger').setAttribute('aria-expanded', 'false'); };
   $('#burger').setAttribute('aria-controls', 'drawer'); $('#burger').setAttribute('aria-expanded', 'false');

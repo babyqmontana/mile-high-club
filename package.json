@@ -11,7 +11,9 @@
     "discord:cleanup": "node server/cleanup.js",
     "test:server": "node --test tests/server.test.mjs"
   },
-  "license": "ISC",
+  "author": "babymontana",
+  "license": "UNLICENSED",
+  "private": true,
   "dependencies": {
     "better-sqlite3": "^13.0.3",
     "compression": "^1.8.2",
