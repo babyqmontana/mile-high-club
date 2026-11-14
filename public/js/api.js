@@ -33,7 +33,11 @@ export async function api(method, path, body) {
     try { return structuredClone(await d.core.handle(method, path, { body: body ? structuredClone(body) : {}, user: d.user, guestKey })); }
     catch (e) { const err = new Error(e.message || 'Ошибка'); err.status = e.status || 500; throw err; }
   }
-  const r = await fetch('/api' + path, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Guest-Key': guestKey }, body: body ? JSON.stringify(body) : undefined });
+  // зависший запрос (слабая связь на телефоне) не держит страницу пустой: через 20 с — понятная ошибка и кнопка «Обновить»
+  const ctl = new AbortController(), to = method === 'GET' ? setTimeout(() => ctl.abort(), 20000) : 0;   // долгие действия панели (настройка Discord) не обрываем
+  let r; try { r = await fetch('/api' + path, { method, credentials: 'same-origin', signal: ctl.signal, headers: { 'Content-Type': 'application/json', 'X-Guest-Key': guestKey }, body: body ? JSON.stringify(body) : undefined }); }
+  catch (e) { const err = new Error(e.name === 'AbortError' ? 'Сервер долго не отвечает, попробуйте ещё раз' : 'Нет связи с сервером, попробуйте ещё раз'); err.status = 0; throw err; }
+  finally { clearTimeout(to); }
   let j = {}; try { j = await r.json(); } catch { }
   if (!r.ok) { const e = new Error(j.error || 'Сервер недоступен, попробуйте ещё раз'); e.status = r.status; throw e; }
   return j;
