@@ -184,7 +184,8 @@ const PUBLIC_COLS = ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', '
 let pubCache = null;
 app.get('/api/public', (req, res, next) => {
   try {
-    const key = store.rev(PUBLIC_COLS) + ':' + Math.floor(Date.now() / 60e3);
+    const g = hooks.guests?.(); // онлайн сервера не хранится в базе: без него в ключе новые цифры ждали бы минуту
+    const key = store.rev(PUBLIC_COLS) + ':' + Math.floor(Date.now() / 60e3) + ':' + (g ? g.online + '/' + g.total : '-');
     if (!pubCache || pubCache.key !== key) {
       const raw = Buffer.from(JSON.stringify(core.publicData()));
       const etag = '"p' + crypto.createHash('sha1').update(raw).digest('base64url').slice(0, 16) + '"';
