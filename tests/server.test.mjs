@@ -6,10 +6,11 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openStore } from '../server/store.js';
 import { createCore, seed } from '../public/js/core.js';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'); // fileURLToPath: на Windows pathname даёт /C:/…
 const PORT = 3400 + Math.floor(Math.random() * 500), BASE = `http://127.0.0.1:${PORT}`;
 let srv, dir;
 
@@ -19,7 +20,8 @@ before(async () => {
   for (let i = 0; i < 60; i++) { try { if ((await fetch(BASE + '/api/public')).ok) return; } catch { } await new Promise(r => setTimeout(r, 250)); }
   throw new Error('сервер не поднялся');
 });
-after(() => { srv?.kill(); fs.rmSync(dir, { recursive: true, force: true }); });
+// на Windows база занята, пока процесс сервера не завершился: ждём выхода и удаляем с повторами
+after(async () => { if (srv && srv.exitCode === null) { const done = new Promise(r => srv.once('exit', r)); srv.kill(); await done; } fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
 
 test('/api/public отдаётся с ETag, повтор — 304 без тела', async () => {
   const a = await fetch(BASE + '/api/public'); const etag = a.headers.get('etag'); await a.arrayBuffer();
