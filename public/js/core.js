@@ -112,6 +112,7 @@ export function createCore(store, hooks = {}) {
       issues: store.all('issues').filter(i => i.published).sort((a, b) => (b.date || 0) - (a.date || 0)),
       events: store.all('events').filter(e => !['cancelled', 'completed'].includes(e.status) && (e.end || e.start + 3 * 3600e3) > now - 3600e3).sort((a, b) => a.start - b.start).slice(0, 30),
       media: store.all('media').map(m => ({ id: m.id, url: m.url })),
+      guests: hooks.guests?.() || null, // гостей в отеле сейчас (онлайн сервера) и в гостевой книге (участники)
       now
     };
   }
