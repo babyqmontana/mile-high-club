@@ -23,6 +23,7 @@ function shell() {
     <div class="navr">
       <span class="pill wxp" id="wxChip" title="Погода и время над отелем"></span>
       <a class="pill" href="#stay" title="Свободные номера сейчас"><span class="d"></span><span class="t">Свободно</span><b class="num" id="navFree">—</b></a>
+      <a class="pill gst" href="#home" id="navGuests" hidden title="Гостей в отеле прямо сейчас"><span class="d"></span><b class="num" id="navG">—</b><span class="t">в отеле</span></a>
       <button class="ibtn" id="sndBtn" aria-label="Звук" data-sfx=""></button>
       <span id="navUser"></span>
       <button class="ibtn burger" id="burger" aria-label="Меню" data-sfx="open">${I.menu}</button>
@@ -52,7 +53,7 @@ function paintNav() {
   const u = S.me;
   $('#navUser').innerHTML = u ? `<button class="ibtn" id="userBtn" aria-label="Профиль" style="overflow:hidden;padding:0">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc((u.username || '?')[0])}</span>`}</button>` : `<button class="ibtn" id="userBtn" aria-label="Мои брони и вход">${I.user}</button>`;
   $('#userBtn').onclick = () => location.hash = u && u.role !== 'guest' ? '#admin' : '#me';
-  if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; { const nf = $('#navFree'), val = `${f}/${S.pub.rooms.length}`; if (nf.textContent !== val) { const had = nf.textContent !== '—'; nf.textContent = val; if (had) { nf.classList.remove('tick'); void nf.offsetWidth; nf.classList.add('tick'); } } } $('#foot').textContent = S.pub.settings.footer || ''; }
+  if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; { const nf = $('#navFree'), val = `${f}/${S.pub.rooms.length}`; if (nf.textContent !== val) { const had = nf.textContent !== '—'; nf.textContent = val; if (had) { nf.classList.remove('tick'); void nf.offsetWidth; nf.classList.add('tick'); } } } $('#foot').textContent = S.pub.settings.footer || ''; paintGuests(); }
 }
 // сайт всегда в ночной теме: тёмный интерфейс, ночной отель и ночное небо
 function mode() { return 'night'; }
@@ -152,6 +153,14 @@ const RANK = { event: 0, live: 1, open: 2, calm: 3, soon: 4, closed: 5 };
 // или смене минуты. Ширина значения — 7 ячеек, как на настоящем табло; пустые ячейки остаются видны.
 const FLAP_WORD = { live: 'LIVE', open: 'ОТКРЫТО', calm: 'ТИХО', closed: 'ЗАКРЫТО', event: 'СОБЫТИЕ', soon: 'СКОРО' };
 const flapPrev = new Map();
+// «Гостей в отеле»: сколько человек сейчас в отеле и сколько в гостевой книге. Источник — онлайн сервера отеля (IC-подача)
+function guestNote(g) { return `в гостевой книге ${g.total} ${plural(g.total, 'имя', 'имени', 'имён')}`; }
+function paintGuests() {
+  const g = S.pub?.guests, pill = $('#navGuests'); if (pill) pill.hidden = !g; if (!g) return;
+  const n = $('#navG'), val = String(g.online); if (n && n.textContent !== val) { const had = n.textContent !== '—'; n.textContent = val; if (had) { n.classList.remove('tick'); void n.offsetWidth; n.classList.add('tick'); } }
+  if (pill) pill.title = `${g.online} ${plural(g.online, 'гость', 'гостя', 'гостей')} в отеле прямо сейчас`;
+  const v = $('#fbGv'); if (v) { v.innerHTML = flap('guests', val); $('#fbGs').textContent = guestNote(g); }
+}
 function flap(key, text) {
   const t = String(text).slice(0, 7).padStart(7, ' '), prev = flapPrev.get(key); flapPrev.set(key, t);
   return `<span class="sr">${esc(String(text))}</span><span class="fls" aria-hidden="true">${[...t].map((c, i) => `<span class="fl${c === ' ' ? ' e' : ''}${prev && prev[i] !== c ? ' flip' : ''}" style="--i:${i}">${c === ' ' ? '' : esc(c)}</span>`).join('')}</span>`;
@@ -200,6 +209,7 @@ function renderHome() {
     <section class="fboard" aria-label="Табло отеля">
       <div class="fb-head"><span class="eyebrow">Табло отеля</span><span class="fb-live"><span class="d"></span>Обновляется вживую</span></div>
       <div class="fb-rows">
+      ${p.guests ? `<div class="fb-row" data-st="guests" id="fbGuests"><span class="fb-k">Гостей в отеле</span><span class="fb-v" id="fbGv">${flap('guests', String(p.guests.online))}</span><span class="fb-s" id="fbGs">${guestNote(p.guests)}</span></div>` : ''}
       <a class="fb-row" href="#stay" data-st="${free ? 'open' : 'closed'}"><span class="fb-k">Номера</span><span class="fb-v">${flap('rooms', `${free}/${p.rooms.length}`)}</span><span class="fb-s">${free ? 'свободно прямо сейчас' : 'все номера заняты'}</span></a>
       ${p.venues.map(v => ({ v, st: venueState(v, p.events) })).sort((a, b) => (RANK[a.st.state] ?? 9) - (RANK[b.st.state] ?? 9)).map(({ v, st }) => `<a class="fb-row" href="#${venueRoute(v)}" data-venue="${esc(v.id)}" data-st="${st.state}"><span class="fb-k">${esc(v.name)}</span><span class="fb-v">${flap('v-' + v.id, FLAP_WORD[st.state] || FLAP_WORD.open)}</span><span class="fb-s">${esc(st.label || '')}${st.state !== 'event' && st.state !== 'soon' && st.state !== 'closed' ? ' · ' + nextChange(v) : ''}</span></a>`).join('')}
       <div class="fb-row" data-st="clock"><span class="fb-k">Время в отеле</span><span class="fb-v" id="clock">${flap('clock', hhmm(Date.now()))}</span><span class="fb-s" id="wxTile">${wxNow ? '' : (m === 'day' ? 'День' : 'Ночь')}</span></div>
@@ -859,6 +869,7 @@ function onChange(cols) {
     try {
       if (c.includes('me')) { await loadMe(); if (current === 'admin') { mods.admin?.unmount?.(); renderAdmin(); } if (current === 'me') renderMe(); }
       if (c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq'].includes(x))) { await loadPublic(); applyWeather(); if (!['contact', 'admin', 'me'].includes(current)) render(); updFab(); }
+      if (c.includes('guests') && !c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq'].includes(x))) { await loadPublic(); paintGuests(); }
       // свои брони и заявки нужны только на страницах «Заявка» и «Мои брони»: на остальных просто помечаем устаревшими
       if (c.some(x => ['bookings', 'tickets', 'orders'].includes(x))) { if (['contact', 'me'].includes(current)) await loadItems(); else itemsDirty = true; }
       if (current === 'admin') mods.admin?.refresh?.(c);
