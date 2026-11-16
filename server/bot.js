@@ -47,6 +47,15 @@ export async function startBot({ core, store, env, hooks }) {
   const send = async (key, payload) => { const c = await channel(key); return c ? c.send(payload).catch(e => { console.error('Discord send:', e.message); return null; }) : null; };
 
   hooks.status = () => ({ connected: !!guild, guild: guild?.name || null, members: guild?.memberCount || 0, bot: client.user?.tag || null });
+  // «Гостей в отеле»: сколько участников сервера сейчас в сети. Discord отдаёт это число вместе с данными сервера (with_counts),
+  // без привилегированного интента присутствия. Обновляем раз в минуту, сайту сообщаем только при изменении.
+  let guests = null;
+  const pollGuests = async () => {
+    const g = guild && await client.guilds.fetch({ guild: guild.id, withCounts: true, force: true }).catch(() => null); if (!g) return;
+    const next = { online: g.approximatePresenceCount ?? 0, total: g.approximateMemberCount ?? guild.memberCount ?? 0, at: Date.now() };
+    const moved = !guests || next.online !== guests.online || next.total !== guests.total; guests = next; if (moved) hooks.changed?.(['guests']);
+  };
+  hooks.guests = () => guests;
 
   hooks.resolveRole = async userId => {
     if (userId === guild.ownerId) return 'admin';
@@ -282,6 +291,7 @@ export async function startBot({ core, store, env, hooks }) {
   // события приходят от Discord сразу; опрос — лишь страховка от пропущенных, поэтому раз в 15 минут
   const syncEvents = hooks.syncEvents;
   setInterval(() => syncEvents().catch(() => {}), 15 * 60e3).unref();
+  pollGuests(); setInterval(() => pollGuests().catch(() => {}), 60e3).unref();
   // заявки, которые не дошли, пока бот был выключен (необязательный шаг: его сбой не выключает подключённого бота)
   for (const t of store.all('tickets').filter(x => x.status === 'open' && x.mode === 'discord' && !x.channel)) {
     const channelId = await hooks.createTicketChannel(t).catch(e => { console.error('Discord ticket:', e.message); return null; });
