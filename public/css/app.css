@@ -243,6 +243,13 @@ a.fb-row:hover .fb-k{color:var(--floor-accent)}
 .fb-row[data-st="calm"] .fb-v{color:var(--warn)}
 .fb-row[data-st="closed"] .fb-v{color:var(--mut)}
 .fb-row[data-st="soon"] .fb-v{color:var(--teal)}
+/* «Гостей в отеле»: розовая пульсирующая точка и ореол у цифр */
+.fb-row[data-st="guests"] .fb-v{color:var(--pink);text-shadow:0 0 18px rgba(240,23,122,.45)}
+.fb-row[data-st="guests"] .fb-k::before{content:"";display:inline-block;width:.45rem;height:.45rem;margin-right:.55rem;border-radius:50%;background:var(--pink);color:var(--pink);vertical-align:.08em;animation:pulse 1.6s infinite}
+.pill.gst{color:var(--fg);background:rgba(240,23,122,.08);border-color:rgba(240,23,122,.35)}
+.pill.gst .d{background:var(--pink);color:var(--pink);animation-duration:1.6s}
+.pill.gst .t{color:var(--mut);font-weight:600}
+@media(max-width:700px){.pill.gst{display:none}}
 @media(max-width:480px){.fl{width:1.12em;height:1.6em;font-size:.86rem}.fb-row{column-gap:.6rem}}
 
 /* шахта лифта: этажи сверху вниз, латунная кабина едет к этажу под курсором или фокусом */
