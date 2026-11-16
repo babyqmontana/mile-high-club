@@ -1,5 +1,14 @@
 <!doctype html><meta charset="utf-8">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Onest:wght@400;500;600;700&display=swap">
+<style>/* шрифты из проекта: картинка собирается и без доступа к Google Fonts */
+@font-face{font-family:Unbounded;font-weight:600;src:url(../../promo/fonts/unbounded-cyrillic-600-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:Unbounded;font-weight:600;src:url(../../promo/fonts/unbounded-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+@font-face{font-family:Unbounded;font-weight:700 800;src:url(../../promo/fonts/unbounded-cyrillic-800-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:Unbounded;font-weight:700 800;src:url(../../promo/fonts/unbounded-latin-800-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+@font-face{font-family:Onest;font-weight:400 500;src:url(../../promo/fonts/onest-cyrillic-400-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:Onest;font-weight:400 500;src:url(../../promo/fonts/onest-latin-400-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+@font-face{font-family:Onest;font-weight:600 700;src:url(../../promo/fonts/onest-cyrillic-700-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:Onest;font-weight:600 700;src:url(../../promo/fonts/onest-latin-700-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122}
+</style>
 <style>
 :root{--bg:#0d0809;--card:#1a1012;--line:#3a2326;--fg:#F9EDC7;--mut:#B3A792;--pink:#F0177A;--gold:#F7B50A;--done:#F2C46D;--soft:#8f7f6c}
 *{box-sizing:border-box}
@@ -7,6 +16,7 @@ body{margin:0;width:1920px;height:960px;background:var(--bg);color:var(--fg);fon
 .bgimg{position:absolute;inset:0;background:url(../../public/img/layers/atrium-night-far.webp) center/cover;opacity:.16;filter:saturate(1.2)}
 .glow{position:absolute;inset:0;background:radial-gradient(900px 500px at 15% 0%,rgba(240,23,122,.28),transparent 70%),radial-gradient(800px 500px at 100% 100%,rgba(247,181,10,.14),transparent 70%),linear-gradient(180deg,rgba(13,8,9,.3),rgba(13,8,9,.92) 60%)}
 .wrap{position:relative;padding:56px 72px 0}
+.now li.ok{color:var(--done)}.now li.ok::before{background:var(--gold);box-shadow:0 0 8px rgba(247,181,10,.6)}
 header{display:flex;align-items:center;gap:26px}
 header img{width:96px;height:96px;border-radius:50%;box-shadow:0 0 0 2px rgba(247,181,10,.5),0 0 40px rgba(240,23,122,.45)}
 .eb{font:700 15px Onest;letter-spacing:.32em;color:var(--gold);text-transform:uppercase}
@@ -47,7 +57,7 @@ li.ok::before{background:var(--gold)}
 <div class="bgimg"></div><div class="glow"></div>
 <div class="wrap">
 <header><img src="../../public/img/emblem.webp" alt=""><div><div class="eb">Mile High Club · dev roadmap</div><h1>Дорожная <span>карта</span></h1></div>
-<div class="stats"><div><span class="big">6</span><small>обновлений</small></div><div><span class="big">66</span><small>коммитов</small></div><div><span class="big">203</span><small>автотестов</small></div></div>
+<div class="stats"><div><span class="big">6</span><small>обновлений</small></div><div><span class="big">69</span><small>коммитов</small></div><div><span class="big">203</span><small>автотестов</small></div></div>
 <div class="legend"><span><i style="background:var(--gold)"></i>Выпущено</span><span><i style="background:var(--pink)"></i>В работе</span><span><i style="border:1.5px solid var(--mut)"></i>В планах</span></div></header>
 
 <div class="track"><div class="rail"></div><div class="prog" style="--p:78.5"></div>
@@ -70,9 +80,9 @@ li.ok::before{background:var(--gold)}
 <li>Сервер держит в 5 раз больше запросов</li><li>Закрыты дыры безопасности</li><li>Тикеты закрываются без ошибки</li><li>Политика конфиденциальности</li><li>Кабинет: отмена и перенос брони</li><li>Чат и уведомления в кабинете</li><li>Статусы гостей и скидки</li><li>Удаление своих данных</li></ul></div>
 
 <div class="c now"><span class="tag">В РАБОТЕ</span><div class="ver">ОБНОВЛЕНИЕ 4</div><h2>Запуск</h2><div class="date">ближайшее</div><ul>
-<li>Сайт и бот на mhc-ls-project.ru</li><li>Адреса входа через Discord</li><li>Роли доступа в панели</li><li>Площадки Assmosphere и Спа</li><li>Сверка этажей с лифтом игры</li></ul></div>
+<li class="ok">Сайт и бот на mhc-ls-project.ru</li><li class="ok">Площадки Assmosphere и Спа</li><li class="ok">Счётчик «Гостей в отеле»</li><li class="ok">Журнал «Высота» № 02</li><li>Адреса входа через Discord</li><li>Роли доступа в панели</li><li>Сверка этажей с лифтом игры</li></ul></div>
 
 <div class="c plan"><span class="tag">В ПЛАНАХ</span><div class="ver">ОБНОВЛЕНИЕ 5</div><h2>Полировка</h2><div class="date">после запуска</div><ul>
-<li>Замер скорости и отчёт</li><li>Настоящие фото команды</li><li>Униформа на 360° вместо заглушек</li><li>Ваши идеи из Discord</li></ul></div>
+<li>Обратный отсчёт до открытия</li><li>«Персонал на смене» на табло</li><li>Замер скорости и отчёт</li><li>Настоящие фото команды</li><li>Униформа на 360° вместо заглушек</li><li>Ваши идеи из Discord</li></ul></div>
 </div></div>
 <div class="foot"><span>Сайт отеля и Discord-бот · Node.js, three.js, discord.js</span><span>Обновлено 17.11.2026</span></div>
