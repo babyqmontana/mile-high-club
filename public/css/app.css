@@ -1256,3 +1256,79 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
 @keyframes achFall{0%{transform:translate(0,0) rotate(0)}100%{transform:translate(var(--x),105vh) rotate(var(--r));opacity:.2}}
 @media(prefers-reduced-motion:reduce){.ach .rays,.ach .burst,.achfx{display:none}.xbar>i::after,.xbar.go>i{animation:none}}
 .xbar[aria-valuenow="0"]>i{visibility:hidden}
+
+/* =====================================================================
+   Редизайн (ветка redesign): тёмный журнальный люкс по UI UX Pro Max.
+   Один акцент — шампанское золото для действий; красный логотипа — только статусы.
+   Шрифты прежние, меняются шкала, ритм, контраст и состояния.
+   ===================================================================== */
+:root{
+  --accent:#E9B44C;--accent-hi:#F6CB6E;--on-accent:#1A0F05;--brand-red:#D23A48;
+  --fg:#F6EBD6;--mut:#BFB2A0;--line:rgba(246,235,214,.09);--line2:rgba(246,235,214,.2);
+  --bg:#0A0607;--bg2:#120A0C;--card:#170D10;--card2:#211317;
+  --ring:0 0 0 3px rgba(233,180,76,.45);
+  --t-hover:180ms;--t-ui:260ms;
+}
+body{line-height:1.65;background:var(--bg)}
+/* главная кнопка: сплошное золото, тёмный текст (контраст 9:1), без градиента */
+.btn{background:var(--accent);color:var(--on-accent);box-shadow:inset 0 -2px 0 rgba(0,0,0,.18);transition:transform var(--t-hover) var(--ease-out),box-shadow var(--t-hover),background-color var(--t-hover),color var(--t-hover)}
+.btn:hover{background:var(--accent-hi);box-shadow:0 .75rem 2rem -1rem rgba(233,180,76,.75),inset 0 -2px 0 rgba(0,0,0,.18);transform:translateY(-1px)}
+.btn.ghost{background:transparent;color:var(--fg);box-shadow:inset 0 0 0 1px var(--line2)}
+.btn.ghost:hover{box-shadow:inset 0 0 0 1px var(--accent);color:var(--accent-hi);background:rgba(233,180,76,.06)}
+.btn.danger{background:var(--brand-red);color:#fff}
+.btn.discord{background:#5865F2;color:#fff}
+.btn.lg{min-height:3.25rem;padding:.85rem 1.7rem;font-size:1rem}
+:root[data-theme="newyear"] .btn:not(.ghost):not(.danger){color:var(--on-accent)}
+/* фокус с клавиатуры всегда виден */
+:where(a,button,input,select,textarea,summary,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:.6rem}
+/* сенсорные цели не меньше 44 px */
+.ibtn,.chips button,.seg button,.tabs button,.filters button{min-height:2.75rem}
+.ibtn{min-width:2.75rem}
+/* журнальная шкала и ритм */
+.sec{padding-block:clamp(4rem,9vw,8rem)}
+.head{gap:1rem;margin-bottom:clamp(2rem,4vw,3.25rem);max-width:48rem}
+.head h2,.dv2 h2{font-size:clamp(2.4rem,6.2vw,5rem);line-height:.98;letter-spacing:-.02em;text-wrap:balance}
+.head p{font-size:clamp(1rem,1.2vw,1.12rem);line-height:1.65;color:var(--mut);max-width:60ch;text-wrap:pretty}
+.eyebrow{color:var(--accent);letter-spacing:.24em;font-size:.7rem}
+.eyebrow::before{background:var(--accent)}
+h1,h2,h3{text-wrap:balance}
+p{text-wrap:pretty}
+/* карточки: спокойная поверхность, тонкая латунная кромка, мягкий подъём */
+.offer{background:var(--card);border:1px solid var(--line);transition:transform var(--t-ui) var(--ease-out),border-color var(--t-ui),box-shadow var(--t-ui)}
+.offer:hover{transform:translateY(-.3rem);border-color:rgba(233,180,76,.35);box-shadow:0 2rem 3rem -2rem rgba(0,0,0,.9)}
+.offer .tag{color:var(--accent)}
+.offer.noimg .img.tp{aspect-ratio:16/9;display:grid;align-items:end;padding:1.2rem 1.25rem;background:radial-gradient(120% 90% at 85% 0%,rgba(210,58,72,.32),transparent 60%),radial-gradient(90% 80% at 0% 100%,rgba(233,180,76,.18),transparent 60%),linear-gradient(160deg,#241016,#120A0C);border-bottom:1px solid var(--line);position:relative;overflow:hidden}
+.offer.noimg .img.tp::before{content:"";position:absolute;inset:.75rem;border:1px solid rgba(233,180,76,.28);border-radius:.8rem}
+.offer.noimg .img.tp span{position:relative;font:italic 600 clamp(1.7rem,2.6vw,2.3rem)/1.02 var(--serif);color:var(--fg);max-width:12ch}
+/* пустые состояния: что это, почему пусто, что сделать */
+.empty-x{display:grid;grid-template-columns:auto 1fr auto;gap:1.1rem 1.25rem;align-items:center;padding:1.5rem 1.6rem;border:1px solid var(--line);border-radius:var(--r);background:linear-gradient(180deg,var(--card),var(--bg2))}
+.empty-x .ex-i{width:3rem;height:3rem;border-radius:.9rem;display:grid;place-items:center;color:var(--accent);background:rgba(233,180,76,.08);box-shadow:inset 0 0 0 1px rgba(233,180,76,.25)}
+.empty-x .ex-i svg{width:1.4rem;height:1.4rem}
+.empty-x b{display:block;font-size:1.05rem}.empty-x p{margin:.15rem 0 0;color:var(--mut);font-size:.95rem}
+@media(max-width:640px){.empty-x{grid-template-columns:auto 1fr}.empty-x .btn{grid-column:1/-1;justify-self:start}}
+.empty{border:1px solid var(--line);background:var(--bg2);color:var(--mut)}
+/* финальный призыв */
+.cta-band{position:relative;overflow:hidden;margin-block:clamp(1rem,4vw,3rem) clamp(3rem,7vw,6rem);padding:clamp(2.2rem,6vw,4.5rem);border-radius:1.75rem;border:1px solid rgba(233,180,76,.22);background:radial-gradient(70% 120% at 100% 0%,rgba(210,58,72,.28),transparent 60%),radial-gradient(60% 90% at 0% 100%,rgba(233,180,76,.14),transparent 60%),linear-gradient(160deg,#1d0d12,#0d0709);display:grid;gap:1rem;justify-items:start}
+.cta-band h2{font-size:clamp(2.2rem,5.6vw,4.4rem);line-height:.98;letter-spacing:-.02em;max-width:16ch}
+.cta-band h2 em{font:italic 600 1.05em var(--serif);color:var(--accent);letter-spacing:0}
+.cta-band p{color:var(--mut);max-width:52ch;margin:0 0 .6rem;font-size:1.05rem}
+/* табло и отзывы — спокойнее и контрастнее */
+.fboard{border-color:var(--line2)}
+.rv{background:var(--card);border:1px solid var(--line)}
+.rv blockquote{font:italic 500 1.25rem/1.45 var(--serif);color:var(--fg)}
+/* закреплённая бронь на телефоне */
+.bookbar{position:fixed;left:max(.75rem,env(safe-area-inset-left,0px));right:max(.75rem,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + .75rem);z-index:44;display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.55rem .55rem .55rem 1.1rem;border-radius:1.25rem;background:rgba(18,10,12,.92);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--line2);box-shadow:0 1.5rem 3rem -1rem #000;color:var(--fg);text-decoration:none;transform:translateY(160%);visibility:hidden;transition:transform var(--t-ui) var(--ease-out),visibility 0s linear var(--t-ui)}
+.bookbar.on{transform:none;visibility:visible;transition:transform var(--t-ui) var(--ease-out),visibility 0s}
+.bookbar b{display:block;font-size:.95rem}.bookbar small{display:block;color:var(--mut);font-size:.78rem}
+.bookbar .btn{pointer-events:none}
+@media(min-width:761px){.bookbar{display:none}}
+/* спрятанная корзина не ловит фокус и не читается */
+.fab:not(.on){visibility:hidden;transition:transform var(--t-ui) var(--ease-out),visibility 0s linear var(--t-ui)}
+.fab.on{visibility:visible}
+.fab .n{background:var(--brand-red)}
+/* значки уведомлений */
+.nitem .ni{width:2.4rem;height:2.4rem;border-radius:.75rem;display:grid;place-items:center;color:var(--accent);background:rgba(233,180,76,.08);font-size:0}
+.nitem.new{border-color:rgba(233,180,76,.45);background:rgba(233,180,76,.06)}
+@media(prefers-reduced-motion:reduce){.bookbar,.offer,.btn{transition:none}}
+.scrollbar{background:linear-gradient(90deg,#8a6228,var(--accent) 50%,var(--accent-hi))}
+@media(max-width:760px){footer{padding-bottom:calc(6rem + env(safe-area-inset-bottom,0px))}}

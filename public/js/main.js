@@ -32,6 +32,7 @@ function shell() {
   <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button></div></nav>
   <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['jobs'], ['privacy'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
   <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
+  <a class="bookbar" id="bookBar" href="#stay" aria-hidden="true" tabindex="-1"><span><b>Номер над городом</b><small id="bbFree"></small></span><span class="btn">Забронировать</span></a>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
   const drawer = $('#drawer'), closeDrawer = () => { if (!drawer.classList.contains('on')) return; drawer.classList.remove('on'); popLayer(drawer); $('#burger').setAttribute('aria-expanded', 'false'); };
   $('#burger').setAttribute('aria-controls', 'drawer'); $('#burger').setAttribute('aria-expanded', 'false');
@@ -134,7 +135,15 @@ function doRoute() {
   Object.entries(mods).forEach(([k, m]) => m?.active?.(k === viewMod(h)));
   render(h);
   if (changed) { scrollTo({ top: 0 }); play('whoosh'); }
-  updFab();
+  updFab(); paintBookBar();
+}
+// после первого экрана на телефоне всегда под рукой кнопка брони; там, где своя главная кнопка или корзина, её нет
+const BB_ROUTES = new Set(['home', 'leisure', 'cigars', 'journal', 'staff', 'jobs']);
+function paintBookBar() {
+  const b = $('#bookBar'); if (!b) return;
+  const on = innerWidth <= 760 && BB_ROUTES.has(current) && scrollY > innerHeight * .9 && !document.querySelector('.sheet.on, .modal') && !$('#fab')?.classList.contains('on');
+  b.classList.toggle('on', on); b.setAttribute('aria-hidden', String(!on)); b.tabIndex = on ? 0 : -1;
+  const free = (S.pub?.rooms || []).filter(r => r.status === 'free').length; const f = $('#bbFree'); if (f && S.pub) f.textContent = free ? `Свободно ${free} из ${S.pub.rooms.length}` : 'Все номера заняты';
 }
 const viewMod = h => ({ stay: 'tower', cigars: 'hum', staff: 'staff', issue: 'book', leisure: 'deck' }[h]);
 function render(h = current) {
@@ -223,17 +232,18 @@ function renderHome() {
   </div>
   <div class="wrap sec">
     <div class="row reveal" style="justify-content:space-between;margin-bottom:1.2rem"><div class="head" style="margin:0"><span class="eyebrow">Афиша</span><h2>События отеля</h2></div>${s.discordInvite ? `<a class="btn ghost sm" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} События в Discord</a>` : ''}</div>
-    ${evs.length ? `<div class="events reveal">${evs.map(evCard).join('')}</div>` : '<div class="empty reveal">Событий пока нет. Следите за анонсами на сервере.</div>'}
+    ${evs.length ? `<div class="events reveal">${evs.map(evCard).join('')}</div>` : `<div class="empty-x reveal"><span class="ex-i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><div><b>Афиша пока пустая</b><p>События появляются здесь сразу после анонса на сервере.</p></div></div>`}
   </div>
   ${(p.offers || []).length ? `<div class="wrap sec" style="padding-top:0">
     <div class="head reveal"><span class="eyebrow">Предложения</span><h2>Пакеты отеля</h2></div>
-    <div class="offers">${p.offers.map(o => `<a class="offer reveal" href="${esc(o.link || '#stay')}"><div ${bg(o.image, '', '#F0177A', '#F7B50A', 'img')}></div><div class="ob"><span class="tag">${esc(o.tag || '')}</span><h3>${esc(o.title)}</h3><p>${esc(o.desc || '')}</p><div class="row" style="justify-content:space-between;margin-top:auto"><b class="num">${esc(o.price || '')}</b><span class="lnk">${esc(o.cta || 'Подробнее')} ${I.arrow}</span></div></div></a>`).join('')}</div>
+    <div class="offers">${p.offers.map(o => `<a class="offer reveal${o.image ? '' : ' noimg'}" href="${esc(o.link || '#stay')}">${o.image ? `<div ${bg(o.image, '', '#F0177A', '#F7B50A', 'img')}></div>` : `<div class="img tp" aria-hidden="true"><span>${esc(o.tag || 'Mile High Club')}</span></div>`}<div class="ob"><span class="tag">${esc(o.tag || '')}</span><h3>${esc(o.title)}</h3><p>${esc(o.desc || '')}</p><div class="row" style="justify-content:space-between;margin-top:auto"><b class="num">${esc(o.price || '')}</b><span class="lnk">${esc(o.cta || 'Подробнее')} ${I.arrow}</span></div></div></a>`).join('')}</div>
   </div>` : ''}
   ${p.reviews?.count ? `<div class="wrap sec" style="padding-top:0">
     <div class="row reveal" style="justify-content:space-between;align-items:flex-end;margin-bottom:1.2rem"><div class="head" style="margin:0"><span class="eyebrow">Отзывы гостей</span><h2>Что говорят гости</h2></div><div class="rv-sum"><b class="num">${p.reviews.avg.toFixed(1)}</b>${stars(Math.round(p.reviews.avg))}<span class="note">${p.reviews.count} ${plural(p.reviews.count, 'отзыв', 'отзыва', 'отзывов')}</span></div></div>
     <div class="reviews">${p.reviews.list.map(r => `<figure class="rv reveal">${stars(r.stars)}<blockquote>${esc(r.text)}</blockquote><figcaption><b>${esc(r.name)}</b><span class="note">${esc(r.typeName || '')} · ${new Date(r.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span></figcaption>${r.reply ? `<div class="rv-reply"><span class="lbl">Ответ отеля</span>${esc(r.reply)}</div>` : ''}</figure>`).join('')}</div>
   </div>` : ''}
   <div class="wrap sec" style="padding-top:0">${shaftHtml(p, latest)}</div>
+  <div class="wrap"><section class="cta-band reveal" aria-label="Бронь номера"><span class="eyebrow">Номера с 20 по 26 этаж</span><h2>Ваш номер <em>над городом</em> уже ждёт</h2><p>${free ? `Свободно ${free} из ${p.rooms.length}. Бронь занимает минуту, подтверждение приходит в Discord.` : 'Сейчас все номера заняты. Оставьте заявку, и управляющие предложат ближайшую дату.'}</p><div class="row"><a class="btn lg" href="${free ? '#stay' : '#contact'}">${free ? 'Выбрать номер' : 'Оставить заявку'}</a><a class="btn ghost lg" href="#contact">Написать управляющим</a></div></section></div>
   <div class="wrap" style="padding-bottom:4rem"><div class="dc reveal">
     <div class="stack"><span class="eyebrow">Discord</span><h3 style="font-size:clamp(1.4rem,3vw,2.2rem)">Всё главное на сайте. В Discord общаемся.</h3><p class="mut">Бронь, заявки, меню и журнал живут здесь. На сервере — анонсы, события и бот, который показывает свободные номера.</p>
       <div class="row">${s.discordInvite ? `<a class="btn discord" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} Зайти на сервер</a>` : ''}<a class="btn ghost" href="#contact">Оставить заявку</a></div></div>
@@ -1033,11 +1043,12 @@ function paintBell() {
   const fresh = list.find(n => !n.read && n.at > bellSeen);
   if (fresh) { bellSeen = list[0].at; pref.set('mhc-bell-at', String(bellSeen)); if (booted) toast(fresh.text); }
 }
-const ICON_N = { booking: '🛏️', order: '🍽️', ticket: '💬', review: '⭐' };
+const NI = d => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICON_N = { booking: NI('<path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 18h18M3 14h18M7 10V7a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v3"/>'), order: NI('<path d="M4 15h16M6 15a6 6 0 0 1 12 0M12 7V5M3 19h18"/>'), ticket: NI('<path d="M4 5h16v11H9l-5 4z"/>'), review: NI('<path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/>') };
 function openBell() {
   const list = S.items?.notices || [];
   modal(`<div class="stack"><div class="row" style="justify-content:space-between"><h3>Уведомления</h3><a class="btn sm ghost" href="#me" data-close="">Кабинет</a></div>
-    <div class="nlist">${list.map(n => `<a class="nitem ${n.read ? '' : 'new'}" href="${esc(n.link || '#me')}" data-close=""><span class="ni" aria-hidden="true">${ICON_N[n.kind] || '🔔'}</span><span><span class="nt">${esc(n.text)}</span><small class="note">${when(n.at)}</small></span></a>`).join('')}</div>
+    <div class="nlist">${list.map(n => `<a class="nitem ${n.read ? '' : 'new'}" href="${esc(n.link || '#me')}" data-close=""><span class="ni" aria-hidden="true">${ICON_N[n.kind] || ICON_N.ticket}</span><span><span class="nt">${esc(n.text)}</span><small class="note">${when(n.at)}</small></span></a>`).join('')}</div>
     <p class="note" style="margin:0">${S.me ? 'Эти же уведомления бот присылает в Discord, если это не выключено в профиле.' : 'Войдите через Discord, чтобы получать уведомления на любом устройстве.'}</p></div>`);
   if (list.some(n => !n.read)) api('POST', '/me/notices/read').then(() => { list.forEach(n => n.read = true); paintBell(); }).catch(() => {});
 }
@@ -1079,7 +1090,7 @@ async function withLoader(work) {
 }
 async function boot() {
   shell(); paintNav();
-  addEventListener('scroll', () => { const h = document.documentElement.scrollHeight - innerHeight; $('#scrollbar').style.setProperty('--sp', h > 0 ? Math.min(1, scrollY / h) : 0); }, { passive: true });
+  addEventListener('scroll', () => { const h = document.documentElement.scrollHeight - innerHeight; $('#scrollbar').style.setProperty('--sp', h > 0 ? Math.min(1, scrollY / h) : 0); paintBookBar(); }, { passive: true });
   let failed = null;
   await withLoader(async set => {
     try { await Promise.all([loadPublic(), loadMe()]); } catch (e) { failed = e; return; }
