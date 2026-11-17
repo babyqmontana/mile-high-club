@@ -6,8 +6,8 @@ import { ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES,
 
 const SECTIONS = [
   ['', [['overview', 'Обзор', 'mod']]],
-  ['Работа', [['bookings', 'Брони', 'mod'], ['board', 'Доска номеров', 'mod'], ['tickets', 'Обращения', 'mod'], ['orders', 'Заказы', 'mod']]],
-  ['Контент', [['events', 'События', 'mod'], ['journal', 'Журнал', 'mod'], ['offers', 'Предложения', 'admin'], ['faq', 'Вопросы и ответы', 'admin'], ['media', 'Картинки', 'mod']]],
+  ['Работа', [['bookings', 'Брони', 'mod'], ['board', 'Доска номеров', 'mod'], ['tickets', 'Обращения', 'mod'], ['orders', 'Заказы', 'mod'], ['reviews', 'Отзывы', 'mod']]],
+  ['Контент', [['events', 'События', 'mod'], ['journal', 'Журнал', 'mod'], ['offers', 'Предложения', 'admin'], ['faq', 'Вопросы и ответы', 'admin'], ['jobs', 'Вакансии', 'admin'], ['media', 'Картинки', 'mod']]],
   ['Отель', [['structure', 'Этажи и номера', 'admin'], ['types', 'Типы и цены', 'admin'], ['venues', 'Площадки', 'admin'], ['menu', 'Меню Le Ciel', 'admin'], ['cigars', 'Сигары', 'admin'], ['team', 'Анкеты сотрудников', 'admin'], ['depts', 'Униформа отделов', 'admin']]],
   ['Система', [['discord', 'Discord', 'mod'], ['senders', 'Отправители', 'admin'], ['settings', 'Настройки', 'admin'], ['danger', 'Сброс данных', 'admin']]]
 ];
@@ -34,7 +34,7 @@ export async function refresh(cols) {
   if (sec === 'tickets' && cols.every(c => c === 'tickets')) { paintTicketList(); paintChat(); return; }
   paint();
 }
-function badges() { if (!A) return {}; return { bookings: A.bookings.filter(b => b.status === 'new').length, tickets: A.tickets.filter(t => t.status === 'open' && t.mode === 'site' && t.lastFrom === 'guest').length, orders: A.orders.filter(o => ['new', 'cooking'].includes(o.status)).length }; }
+function badges() { if (!A) return {}; return { bookings: A.bookings.filter(b => b.status === 'new').length, tickets: A.tickets.filter(t => t.status === 'open' && t.mode === 'site' && t.lastFrom === 'guest').length, orders: A.orders.filter(o => ['new', 'cooking'].includes(o.status)).length, reviews: (A.reviews || []).filter(r => r.status === 'pending').length }; }
 function paintAside() {
   const b = badges(), u = S.me;
   $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div>` +
@@ -46,7 +46,7 @@ function paintAside() {
 function head(title, actions = '', sub = '') { return `<div class="atop"><div class="stack" style="gap:.3rem"><h2>${title}</h2>${sub ? `<p class="note">${sub}</p>` : ''}</div><div class="row">${actions}</div></div>`; }
 function paint() {
   const m = $('#amain'); if (!m || !A) return;
-  try { ({ overview, bookings, board, tickets, orders, events, journal, media, structure, types, venues, menu, cigars, depts, team, offers, faq, discord, senders, settings, danger }[sec] || overview)(m); }
+  try { ({ overview, bookings, board, tickets, orders, reviews, jobs, events, journal, media, structure, types, venues, menu, cigars, depts, team, offers, faq, discord, senders, settings, danger }[sec] || overview)(m); }
   catch (e) { console.error(e); m.innerHTML = `<div class="empty">Ошибка раздела: ${esc(e.message)}</div>`; }
 }
 const run = async (fn, ok) => { try { const r = await fn(); if (ok) { toast(ok); play('success'); } return r; } catch (e) { fail(e); return null; } };
@@ -81,16 +81,57 @@ function bookings(m) {
 }
 
 /* ---------- доска номеров ---------- */
+// Доска номеров — «шахматка»: строки — этажи, клетки — номера, цвет — статус.
+// Счётчики сверху — фильтры и цели для перетаскивания. Клик по номеру — карточка: статус, гость, бронь.
+// «Выбрать несколько» — смена статуса сразу у группы (например, после уборки всего этажа).
+const RSC = { free: 'var(--gold)', booked: 'var(--pink)', occupied: 'var(--violet)', cleaning: '#7fb6a8', repair: 'var(--mut)' };
+let bSel = new Set(), bMulti = false, bOpen = null;
 function board(m) {
-  const T = Object.fromEntries(A.types.map(t => [t.id, t.name])); let ft = sel.boardType || '';
-  const rooms = A.rooms.filter(r => !ft || r.type === ft);
-  m.innerHTML = head('Доска номеров', `<select class="inp" id="bt" style="width:200px"><option value="">Все типы</option>${A.types.map(t => `<option value="${esc(t.id)}" ${t.id === ft ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>`, 'Перетащите карточку в другую колонку или смените статус в списке. Бот в Discord сразу обновит свободные номера.') +
-    `<div class="kanban">${Object.entries(ROOM_STATUS).map(([k, n]) => { const rs = rooms.filter(r => r.status === k); return `<div class="col" data-col="${k}"><h4><span>${n}</span><span class="num">${rs.length}</span></h4>${rs.map(r => `<div class="rc" draggable="true" data-id="${esc(r.id)}"><div class="row" style="justify-content:space-between"><b class="num">${esc(r.id)}</b><span class="note">${r.floor} эт.</span></div><span class="mut">${esc(T[r.type] || r.type)}</span>${r.guest ? `<span>${esc(r.guest)}${r.discord ? ' · ' + esc(r.discord) : ''}</span>` : ''}<select class="inp" style="min-height:32px;padding:.2rem .4rem;font-size:.78rem" data-id="${esc(r.id)}" aria-label="Статус ${esc(r.id)}">${Object.entries(ROOM_STATUS).map(([s, l]) => `<option value="${s}" ${s === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}</div>`; }).join('')}</div>`;
+  const T = Object.fromEntries(A.types.map(t => [t.id, t.name])), ft = sel.boardType || '', fs = sel.boardStatus || '';
+  const rooms = A.rooms.filter(r => (!ft || r.type === ft));
+  const shown = r => !fs || r.status === fs;
+  const floors = [...new Set(rooms.map(r => r.floor))].sort((a, b) => b - a);
+  const cnt = st => rooms.filter(r => r.status === st).length;
+  // короткие метки типов: инициалы, а при совпадении — первые буквы слова (Ст / Сю)
+  const SH = (() => { const used = new Set(), out = {}; for (const t of A.types) { const w = t.name.split(/[\s-]+/).filter(Boolean), c = [w.map(x => x[0]).join('').slice(0, 2).toUpperCase(), (w[0] || '').slice(0, 2), (w[0] || '').slice(0, 3), t.id.slice(0, 3)].map(x => x.charAt(0).toUpperCase() + x.slice(1)); out[t.id] = c.find(x => x && !used.has(x)) || t.id; used.add(out[t.id]); } return out; })();
+  const short = id => SH[id] || id;
+  bSel = new Set([...bSel].filter(id => A.rooms.some(r => r.id === id)));
+  m.innerHTML = head('Доска номеров', `<select class="inp" id="bt" style="width:190px"><option value="">Все типы</option>${A.types.map(t => `<option value="${esc(t.id)}" ${t.id === ft ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select><button class="btn sm ${bMulti ? '' : 'ghost'}" id="bMulti">${bMulti ? 'Готово' : 'Выбрать несколько'}</button>`,
+    'Нажмите на номер, чтобы сменить статус и увидеть гостя. Номер можно перетащить на нужный статус в строке сверху. Бот в Discord сразу обновит свободные номера.') +
+    `<div class="bst" role="group" aria-label="Фильтр по статусу"><button class="bst-i ${!fs ? 'on' : ''}" data-fs=""><b class="num">${rooms.length}</b><span>Все</span></button>${Object.entries(ROOM_STATUS).map(([k, n]) => `<button class="bst-i ${fs === k ? 'on' : ''}" data-fs="${k}" data-drop="${k}" style="--sc:${RSC[k]}"><i></i><b class="num">${cnt(k)}</b><span>${n}</span></button>`).join('')}</div>
+    ${bMulti ? `<div class="bbulk"><span><b class="num">${bSel.size}</b> выбрано</span>${Object.entries(ROOM_STATUS).map(([k, n]) => `<button class="btn sm ghost" data-bulk="${k}" ${bSel.size ? '' : 'disabled'} style="--sc:${RSC[k]}"><i class="dot"></i>${n}</button>`).join('')}<button class="btn sm ghost" id="bAll">Выбрать видимые</button><button class="btn sm ghost" id="bNone" ${bSel.size ? '' : 'disabled'}>Снять</button></div>` : ''}
+    <div class="chess ${bMulti ? 'multi' : ''}">${floors.map(f => { const fr = rooms.filter(r => r.floor === f).sort((a, b) => String(a.id).localeCompare(String(b.id), 'ru', { numeric: true })), free = fr.filter(r => r.status === 'free').length;
+      return `<div class="cf"><div class="cf-h"><b class="num">${f}</b><span>этаж</span><small>${esc(roomGameFloor(A.rooms, f))}</small><small class="num">${free}/${fr.length} св.</small></div><div class="cf-r">${fr.map(r => `<button class="ch ${shown(r) ? '' : 'dim'} ${bSel.has(r.id) ? 'sel' : ''} ${bOpen === r.id ? 'open' : ''}" draggable="true" data-id="${esc(r.id)}" style="--sc:${RSC[r.status]}" title="${esc(r.id)} · ${esc(T[r.type] || r.type)} · ${ROOM_STATUS[r.status]}${r.guest ? ' · ' + esc(r.guest) : ''}" aria-label="Номер ${esc(r.id)}, ${ROOM_STATUS[r.status]}"><b class="num">${esc(r.id)}</b><span>${esc(short(r.type))}</span>${r.guest ? '<i class="g" aria-hidden="true"></i>' : ''}</button>`).join('')}</div></div>`; }).join('') || '<div class="empty">Номеров нет. Добавьте этажи в разделе «Этажи и номера».</div>'}</div>
+    <div class="legend chl">${Object.entries(ROOM_STATUS).map(([k, n]) => `<span><i style="background:${RSC[k]}"></i>${n}</span>`).join('')}<span><i class="g"></i>Есть гость</span><span class="note">Буквы — тип номера: ${A.types.map(t => `${short(t.id)} — ${esc(t.name)}`).join(', ')}</span></div>
+    <div id="bCard"></div>`;
+  const set = (id, st) => run(() => api('POST', `/admin/rooms/${encodeURIComponent(id)}/status`, { status: st })).then(r => { if (r) { play('wood'); const x = A.rooms.find(q => q.id === id); if (x) { x.status = st; if (st === 'free' || st === 'cleaning') Object.assign(x, { guest: null, discord: null, bookingId: null }); } } return r; });
   $('#bt').onchange = e => { sel.boardType = e.target.value; paint(); };
-  const set = (id, st) => run(() => api('POST', `/admin/rooms/${encodeURIComponent(id)}/status`, { status: st })).then(r => r && play('wood'));
-  $$('.rc select').forEach(s => s.onchange = () => set(s.dataset.id, s.value));
-  $$('.rc').forEach(c => { c.ondragstart = e => { e.dataTransfer.setData('text/plain', c.dataset.id); c.classList.add('drag'); }; c.ondragend = () => c.classList.remove('drag'); });
-  $$('.col').forEach(c => { c.ondragover = e => { e.preventDefault(); c.classList.add('over'); }; c.ondragleave = () => c.classList.remove('over'); c.ondrop = e => { e.preventDefault(); c.classList.remove('over'); const id = e.dataTransfer.getData('text/plain'); const r = A.rooms.find(x => x.id === id); if (r && r.status !== c.dataset.col) set(id, c.dataset.col); }; });
+  $('#bMulti').onclick = () => { bMulti = !bMulti; bSel.clear(); bOpen = null; paint(); };
+  $$('.bst-i').forEach(b => b.onclick = () => { sel.boardStatus = sel.boardStatus === b.dataset.fs ? '' : b.dataset.fs; paint(); });
+  $$('.ch').forEach(c => {
+    c.onclick = () => { const id = c.dataset.id; if (bMulti) { bSel.has(id) ? bSel.delete(id) : bSel.add(id); paint(); } else { bOpen = bOpen === id ? null : id; paint(); } };
+    c.ondragstart = e => { e.dataTransfer.setData('text/plain', c.dataset.id); c.classList.add('drag'); }; c.ondragend = () => c.classList.remove('drag');
+  });
+  $$('[data-drop]').forEach(t => { t.ondragover = e => { e.preventDefault(); t.classList.add('over'); }; t.ondragleave = () => t.classList.remove('over'); t.ondrop = async e => { e.preventDefault(); t.classList.remove('over'); const id = e.dataTransfer.getData('text/plain'), r = A.rooms.find(x => x.id === id); if (r && r.status !== t.dataset.drop && await set(id, t.dataset.drop)) paint(); }; });
+  if (bMulti) {
+    $$('[data-bulk]').forEach(b => b.onclick = async () => { const st = b.dataset.bulk, ids = [...bSel].filter(id => A.rooms.find(r => r.id === id)?.status !== st); if (!ids.length) return toast('У выбранных номеров уже этот статус');
+      if (!await confirmBox(`Статус «${ROOM_STATUS[st]}»`, `Номеров: ${ids.length} (${ids.slice(0, 12).join(', ')}${ids.length > 12 ? '…' : ''}).`, 'Сменить')) return;
+      let ok = 0; for (const id of ids) if (await set(id, st)) ok++; toast(`Готово: ${ok} из ${ids.length}`); bSel.clear(); paint(); });
+    $('#bAll').onclick = () => { $$('.ch:not(.dim)').forEach(c => bSel.add(c.dataset.id)); paint(); };
+    $('#bNone').onclick = () => { bSel.clear(); paint(); };
+  }
+  // карточка выбранного номера
+  const r = !bMulti && bOpen && A.rooms.find(x => x.id === bOpen);
+  if (r) {
+    const bk = r.bookingId ? A.bookings.find(b => b.id === r.bookingId) : A.bookings.find(b => b.room === r.id && ['confirmed', 'checkedin'].includes(b.status));
+    $('#bCard').innerHTML = `<div class="card pad stack bcard" style="--sc:${RSC[r.status]}"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><span class="lbl">${esc(roomGameFloor(A.rooms, r.floor)) || r.floor + ' этаж'} · ${r.floor} этаж</span><h3 style="font-size:1.4rem;margin:.1rem 0 0">Номер <span class="num">${esc(r.id)}</span></h3><span class="note">${esc(T[r.type] || r.type)}</span></div><button class="ibtn" id="bcX" aria-label="Закрыть">${I.x}</button></div>
+      <div class="seg bseg" role="group" aria-label="Статус">${Object.entries(ROOM_STATUS).map(([k, n]) => `<button data-st="${k}" aria-pressed="${k === r.status}" style="--sc:${RSC[k]}"><i class="dot"></i>${n}</button>`).join('')}</div>
+      ${r.guest || bk ? `<dl class="bk-facts">${r.guest ? `<div><dt>Гость</dt><dd>${esc(r.guest)}</dd></div>` : ''}${r.discord ? `<div><dt>Discord</dt><dd>${esc(r.discord)}</dd></div>` : ''}${bk ? `<div><dt>Бронь</dt><dd class="num">${esc(bk.code)} · ${BOOKING_STATUS[bk.status]}</dd></div><div><dt>Даты</dt><dd>${esc(bk.date)}, ${bk.nights} ноч.</dd></div>` : ''}</dl>${bk ? `<div><button class="btn sm ghost" id="bcBk">Открыть бронь</button></div>` : ''}` : '<p class="note" style="margin:0">Гостя нет.</p>'}</div>`;
+    $('#bcX').onclick = () => { bOpen = null; paint(); };
+    $$('.bseg [data-st]').forEach(b => b.onclick = async () => { if (b.dataset.st !== r.status && await set(r.id, b.dataset.st)) paint(); });
+    $('#bcBk') && ($('#bcBk').onclick = () => { sec = 'bookings'; bq = bk.code; paintAside(); paint(); });
+    $('#bCard').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 }
 
 /* ---------- обращения ---------- */
@@ -318,6 +359,31 @@ function offers(m) {
     label: o => `<b>${esc(o.title || 'Без названия')}</b><span class="note">${esc(o.tag || '')}${o.price ? ' · ' + esc(o.price) : ''}${o.active === false ? ' · выключено' : ''}</span>`,
     fields: [{ k: 'title', label: 'Название' }, { k: 'tag', label: 'Метка (Пакет, Ресторан…)' }, { k: 'price', label: 'Цена (текстом, например «от $2 400»)' }, { k: 'order', label: 'Порядок', type: 'number' }, { k: 'cta', label: 'Текст кнопки' }, { k: 'link', label: 'Куда ведёт (#stay, #dining, #cigars, #contact)' }, { k: 'desc', label: 'Описание', type: 'textarea' }, { k: 'image', label: 'Картинка', type: 'image' }, { k: 'active', label: 'Показывать на сайте', type: 'check' }],
     newDefaults: { active: true, cta: 'Забронировать', link: '#stay', order: A.offers.length } });
+}
+// отзывы гостей: на сайт попадают только одобренные; ответ отеля виден под отзывом
+let rvFilter = 'pending';
+function reviews(m) {
+  const all = A.reviews || [], by = st => all.filter(r => r.status === st), list = by(rvFilter);
+  const RS = { pending: 'На проверке', approved: 'Опубликованы', hidden: 'Скрытые' };
+  m.innerHTML = head('Отзывы гостей', '', 'Гость может оставить отзыв после выезда, один на бронь. На главной показываются только опубликованные.') +
+    `<div class="row" style="gap:.4rem;margin-bottom:1rem">${Object.entries(RS).map(([k, n]) => `<button class="btn sm ${k === rvFilter ? '' : 'ghost'}" data-rf="${k}">${n} · ${by(k).length}</button>`).join('')}</div>` +
+    (list.length ? `<div class="list">${list.map(r => `<div class="item"><div class="top"><span class="row" style="gap:.5rem"><b style="color:var(--gold)">${'★'.repeat(r.stars)}<span style="color:var(--line2)">${'★'.repeat(5 - r.stars)}</span></b><b>${esc(r.name)}</b><span class="note">${esc(r.typeName || '')} · бронь ${esc(r.code || '')} · ${when(r.createdAt)}</span></span><span class="chip ${r.status === 'approved' ? 'ok' : r.status === 'hidden' ? 'bad' : 'p'}">${{ pending: 'На проверке', approved: 'Опубликован', hidden: 'Скрыт' }[r.status]}</span></div>
+      <span style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(r.text)}</span>
+      <label class="field"><span>Ответ отеля (виден под отзывом)</span><textarea data-reply="${esc(r.id)}" maxlength="600" placeholder="Спасибо, что выбрали Mile High Club…">${esc(r.reply || '')}</textarea></label>
+      <div class="row" style="gap:.4rem">${r.status !== 'approved' ? `<button class="btn sm" data-rs="${esc(r.id)}|approved">Опубликовать</button>` : ''}${r.status !== 'hidden' ? `<button class="btn sm ghost" data-rs="${esc(r.id)}|hidden">Скрыть</button>` : ''}<button class="btn sm ghost" data-rsave="${esc(r.id)}">Сохранить ответ</button><button class="btn sm ghost" data-rdel="${esc(r.id)}" style="color:var(--bad)">Удалить</button></div></div>`).join('')}</div>`
+      : `<div class="empty">${rvFilter === 'pending' ? 'Новых отзывов нет.' : 'Пусто.'}</div>`);
+  $$('[data-rf]').forEach(b => b.onclick = () => { rvFilter = b.dataset.rf; paint(); });
+  const reply = id => $(`[data-reply="${CSS.escape(id)}"]`)?.value;
+  $$('[data-rs]').forEach(b => b.onclick = async () => { const [id, status] = b.dataset.rs.split('|'); if (await run(() => api('POST', `/admin/reviews/${id}`, { status, reply: reply(id) }), status === 'approved' ? 'Отзыв опубликован' : 'Отзыв скрыт')) { await load(); paintAside(); paint(); } });
+  $$('[data-rsave]').forEach(b => b.onclick = async () => { const id = b.dataset.rsave; if (await run(() => api('POST', `/admin/reviews/${id}`, { reply: reply(id) }), 'Ответ сохранён')) { await load(); paint(); } });
+  $$('[data-rdel]').forEach(b => b.onclick = async () => { if (!await confirmBox('Удалить отзыв?', 'Отзыв исчезнет из панели и с сайта. Гость сможет оставить новый.', 'Удалить', true)) return; if (await run(() => api('DELETE', `/admin/reviews/${b.dataset.rdel}`), 'Отзыв удалён')) { await load(); paintAside(); paint(); } });
+}
+function jobs(m) {
+  const items = A.jobsAll || [], dn = id => A.depts?.find(d => d.id === id)?.name || '';
+  crud(m, { col: 'jobs', title: 'Вакансии', sub: 'Открытые вакансии видны на сайте в разделе «Вакансии». Отклик приходит обычной заявкой с темой «Работа в отеле».', items,
+    label: j => `<b>${esc(j.title || 'Без названия')}</b><span class="note">${esc(dn(j.dept))}${j.pay ? ' · ' + esc(j.pay) : ''}${j.open === false ? ' · закрыта' : ''}</span>`,
+    fields: [{ k: 'title', label: 'Должность' }, { k: 'dept', label: 'Отдел', type: 'select', options: [['', '—'], ...(A.depts || []).map(d => [d.id, d.name])] }, { k: 'pay', label: 'Оплата (текстом, например «$900 / смена»)' }, { k: 'schedule', label: 'График (например «вечерние смены»)' }, { k: 'order', label: 'Порядок', type: 'number' }, { k: 'open', label: 'Вакансия открыта и видна на сайте', type: 'check' }, { k: 'desc', label: 'Коротко о вакансии', type: 'textarea' }, { k: 'duties', label: 'Чем заниматься', type: 'textarea' }, { k: 'reqs', label: 'Кого ищем', type: 'textarea' }],
+    newDefaults: { open: true, order: items.length } });
 }
 function faq(m) {
   crud(m, { col: 'faq', title: 'Вопросы и ответы', sub: 'Блок «Частые вопросы» на странице заявки.', items: A.faq,
