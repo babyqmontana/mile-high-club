@@ -103,6 +103,25 @@ test('бронь: переходы только по правилам, номе�
   s.close();
 });
 
+test('этаж правится целиком: новый номер этажа с перенумерацией, общий тип, бронь переезжает вместе с номером', async () => {
+  const s = openStore(path.join(dir, 'fl.sqlite')); seed(s); const core = createCore(s, {});
+  const admin = { id: 'a', username: 'A', role: 'admin' }, mod = { id: 'm', username: 'M', role: 'mod' }, guest = { id: 'g', username: 'G', role: 'guest' };
+  const b = (await core.handle('POST', '/bookings', { body: { type: 'dlx', name: 'Гость', discord: 'g', date: '2026-12-01', nights: 2 }, user: guest })).booking;
+  await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act: 'confirm', room: '2201' }, user: admin });
+  await assert.rejects(core.handle('PUT', '/admin/floors/22', { body: { floor: 40 }, user: mod }), /прав|доступ/i);
+  const n22 = s.all('rooms').filter(r => r.floor === 22).length, type = s.all('types').at(-1).id;
+  const res = await core.handle('PUT', '/admin/floors/22', { body: { floor: 40, type }, user: admin });
+  assert.equal(res.rooms.length, n22);
+  assert.equal(s.all('rooms').filter(r => r.floor === 22).length, 0);
+  assert.ok(s.get('rooms', '4001') && !s.get('rooms', '2201'));
+  assert.ok(s.all('rooms').filter(r => r.floor === 40).every(r => r.type === type));
+  assert.equal(s.get('bookings', b.id).room, '4001');
+  // перенумерация не затирает чужие номера
+  await core.handle('POST', '/admin/rooms', { body: { id: '4101', floor: 41, type }, user: admin });
+  await assert.rejects(core.handle('PUT', '/admin/floors/40', { body: { floor: 41 }, user: admin }), /заняты/);
+  s.close();
+});
+
 test('ссылки и цвета из панели проходят только безопасные', async () => {
   const s = openStore(path.join(dir, 'url.sqlite')); seed(s); const core = createCore(s, {}); const admin = { id: 'a', username: 'A', role: 'admin' };
   const { doc } = await core.handle('PUT', '/admin/offers/new', { body: { title: 'x', link: 'javascript:alert(1)', image: 'https://ok.example/a.webp' }, user: admin });

@@ -387,6 +387,19 @@ export function createCore(store, hooks = {}) {
     for (let i = 0; i < count; i++) { const id = String(start + i); if (store.get('rooms', id)) continue; store.put('rooms', id, { id, floor, type, status: 'free', createdAt: Date.now() }); made.push(id); }
     log(`${user.username} добавил ${made.length} номеров на ${floor} этаже`, 'edit', user.username); roomsChanged(); emit(['log']); return { made };
   });
+  // правка этажа целиком: новый номер этажа (номера вида 2601 переименовываются в 2701), общий тип для всех номеров
+  on('PUT', '/admin/floors/:floor', ({ params, body, user }) => {
+    need(user, 'admin'); const f = Math.round(num(params.floor, NaN)), rs = store.all('rooms').filter(r => r.floor === f); if (!rs.length) throw new HttpError(404, 'Нет такого этажа');
+    const to = Math.round(num(body.floor, f)); if (!Number.isFinite(to) || to < -5 || to > 300) bad('Укажите этаж');
+    const type = body.type ? str(body.type, 40) : ''; if (type && !store.get('types', type)) bad('Нет такого типа номера');
+    const renum = body.renumber !== false && to !== f, pre = String(f), plan = rs.map(r => ({ r, id: renum && r.id.startsWith(pre) && /^\d+$/.test(r.id) && r.id.length === pre.length + 2 ? String(to) + r.id.slice(pre.length) : r.id }));
+    const taken = plan.filter(x => x.id !== x.r.id && store.get('rooms', x.id) && !rs.some(r => r.id === x.id)).map(x => x.id); if (taken.length) bad(`Номера уже заняты: ${taken.slice(0, 6).join(', ')}`);
+    plan.forEach(({ r }) => store.del('rooms', r.id));
+    plan.forEach(({ r, id }) => { store.put('rooms', id, { ...r, id, floor: to, type: type || r.type, updatedAt: Date.now() });
+      if (id !== r.id) store.all('bookings').filter(b => b.room === r.id || b.preferredRoom === r.id).forEach(b => store.put('bookings', b.id, { ...b, room: b.room === r.id ? id : b.room, preferredRoom: b.preferredRoom === r.id ? id : b.preferredRoom })); });
+    log(`${user.username} изменил ${f} этаж${to !== f ? ' → ' + to : ''}${type ? ', тип: ' + (store.get('types', type)?.name || type) : ''}`, 'edit', user.username); roomsChanged(); emit(['bookings', 'log']);
+    return { floor: to, rooms: plan.map(x => x.id) };
+  });
   on('DELETE', '/admin/floors/:floor', ({ params, user }) => { need(user, 'admin'); const f = Math.round(num(params.floor, NaN)); const rs = store.all('rooms').filter(r => r.floor === f); if (rs.some(busy)) bad('На этаже есть брони или гости — сначала завершите их'); rs.forEach(r => store.del('rooms', r.id)); log(`${user.username} удалил ${f} этаж (${rs.length} номеров)`, 'edit', user.username); roomsChanged(); emit(['log']); return { removed: rs.length }; });
 
   // брони
