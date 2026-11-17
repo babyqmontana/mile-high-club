@@ -36,7 +36,7 @@ const EDITABLE = {
 };
 // Отправители постов в Discord: имя и аватарка вебхука
 const DEFAULT_SENDERS = [['concierge', '🛎️ Консьерж MHC', '#F7B50A'], ['reception', '🔑 Ресепшен MHC', '#F0177A'], ['manager', '🥂 Управляющий MHC', '#EF5617'], ['journal', '📰 Журнал «Высота»', '#F4D9A0']].map(([id, name, color], order) => ({ id, name, color, avatar: `img/discord/${id}.png`, order }));
-const PUBLIC_SETTINGS = ['tiers', 'deckTracks', 'deckUrl', 'staffExtras', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer'];
+const PUBLIC_SETTINGS = ['tiers', 'deckTracks', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer'];
 
 export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const bad = m => { throw new HttpError(400, m); };
@@ -79,8 +79,6 @@ export function createCore(store, hooks = {}) {
   const ownerOf = (user, guestKey) => user ? 'd:' + user.id : guestKey ? 'g:' + str(guestKey, 64) : null;
   const isOwner = (doc, user, guestKey) => doc.owner && (doc.owner === ownerOf(user, guestKey) || (user && doc.owner === 'd:' + user.id));
   const sort = (arr, f = 'order') => arr.sort((a, b) => (a[f] ?? 0) - (b[f] ?? 0));
-  // «Пойду» на событиях: отметка гостя хранится по владельцу, событию приходит только число
-  const goingCount = id => store.all('rsvp').filter(r => r.eventId === id).length;
   // отзывы: на сайте только одобренные персоналом; рейтинг — по ним же
   function reviewsPublic() {
     const ok = store.all('reviews').filter(r => r.status === 'approved').sort((a, b) => b.createdAt - a.createdAt);
@@ -125,7 +123,7 @@ export function createCore(store, hooks = {}) {
       offers: sort(store.all('offers')).filter(o => o.active !== false),
       faq: sort(store.all('faq')),
       issues: store.all('issues').filter(i => i.published).sort((a, b) => (b.date || 0) - (a.date || 0)),
-      events: store.all('events').filter(e => !['cancelled', 'completed'].includes(e.status) && (e.end || e.start + 3 * 3600e3) > now - 3600e3).sort((a, b) => a.start - b.start).slice(0, 30).map(e => ({ ...e, going: goingCount(e.id) })),
+      events: store.all('events').filter(e => !['cancelled', 'completed'].includes(e.status) && (e.end || e.start + 3 * 3600e3) > now - 3600e3).sort((a, b) => a.start - b.start).slice(0, 30),
       jobs: sort(store.all('jobs')).filter(j => j.open !== false),
       reviews: reviewsPublic(),
       media: store.all('media').map(m => ({ id: m.id, url: m.url })),
@@ -141,9 +139,9 @@ export function createCore(store, hooks = {}) {
   on('GET', '/public', () => publicData());
   on('GET', '/me', ({ user }) => ({ user: user || null }));
   on('GET', '/me/items', ({ user, guestKey }) => {
-    const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [], profile: null, stats: guestStats(null), reviews: [], going: [], notices: [] };
+    const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [], profile: null, stats: guestStats(null), reviews: [], notices: [] };
     const mine = c => store.all(c).filter(d => d.owner === o).sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
-    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: profileOf(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r), going: store.all('rsvp').filter(r => r.owner === o).map(r => r.eventId) };
+    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: profileOf(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r) };
   });
   // после входа брони, заказы, обращения и профиль с этого устройства переходят в аккаунт
   on('POST', '/me/claim', ({ user, guestKey }) => {
@@ -152,7 +150,6 @@ export function createCore(store, hooks = {}) {
     for (const c of ['bookings', 'orders', 'tickets']) store.all(c).filter(d => d.owner === from).forEach(d => { store.put(c, d.id, { ...d, owner: to, discordId: d.discordId || user.id }); moved++; });
     store.all('reviews').filter(r => r.owner === from).forEach(r => store.put('reviews', r.id, { ...r, owner: to }));
     store.all('notices').filter(n => n.owner === from).forEach(n => store.put('notices', n.id, { ...n, owner: to }));
-    store.all('rsvp').filter(r => r.owner === from).forEach(r => { store.del('rsvp', r.id); const id = r.eventId + '|' + to; if (!store.get('rsvp', id)) store.put('rsvp', id, { ...r, id, owner: to, discordId: user.id }); });
     const gp = profileOf(from);
     if (gp) { const up = profileOf(to) || { id: to }; store.put('profiles', to, { ...gp, ...Object.fromEntries(Object.entries(up).filter(([, v]) => v !== '' && v != null)), lifex: up.lifex || gp.lifex, id: to, achievements: [...new Set([...(gp.achievements || []), ...(up.achievements || [])])].slice(0, 40), updatedAt: Date.now() }); store.del('profiles', from); }
     if (moved) emit(['bookings', 'orders', 'tickets']);
@@ -208,14 +205,6 @@ export function createCore(store, hooks = {}) {
     store.put('reviews', r.id, r); log(`Новый отзыв (${stars}★) на бронь ${b.code}`, 'review'); emit(['reviews', 'log']); call('notify', 'review', r);
     const { owner, ...out } = r; return { review: out };
   });
-  // «Пойду»: повторное нажатие снимает отметку
-  on('POST', '/events/:id/going', ({ params, user, guestKey }) => {
-    const o = ownerOf(user, guestKey); if (!o) bad('Не удалось отметиться');
-    const e = store.get('events', str(params.id, 80)); if (!e || ['cancelled', 'completed'].includes(e.status) || (e.end || e.start + 3 * 3600e3) < Date.now()) bad('Событие уже прошло');
-    const id = e.id + '|' + o, had = store.get('rsvp', id);
-    if (had) store.del('rsvp', id); else store.put('rsvp', id, { id, eventId: e.id, owner: o, discordId: user?.id || null, at: Date.now(), reminded: false });
-    emit(['rsvp']); return { going: !had, count: goingCount(e.id) };
-  });
   const myBooking = (id, user, guestKey) => { const b = store.get('bookings', id); if (!b || !isOwner(b, user, guestKey)) throw new HttpError(404, 'Бронь не найдена'); return b; };
   const freeRoomOf = b => { const r = b.room && store.get('rooms', b.room); if (r && (!r.bookingId || r.bookingId === b.id) && r.status === 'booked') { store.put('rooms', r.id, { ...r, status: 'free', guest: null, discord: null, bookingId: null, updatedAt: Date.now() }); return true; } return false; };
   // гость сам отменяет бронь до заселения; номер, если уже назначен, освобождается
@@ -254,7 +243,7 @@ export function createCore(store, hooks = {}) {
     const marks = [...bookings.map(b => b.code), ...tickets.map(t => `от ${t.discord}`), ...tickets.map(t => `обращение ${t.discord}`)].filter(x => x && x.length > 3);
     store.all('log').filter(l => marks.some(m => String(l.text).includes(m))).forEach(l => store.del('log', l.id));
     owners.forEach(o => { const pr = profileOf(o); if (pr?.lifex?.avatar) call('removeUpload', pr.lifex.avatar); store.del('profiles', o); });
-    emit(['bookings', 'orders', 'tickets', 'log', 'reviews', 'rsvp']); if (rooms) roomsChanged();
+    emit(['bookings', 'orders', 'tickets', 'log', 'reviews']); if (rooms) roomsChanged();
     return { deleted: { bookings: bookings.length, orders: orders.length, tickets: tickets.length } };
   });
 
@@ -497,7 +486,7 @@ export function createCore(store, hooks = {}) {
     if (col === 'offers') { pick('title', S(80)); pick('tag', S(30)); pick('desc', S(400)); pick('price', S(40)); pick('image', U(400)); pick('order', N); pick('active', B); pick('cta', S(30)); pick('link', U(120)); }
     if (col === 'faq') { pick('q', S(160)); pick('a', S(800)); pick('order', N); }
     if (col === 'jobs') { pick('title', S(80)); pick('dept', S(40)); pick('desc', S(800)); pick('duties', S(800)); pick('reqs', S(800)); pick('schedule', S(120)); pick('pay', S(60)); pick('open', B); pick('order', N); }
-    if (col === 'depts') { pick('name', S(40)); pick('color', H); pick('accent', H); pick('desc', S(400)); pick('order', N); pick('gender', v => v === 'female' ? 'female' : 'male'); pick('duties', S(400)); pick('model', U(400)); pick('shirt', H); if ('items' in b) o.items = (Array.isArray(b.items) ? b.items : []).slice(0, 8).map(it => ({ name: str(it.name, 40), kind: ['jacket', 'shirt', 'pants', 'tie', 'apron', 'vest', 'hat', 'shoes'].includes(it.kind) ? it.kind : 'jacket', color: H(it.color), accent: H(it.accent), frames: (Array.isArray(it.frames) ? it.frames : []).slice(0, 72).map(u => U(400)(u)).filter(Boolean) })); }
+    if (col === 'depts') { pick('name', S(40)); pick('color', H); pick('accent', H); pick('desc', S(400)); pick('order', N); pick('duties', S(400)); pick('shirt', H); }
     if (col === 'media') { pick('url', U(2_000_000)); pick('name', S(80)); }
     if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', U(400)); pick('date', N); pick('published', B); pick('accent', H); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: U(400)(p.image), cat: str(p.cat, 30) })); }
     if (col === 'events') { pick('name', S(100)); pick('desc', S(1000)); pick('start', N); pick('end', N); pick('location', S(100)); pick('venueId', S(40)); pick('image', U(400)); pick('status', v => ['scheduled', 'active', 'completed', 'cancelled'].includes(v) ? v : 'scheduled'); if (!('source' in o)) o.source = 'manual'; }
@@ -531,18 +520,7 @@ export function createCore(store, hooks = {}) {
   function ticketMessage(id, m) { const t = store.get('tickets', id); if (!t) return; if (m.from === 'staff') notice(t.owner, 'ticket', `Ответ управляющего по «${t.topic}»: ${String(m.text || '').slice(0, 160)}`); t.messages.push(m); if (t.messages.length > 300) t.messages = t.messages.slice(-300); t.lastAt = m.at; t.lastFrom = m.from; store.put('tickets', t.id, t); emit(['tickets']); call('notify', 'ticket_update', t); }
   function removeEvent(id) { if (!store.get('events', id)) return; store.del('events', id); emit(['events']); }
 
-  function dueReminders(now = Date.now()) {
-    const out = [];
-    for (const r of store.all('rsvp')) {
-      if (r.reminded || !r.discordId) continue;
-      const e = store.get('events', r.eventId); if (!e || ['cancelled', 'completed'].includes(e.status)) continue;
-      const left = e.start - now; if (left > 65 * 60e3 || left < 0) continue;
-      store.put('rsvp', r.id, { ...r, reminded: true });
-      if (profileOf(r.owner)?.dm !== false) out.push({ discordId: r.discordId, event: e, minutes: Math.max(1, Math.round(left / 60e3)) });
-    }
-    return out;
-  }
-  return { dueReminders, handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store, linkLifex };
+  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store, linkLifex };
 }
 
 /* ---------- стартовые данные ---------- */
@@ -584,7 +562,7 @@ function hideDemoEvents(store) { for (const id of ['e-demo1', 'e-demo2']) { cons
 export function roomGameFloor(rooms, floor) { const list = [...new Set(rooms.map(r => r.floor))].sort((a, b) => a - b), i = list.indexOf(floor); return i < 0 ? '' : `Rooms Floor ${Math.min(i + 1, 6)}`; }
 
 export function seed(store) { const fresh = seedBase(store); floorsV1(store); hideDemoEvents(store); siteV3(store); return fresh; }
-function siteV3(store) { const s = store.get('settings', 'main'); if (s.siteV3) return; store.put('settings', 'main', { ...s, siteV3: true, deckUrl: s.deckUrl ?? 'https://youtu.be/rkjSuky5vdk', staffExtras: s.staffExtras ?? true, weather: s.weather === 'snow' ? 'auto' : s.weather }); }
+function siteV3(store) { const s = store.get('settings', 'main'); if (s.siteV3) return; store.put('settings', 'main', { ...s, siteV3: true, weather: s.weather === 'snow' ? 'auto' : s.weather }); }
 function seedBase(store) {
   if (store.get('settings', 'main')) { seedV2(store); return false; }
   const put = (c, d) => store.put(c, d.id, d);

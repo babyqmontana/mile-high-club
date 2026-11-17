@@ -373,13 +373,12 @@ test('снег только в новогодней теме', () => {
   assert.equal(weatherNow({ weather: 'clear', theme: 'newyear' }, jan).kind, 'snow');
 });
 
-test('настройки музыки и персонала доступны сайту', async () => {
+test('музыка вертушки: только свои треки, ссылки YouTube и униформы на сайте больше нет', async () => {
   const { core } = makeCore();
-  assert.match(core.publicData().settings.deckUrl, /rkjSuky5vdk/);
-  assert.equal(core.publicData().settings.staffExtras, true);
-  await core.handle('PUT', '/admin/settings/main', { user: admin, body: { staffExtras: false, deckUrl: 'https://youtu.be/abcdefghijk' } });
-  assert.equal(core.publicData().settings.staffExtras, false);
-  assert.match(core.publicData().settings.deckUrl, /abcdefghijk/);
+  await core.handle('PUT', '/admin/settings/main', { user: admin, body: { deckUrl: 'https://youtu.be/abcdefghijk', deckTracks: [{ url: '/uploads/0123456789abcdef.mp3', title: 'Лаунж' }, { url: 'https://evil/x.mp3', title: 'чужой' }] } });
+  const s = core.publicData().settings;
+  assert.equal(s.deckUrl, undefined); assert.equal(s.staffExtras, undefined);
+  assert.deepEqual(s.deckTracks, [{ url: '/uploads/0123456789abcdef.mp3', title: 'Лаунж' }]);
 });
 
 test('транскрипт экранирует разметку и содержит переписку', () => {

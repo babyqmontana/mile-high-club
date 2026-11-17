@@ -77,7 +77,7 @@ function applyWeather() {
   const c = $('#wxChip'); if (c) c.innerHTML = `${w.kind === 'clear' && m === 'night' ? WXI.night : WXI[w.kind]}<b class="num">${w.temp > 0 ? '+' : w.temp < 0 ? '−' : ''}${Math.abs(w.temp)}°</b><span class="t">${hhmm(Date.now())}</span>`;
   const wt = $('#wxTile'); if (wt) wt.textContent = `${w.label}, ${w.temp > 0 ? '+' : w.temp < 0 ? '−' : ''}${Math.abs(w.temp)}° · ${m === 'day' ? 'день' : 'ночь'}`;
 }
-function applyMode() { const m = mode(); if (document.documentElement.dataset.mode !== m) { document.documentElement.dataset.mode = m; mods.tower?.relight?.(); mods.staff?.relight?.(); mods.hum?.relight?.(); if (current === 'home') renderHome(); } paintNav(); applyWeather(); }
+function applyMode() { const m = mode(); if (document.documentElement.dataset.mode !== m) { document.documentElement.dataset.mode = m; mods.tower?.relight?.(); mods.hum?.relight?.(); if (current === 'home') renderHome(); } paintNav(); applyWeather(); }
 function onScroll() { }
 
 /* ---------------- маршруты ---------------- */
@@ -272,7 +272,7 @@ function evCard(e) {
   const live = e.start <= Date.now() && (e.end || e.start + 3 * 3600e3) > Date.now(), v = S.pub.venues.find(x => x.id === e.venueId);
   const day = new Date(e.start).toLocaleDateString('ru-RU', { day: 'numeric', timeZone: 'Europe/Moscow' }), mon = new Date(e.start).toLocaleDateString('ru-RU', { month: 'short', timeZone: 'Europe/Moscow' }).replace('.', '');
   return `<div class="ev${live ? ' live' : ''}" style="--a:${esc(v?.accent || '#F0177A')}"><div class="stub"${e.image ? ` style="background-image:linear-gradient(rgba(13,8,9,.5),rgba(13,8,9,.88)),url('${esc(e.image)}')"` : ''}><b class="num">${day}</b><span>${esc(mon)}</span><small class="num">${hhmm(e.start)}</small></div>
-    <div class="body"><div class="row">${live ? '<span class="chip p live"><span class="d"></span>Идёт сейчас</span>' : `<span class="chip m">${hhmm(e.start)}${e.end ? '–' + hhmm(e.end) : ''}</span>`}${e.source === 'discord' ? '<span class="chip v">Discord</span>' : ''}</div><h4>${esc(e.name)}</h4><span class="note">${esc(e.location || v?.name || '')}</span>${e.desc ? `<p class="note" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(e.desc)}</p>` : ''}<div class="row ev-act">${goBtn(e)}${e.url ? `<a class="btn sm ghost" href="${esc(e.url)}" target="_blank" rel="noopener">Подробнее</a>` : ''}</div></div></div>`;
+    <div class="body"><div class="row">${live ? '<span class="chip p live"><span class="d"></span>Идёт сейчас</span>' : `<span class="chip m">${hhmm(e.start)}${e.end ? '–' + hhmm(e.end) : ''}</span>`}${e.source === 'discord' ? '<span class="chip v">Discord</span>' : ''}</div><h4>${esc(e.name)}</h4><span class="note">${esc(e.location || v?.name || '')}</span>${e.desc ? `<p class="note" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(e.desc)}</p>` : ''}<div class="row ev-act">${e.url ? `<a class="btn sm ghost" href="${esc(e.url)}" target="_blank" rel="noopener">Подробнее</a>` : ''}</div></div></div>`;
 }
 
 /* ---------------- номера ---------------- */
@@ -548,9 +548,9 @@ function renderLeisure() {
   if (!lv.querySelector('#venuesList')) {
     lv.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Отдых</span><h2>Что сейчас открыто</h2><p>Статусы обновляются по расписанию и по событиям из Discord. Днём работает Sky Pool, ночью Night Pool и The Hot Times.</p></div>
       <div id="deckHost" class="reveal"></div><section class="hday reveal" id="hday" aria-label="Сутки отеля"></section><div class="venues" id="venuesList"></div></div>`;
-    import('./deck.js').then(d => { mods.deck = d.mountDeck($('#deckHost'), S.pub.settings.deckUrl, S.pub.settings.deckTracks || []); mods.deck.active(current === 'leisure'); });
+    import('./deck.js').then(d => { mods.deck = d.mountDeck($('#deckHost'), S.pub.settings.deckTracks || []); mods.deck.active(current === 'leisure'); });
   }
-  mods.deck?.tracks?.(p.settings.deckTracks || []); mods.deck?.url(p.settings.deckUrl);
+  mods.deck?.tracks?.(p.settings.deckTracks || []);
   const cards = p.venues.map(v => { const st = venueState(v, p.events), evs = p.events.filter(e => e.venueId === v.id && (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 3);
     const visual = v.image ? `<div class="img cover" style="background-image:url('${esc(v.image)}')">` : v.kind === 'pool' ? `<div class="img"><div class="water ${v.id === 'night' || /night|ноч/i.test(v.name) ? 'n' : ''} ${st.state === 'live' || st.state === 'event' ? 'live' : ''}"><div class="sky"></div><div class="pl"></div></div>` : `<div ${bg('', v.name, v.accent || '#F0177A', '#F7B50A', 'img')}>`;
     return `<article class="venue reveal" data-venue="${esc(v.id)}">${visual}${stateChip(st)}</div><div class="body"><div class="row" style="justify-content:space-between"><h3>${esc(v.name)}</h3><span class="note">${esc(KIND_LABEL[v.kind] || '')}${v.floor ? ' · ' + esc(v.floor) : ''}</span></div>
@@ -637,20 +637,6 @@ function applyJobPrefill() {
   if (!jobPrefill || current !== 'contact') return; const t = $('#tTopic'), x = $('#tText'); if (!t || !x) return;
   t.value = jobPrefill.topic; if (!x.value) x.value = jobPrefill.text; jobPrefill = null; x.focus(); x.setSelectionRange(x.value.indexOf('О себе и опыт: ') + 15, x.value.indexOf('О себе и опыт: ') + 15);
 }
-// «Пойду»: отметка гостя на событии, число отметившихся видно всем
-const goingSet = () => new Set(S.items?.going || []);
-function goBtn(e) { const on = goingSet().has(e.id); return `<button class="btn sm ${on ? '' : 'ghost'} go-btn" data-go="${esc(e.id)}" aria-pressed="${on}">${on ? '✓ Иду' : 'Пойду'}${e.going ? ` · <span class="num">${e.going}</span>` : ''}</button>`; }
-document.addEventListener('click', async ev => {
-  const b = ev.target.closest('[data-go]'); if (!b) return; ev.preventDefault(); ev.stopPropagation(); if (b.disabled) return; b.disabled = true;
-  try {
-    const r = await api('POST', `/events/${encodeURIComponent(b.dataset.go)}/going`), set = goingSet();
-    r.going ? set.add(b.dataset.go) : set.delete(b.dataset.go); if (S.items) S.items.going = [...set];
-    const e = S.pub.events.find(x => x.id === b.dataset.go); if (e) e.going = r.count;
-    $$(`[data-go="${CSS.escape(b.dataset.go)}"]`).forEach(x => { if (e) x.outerHTML = goBtn(e); });
-    play(r.going ? 'add' : 'soft');
-    if (r.going) toast(S.me ? 'Отмечено: бот напомнит в Discord за час до начала' : 'Отмечено. Войдите через Discord, чтобы бот напомнил за час до начала');
-  } catch (err) { fail(err); b.disabled = false; }
-});
 // политика конфиденциальности: текст в отдельном модуле, грузится только при открытии страницы
 function renderPrivacy() {
   const v = view('privacy'); if (v.dataset.ready) return;
@@ -791,20 +777,12 @@ function renderIssue() {
 }
 
 /* ---------------- персонал ---------------- */
-let deptIdx = 0, gender = null, staffMode = 'team', teamDept = '';
+let teamDept = '';
 function renderStaff() {
-  const d = S.pub.depts, v = view('staff'); if (deptIdx >= d.length) deptIdx = 0;
-  queueMicrotask(() => { const j = $('#stJobs'), n = (S.pub.jobs || []).length; if (j) { j.hidden = !n; j.textContent = `Вакансии · ${n}`; } });
-  if (!v.querySelector('.stage')) {
-    v.innerHTML = `<div class="wrap sec"><div class="row staffhead"><div class="head" style="margin:0"><span class="eyebrow">Персонал</span><h2 id="stH">Команда отеля</h2><p id="stP"></p><a class="btn sm ghost" href="#jobs" id="stJobs" hidden style="margin-top:.6rem;justify-self:start">Вакансии</a></div>
-      <div class="seg" role="group" aria-label="Вид"><button data-sm="team">Команда</button><button data-sm="outfit">Униформа 360°</button><button data-sm="model">3D-манекен</button></div></div>
-      <div id="teamV"></div>
-      <div class="staff" id="uniV"><div class="deps" id="deps" role="group" aria-label="Отдел"></div><div><div class="outfit" id="outfit"></div><div class="stage" id="stage"><div class="loading" id="stLoad">Загружаем манекен…</div><div class="info"><div class="ucard" id="ucard"></div><div class="seg" role="group" aria-label="Манекен"><button data-g="male">Мужской</button><button data-g="female">Женский</button></div></div></div></div></div></div>`;
-    $$('#main [data-sm]').forEach(b => b.onclick = () => { staffMode = b.dataset.sm; if (staffMode === 'model') loadStaff3d(); paintStaff(); });
-    $$('#stage [data-g]').forEach(b => b.onclick = () => { gender = b.dataset.g; paintStaff(); });
-    if (staffMode === 'model') loadStaff3d();
-  }
-  paintStaff();
+  const v = view('staff');
+  queueMicrotask(() => { const j = $('#stJobs'), n = (S.pub.jobs || []).length; if (j) { j.hidden = !n; j.style.display = n ? "" : "none"; j.textContent = `Вакансии · ${n}`; } });
+  if (!v.querySelector('#teamV')) v.innerHTML = `<div class="wrap sec"><div class="row staffhead"><div class="head" style="margin:0"><span class="eyebrow">Персонал</span><h2>Команда отеля</h2><p>Люди, которые держат Mile High Club на высоте. Нажмите на карточку, чтобы узнать о сотруднике.</p><a class="btn sm ghost" href="#jobs" id="stJobs" hidden style="margin-top:.6rem;justify-self:start">Вакансии</a></div></div><div id="teamV"></div></div>`;
+  paintTeam();
 }
 const initials = n => String(n || '?').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
 function paintTeam() {
@@ -826,38 +804,10 @@ function openMember(t) {
   modal(`<div class="member" style="--ac:${esc(d?.accent || '#F7B50A')}"><div class="tph ${t.photo ? '' : 'none'}" ${t.photo ? `style="background-image:url('${esc(t.photo)}')"` : ''}>${t.photo ? '' : `<b>${esc(initials(t.name))}</b>`}</div>
     <div class="stack"><div><span class="eyebrow">${esc(d?.name || 'Mile High Club')}</span><h3>${esc(t.name)}</h3><p class="mut">${esc(t.position || '')}</p></div>
     ${t.quote ? `<blockquote>«${esc(t.quote)}»</blockquote>` : ''}${t.bio ? `<p>${esc(t.bio)}</p>` : ''}
-    <dl>${t.since ? `<div><dt>В отеле</dt><dd>${esc(t.since)}</dd></div>` : ''}${t.discord ? `<div><dt>Discord</dt><dd>${esc(t.discord)}</dd></div>` : ''}${d ? `<div><dt>Форма</dt><dd><span class="sw"><i style="background:${esc(d.color)}"></i><i style="background:${esc(d.accent)}"></i></span></dd></div>` : ''}</dl>
+    <dl>${t.since ? `<div><dt>В отеле</dt><dd>${esc(t.since)}</dd></div>` : ''}${t.discord ? `<div><dt>Discord</dt><dd>${esc(t.discord)}</dd></div>` : ''}</dl>
     ${t.example ? '<p class="note">Это пример анкеты. Настоящие данные добавят управляющие.</p>' : ''}
-    <div class="row"><a class="btn sm" href="#contact" data-close="">Написать управляющим</a>${d ? `<button class="btn sm ghost" data-uni="${esc(d.id)}" data-close="">Форма отдела</button>` : ''}</div></div></div>`,
-    { wide: true, onMount: box => { const u = $('[data-uni]', box); if (u) u.addEventListener('click', () => { deptIdx = Math.max(0, S.pub.depts.findIndex(x => x.id === u.dataset.uni)); staffMode = 'outfit'; paintStaff(); }); } });
-}
-function loadStaff3d() {
-  if (mods.staff || loadStaff3d.busy) return; loadStaff3d.busy = true;
-  if (!hasWebGL()) { $('#stLoad').textContent = '3D-манекен недоступен в этом браузере. Форму отдела можно посмотреть во вкладке «Униформа 360°».'; return; }
-  import('./staff3d.js').then(m => { mods.staff = m.mountStaff($('#stage'), () => $('#stLoad')?.remove(), () => { const l = $('#stLoad'); if (l) l.textContent = '3D-манекен не загрузился. Форму отдела можно посмотреть во вкладке «Униформа 360°».'; }); mods.staff.active(current === 'staff' && staffMode === 'model'); paintStaff(); }).catch(e => { console.error(e); $('#stLoad').textContent = '3D-просмотр не загрузился.'; });
-}
-function paintStaff() {
-  const extras = S.pub.settings.staffExtras !== false; if (!extras) staffMode = 'team'; // в настройках можно оставить только команду
-  $('.staffhead .seg').style.display = extras ? '' : 'none';
-  const T = { team: ['Команда отеля', 'Люди, которые держат Mile High Club на высоте. Нажмите на карточку, чтобы узнать о сотруднике.'], outfit: ['Униформа по отделам', 'Каждая вещь формы крутится на 360°. Пока это заглушки в цветах отдела, фото подставим, когда будут готовы.'], model: ['Форма на манекене', 'Покрутите манекен мышью или пальцем. Цвета берутся из формы отдела.'] }[staffMode];
-  $('#stH').textContent = T[0]; $('#stP').textContent = T[1];
-  $$('#main [data-sm]').forEach(b => b.setAttribute('aria-pressed', b.dataset.sm === staffMode));
-  $('#teamV').classList.toggle('hide', staffMode !== 'team'); $('#uniV').classList.toggle('hide', staffMode === 'team');
-  if (staffMode === 'team') { mods.staff?.active(false); paintTeam(); return; }
-  const ds = S.pub.depts, d = ds[deptIdx]; if (!d) { $('#deps').innerHTML = '<div class="empty">Отделы не заданы.</div>'; return; }
-  const g = gender || d.gender || 'male';
-  $('#deps').innerHTML = ds.map((x, i) => `<button aria-pressed="${i === deptIdx}" data-i="${i}" style="--ac:${esc(x.accent)}" data-sfx="soft"><i style="background:${esc(x.color)}"></i>${esc(x.name)}</button>`).join('');
-  $$('#deps button').forEach(b => b.onclick = () => { deptIdx = +b.dataset.i; gender = null; paintStaff(); });
-  $$('#stage [data-g]').forEach(b => b.setAttribute('aria-pressed', b.dataset.g === g));
-  $('#ucard').innerHTML = `<h3>${esc(d.name)}</h3><p>${esc(d.desc || '')}</p><span class="sw">${[d.color, d.accent].map(c => `<i style="background:${esc(c)}"></i>`).join('')}</span>`;
-  $$('#main [data-sm]').forEach(b => b.setAttribute('aria-pressed', b.dataset.sm === staffMode));
-  $('#stage').classList.toggle('hide', staffMode !== 'model'); $('#outfit').classList.toggle('hide', staffMode !== 'outfit');
-  mods.staff?.active(current === 'staff' && staffMode === 'model'); mods.staff?.show(d, g);
-  if (staffMode === 'outfit') import('./outfit.js').then(o => {
-    const items = (d.items?.length ? d.items : o.defaultItems(d)).map(it => ({ ...it, color: it.color || d.color, accent: it.accent || d.accent }));
-    $('#outfit').innerHTML = items.map((it, i) => `<article class="ocard"><canvas data-i="${i}" aria-label="${esc(it.name)}, вращается на 360 градусов"></canvas><div class="row" style="justify-content:space-between"><b>${esc(it.name)}</b><span class="chip ${it.frames?.length ? 'ok' : 'm'}">${it.frames?.length ? '360° фото' : 'заглушка'}</span></div><span class="sw"><i style="background:${esc(it.color)}"></i>${it.kind === 'jacket' || it.kind === 'vest' ? `<i style="background:${esc(it.accent)}"></i>` : ''}</span></article>`).join('') + `<div class="ucard card pad" style="grid-column:1/-1"><h3 style="font-size:1.1rem">${esc(d.name)}</h3><p class="mut">${esc(d.desc || '')}</p></div>`;
-    $$('#outfit canvas').forEach(cv => o.turntable(cv, items[+cv.dataset.i]));
-  });
+    <div class="row"><a class="btn sm" href="#contact" data-close="">Написать управляющим</a></div></div></div>`,
+    { wide: true });
 }
 
 /* ---------------- заявка ---------------- */
@@ -1066,11 +1016,11 @@ async function syncAccount() {
 let achT = 0;
 onAch(() => { if (!S.me || DEMO) return; clearTimeout(achT); achT = setTimeout(() => api('POST', '/me/achievements', { ids: achIds() }).catch(() => {}), 1500); });
 let itemsDirty = true;
-async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } paintNav(); paintUnread(); paintBell(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
+async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } paintNav(); paintBell(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
 // прочитанные ответы персонала помним в браузере: id обращения → время последнего просмотра
 const seenT = () => { try { return JSON.parse(pref.get('mhc-read') || '{}') || {}; } catch { return {}; } };
 const unreadOf = t => t.mode === 'site' && t.lastFrom === 'staff' && t.lastAt > (seenT()[t.id] || 0);
-function markRead(t) { if (!t || !unreadOf(t)) return; unlock('concierge'); const s = seenT(); s[t.id] = t.lastAt; pref.set('mhc-read', JSON.stringify(s)); paintUnread(); }
+function markRead(t) { if (!t || !unreadOf(t)) return; unlock('concierge'); const s = seenT(); s[t.id] = t.lastAt; pref.set('mhc-read', JSON.stringify(s)); }
 // колокольчик: уведомления о брони, заказах, ответах и отзывах; новое — всплывает подсказкой
 const BELL = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>';
 let bellSeen = +(pref.get('mhc-bell-at') || 0);
@@ -1091,7 +1041,6 @@ function openBell() {
     <p class="note" style="margin:0">${S.me ? 'Эти же уведомления бот присылает в Discord, если это не выключено в профиле.' : 'Войдите через Discord, чтобы получать уведомления на любом устройстве.'}</p></div>`);
   if (list.some(n => !n.read)) api('POST', '/me/notices/read').then(() => { list.forEach(n => n.read = true); paintBell(); }).catch(() => {});
 }
-function paintUnread() { const n = (S.items?.tickets || []).filter(unreadOf).length; $('#navUser')?.classList.toggle('unread', n > 0); $('#navUser')?.setAttribute('title', n ? `Новые ответы управляющих: ${n}` : ''); }
 // профиль гостя подставляется в пустые поля форм брони, заказа и заявки
 function prefill() {
   const p = S.items?.profile; if (!p) return;
@@ -1106,7 +1055,7 @@ function onChange(cols) {
     const c = [...refCols]; refCols = new Set();
     try {
       if (c.includes('me')) { await loadMe(); if (current === 'admin') { mods.admin?.unmount?.(); renderAdmin(); } if (current === 'me') renderMe(); }
-      if (c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq', 'jobs', 'reviews', 'rsvp'].includes(x))) { await loadPublic(); applyWeather(); if (!['contact', 'admin', 'me'].includes(current)) render(); updFab(); }
+      if (c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq', 'jobs', 'reviews'].includes(x))) { await loadPublic(); applyWeather(); if (!['contact', 'admin', 'me'].includes(current)) render(); updFab(); }
       if (c.includes('guests') && !c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq'].includes(x))) { await loadPublic(); paintGuests(); }
       // свои брони и заявки нужны только на страницах «Заявка» и «Мои брони»: на остальных просто помечаем устаревшими
       if (c.some(x => ['bookings', 'tickets', 'orders', 'reviews'].includes(x))) { const it = S.items, live = it && (it.tickets.some(t => t.status !== 'closed') || it.bookings.some(b => ['new', 'confirmed', 'checkedin'].includes(b.status)) || it.orders.some(o => !['done', 'cancelled'].includes(o.status))); if (['contact', 'me'].includes(current) || live) await loadItems(); else itemsDirty = true; }

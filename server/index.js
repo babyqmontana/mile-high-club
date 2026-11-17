@@ -138,10 +138,10 @@ app.post('/auth/logout', (req, res) => { setCookie(res, 'mhc_s', '', 0); res.jso
 
 /* ---- загрузка картинок ---- */
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 40, fields: 10, parts: 60 } });
-const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'model/gltf-binary': 'glb', 'application/octet-stream': 'glb', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'm4a' };
+const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'm4a' };
 // тип файла проверяется по содержимому, а не по тому, что прислал браузер
 const MAGIC = { jpg: b => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff, png: b => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
-  webp: b => b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP', gif: b => /^GIF8[79]a$/.test(b.toString('latin1', 0, 6)), glb: b => b.toString('latin1', 0, 4) === 'glTF',
+  webp: b => b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP', gif: b => /^GIF8[79]a$/.test(b.toString('latin1', 0, 6)),
   mp3: b => b.toString('latin1', 0, 3) === 'ID3' || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0), ogg: b => b.toString('latin1', 0, 4) === 'OggS', m4a: b => b.toString('latin1', 4, 8) === 'ftyp' };
 // права проверяются ДО приёма файлов: иначе любой мог бы прислать сотни мегабайт в память сервера
 const staffOnly = async (req, res, next) => { try { const user = await currentUser(req, res); if (!user || !['admin', 'mod'].includes(user.role)) return res.status(403).json({ error: 'Нужен вход персонала' }); req.user = user; next(); } catch (e) { next(e); } };
@@ -151,9 +151,9 @@ app.post('/api/admin/upload', staffOnly, uploadSlot, (req, res, next) => upload.
   const user = req.user;
   const out = [];
   for (const f of req.files || []) {
-    const isGlb = /\.glb$/i.test(f.originalname), am = /\.(mp3|ogg|m4a)$/i.exec(f.originalname);
-    const ext = isGlb ? 'glb' : am ? am[1].toLowerCase() : EXT[f.mimetype]; if (!ext || (ext === 'glb' && !isGlb) || !MAGIC[ext]?.(f.buffer)) continue;
-    if ((isGlb || am) && user.role !== 'admin') continue;
+    const am = /\.(mp3|ogg|m4a)$/i.exec(f.originalname);
+    const ext = am ? am[1].toLowerCase() : EXT[f.mimetype]; if (!ext || !MAGIC[ext]?.(f.buffer)) continue;
+    if (am && user.role !== 'admin') continue;
     const id = crypto.randomBytes(8).toString('hex'), name = `${id}.${ext}`;
     fs.writeFileSync(path.join(UPLOADS, name), f.buffer);
     const doc = { id, url: '/uploads/' + name, name: String(f.originalname).slice(0, 80), size: f.size, at: Date.now() };
@@ -187,7 +187,7 @@ setInterval(() => { const old = Date.now() - 3600e3; for (const [k, h] of slow) 
 const CREATE = [[/^\/api\/(bookings|orders|tickets|me\/reviews)$/, 'create', 8, 10 * 60e3], [/^\/api\/check-discord$/, 'check', 12, 60e3]];
 // Публичные данные одинаковы для всех гостей: собираем их один раз на версию данных (и раз в минуту — из-за
 // времени событий), сжимаем один раз и отдаём с ETag. Повторный запрос браузера получает 304 без тела.
-const PUBLIC_COLS = ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'team', 'offers', 'faq', 'issues', 'events', 'media', 'jobs', 'reviews', 'rsvp'];
+const PUBLIC_COLS = ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'team', 'offers', 'faq', 'issues', 'events', 'media', 'jobs', 'reviews'];
 let pubCache = null;
 app.get('/api/public', (req, res, next) => {
   try {
@@ -248,7 +248,7 @@ app.use(async (req, res, next) => {
 app.get(['/', '/index.html'], sendIndex);
 app.use(express.static(PUBLIC, { index: false, maxAge: '1h', setHeaders: (res, p) => {
   if (res.req.query.v) res.set('Cache-Control', 'public, max-age=31536000, immutable');
-  else if (/\.(glb|webp|jpg|png|woff2)$/.test(p)) res.set('Cache-Control', 'public, max-age=604800');
+  else if (/\.(webp|jpg|png|woff2|mp3|ogg|m4a)$/.test(p)) res.set('Cache-Control', 'public, max-age=604800');
 } }));
 app.get('*', sendIndex);
 const INDEX_BUF = (() => { const raw = Buffer.from(INDEX_HTML); return { raw, etag: '"i' + crypto.createHash('sha1').update(raw).digest('base64url').slice(0, 16) + '"', br: zlib.brotliCompressSync(raw), gz: zlib.gzipSync(raw, { level: 9 }) }; })();

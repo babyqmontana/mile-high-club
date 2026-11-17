@@ -218,7 +218,7 @@ test('LifeX: привязка заполняет пустые поля проф�
   s.close();
 });
 
-/* ---------- отзывы, «Пойду», вакансии ---------- */
+/* ---------- отзывы, вакансии ---------- */
 test('отзывы: только после выезда, один на бронь, на сайте только одобренные', async () => {
   const { s, core } = cab(), me = { guestKey: 'k1' };
   const b = await mkBooking(core, me);
@@ -234,15 +234,12 @@ test('отзывы: только после выезда, один на брон
   s.close();
 });
 
-test('«Пойду»: отметка переключается, число видно всем, напоминание один раз за час до начала', async () => {
-  const { s, core } = cab(), g = { user: GUEST }, start = Date.now() + 50 * 60e3;
+test('«Пойду» убрано: маршрута нет, у событий нет счётчика', async () => {
+  const { s, core } = cab(), start = Date.now() + 50 * 60e3;
   const ev = (await core.handle('PUT', '/admin/events/new', { body: { name: 'Вечеринка', start, end: start + 3600e3, status: 'scheduled' }, user: ADMIN })).doc;
-  assert.equal((await core.handle('POST', `/events/${ev.id}/going`, g)).count, 1);
-  assert.deepEqual((await core.handle('GET', '/me/items', g)).going, [ev.id]);
-  assert.equal(core.publicData().events.find(e => e.id === ev.id).going, 1);
-  const due = core.dueReminders(); assert.equal(due.length, 1); assert.equal(due[0].discordId, GUEST.id);
-  assert.equal(core.dueReminders().length, 0, 'второй раз не напоминает');
-  assert.equal((await core.handle('POST', `/events/${ev.id}/going`, g)).going, false, 'повторное нажатие снимает отметку');
+  await assert.rejects(core.handle('POST', `/events/${ev.id}/going`, { user: GUEST }));
+  assert.equal(core.publicData().events.find(e => e.id === ev.id).going, undefined);
+  assert.equal((await core.handle('GET', '/me/items', { user: GUEST })).going, undefined);
   s.close();
 });
 
