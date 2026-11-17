@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { openStore } from './store.js';
 import { createCore, seed, HttpError } from '../public/js/core.js';
 import { startBot } from './bot.js';
+import { mountLifex } from './lifex.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 loadEnv(path.join(ROOT, '.env'));
@@ -97,7 +98,7 @@ app.use((req, res, next) => {
 });
 
 /* ---- вход через Discord ---- */
-app.get('/auth/config', (req, res) => res.json({ oauth: OAUTH, demo: DEMO }));
+app.get('/auth/config', (req, res) => res.json({ oauth: OAUTH, demo: DEMO, lifex: !!hooks.lifexOn?.() }));
 app.get('/auth/discord', (req, res) => {
   if (!OAUTH) return res.redirect('/#admin');
   const state = crypto.randomBytes(16).toString('hex'); setCookie(res, 'mhc_state', state + '|' + String(req.query.next || 'admin').replace(/[^a-z-]/g, ''), 600);
@@ -194,6 +195,8 @@ app.get('/api/public', (req, res, next) => {
     sendBuf(req, res, pubCache, 'application/json; charset=utf-8', 'no-cache');
   } catch (e) { next(e); }
 });
+// привязка профиля LifeX к кабинету гостя (подключается, когда в .env заданы адреса LifeX)
+mountLifex(app, { env, core, setCookie, encode, decode, cookies, currentUser, limited, UPLOADS, MAGIC, secure, hooks });
 app.all('/api/*', async (req, res) => {
   try {
     if (req.method !== 'GET' && !req.path.startsWith('/api/admin') && limited(req.ip)) return res.status(429).json({ error: 'Слишком много запросов, подождите минуту' });
