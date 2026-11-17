@@ -217,3 +217,40 @@ test('LifeX: привязка заполняет пустые поля проф�
   assert.ok(removed.includes('/uploads/lx-1111111111111111.png') && removed.includes('/uploads/lx-2222222222222222.png'));
   s.close();
 });
+
+/* ---------- отзывы, «Пойду», вакансии ---------- */
+test('отзывы: только после выезда, один на бронь, на сайте только одобренные', async () => {
+  const { s, core } = cab(), me = { guestKey: 'k1' };
+  const b = await mkBooking(core, me);
+  await assert.rejects(core.handle('POST', '/me/reviews', { body: { bookingId: b.id, stars: 5, text: 'Отличный отель, всем советую' }, ...me }), /после выезда/);
+  for (const act of ['confirm', 'checkin', 'checkout']) await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act, room: '2201' }, user: ADMIN });
+  await assert.rejects(core.handle('POST', '/me/reviews', { body: { bookingId: b.id, stars: 5, text: 'Отлично' }, guestKey: 'чужой' }), /не найдена/);
+  const { review } = await core.handle('POST', '/me/reviews', { body: { bookingId: b.id, stars: 5, text: 'Отличный отель, всем советую' }, ...me });
+  await assert.rejects(core.handle('POST', '/me/reviews', { body: { bookingId: b.id, stars: 4, text: 'И ещё один отзыв сюда' }, ...me }), /уже есть/);
+  assert.equal(core.publicData().reviews.count, 0, 'до одобрения не виден');
+  await core.handle('POST', `/admin/reviews/${review.id}`, { body: { status: 'approved', reply: 'Спасибо!' }, user: ADMIN });
+  const pub = core.publicData().reviews; assert.equal(pub.count, 1); assert.equal(pub.avg, 5); assert.equal(pub.list[0].reply, 'Спасибо!'); assert.equal(pub.list[0].owner, undefined, 'владелец не уходит наружу');
+  await core.handle('POST', '/me/delete', { body: { confirm: 'УДАЛИТЬ' }, ...me }); assert.equal(core.publicData().reviews.count, 0, 'удаляется вместе с данными гостя');
+  s.close();
+});
+
+test('«Пойду»: отметка переключается, число видно всем, напоминание один раз за час до начала', async () => {
+  const { s, core } = cab(), g = { user: GUEST }, start = Date.now() + 50 * 60e3;
+  const ev = (await core.handle('PUT', '/admin/events/new', { body: { name: 'Вечеринка', start, end: start + 3600e3, status: 'scheduled' }, user: ADMIN })).doc;
+  assert.equal((await core.handle('POST', `/events/${ev.id}/going`, g)).count, 1);
+  assert.deepEqual((await core.handle('GET', '/me/items', g)).going, [ev.id]);
+  assert.equal(core.publicData().events.find(e => e.id === ev.id).going, 1);
+  const due = core.dueReminders(); assert.equal(due.length, 1); assert.equal(due[0].discordId, GUEST.id);
+  assert.equal(core.dueReminders().length, 0, 'второй раз не напоминает');
+  assert.equal((await core.handle('POST', `/events/${ev.id}/going`, g)).going, false, 'повторное нажатие снимает отметку');
+  s.close();
+});
+
+test('вакансии: на сайте только открытые, редактирует только администрация', async () => {
+  const { s, core } = cab();
+  await core.handle('PUT', '/admin/jobs/new', { body: { title: 'Бармен', open: true, desc: 'Ночные смены' }, user: ADMIN });
+  await core.handle('PUT', '/admin/jobs/new', { body: { title: 'Закрытая', open: false }, user: ADMIN });
+  assert.deepEqual(core.publicData().jobs.map(j => j.title), ['Бармен']);
+  await assert.rejects(core.handle('PUT', '/admin/jobs/new', { body: { title: 'x' }, user: { id: 'm', username: 'M', role: 'mod' } }));
+  s.close();
+});

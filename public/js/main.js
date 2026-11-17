@@ -30,8 +30,8 @@ function shell() {
     </div>
   </div></header>
   <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button></div></nav>
-  <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['privacy'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
-  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#privacy">Конфиденциальность</a></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
+  <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['jobs'], ['privacy'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
+  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
   const drawer = $('#drawer'), closeDrawer = () => { if (!drawer.classList.contains('on')) return; drawer.classList.remove('on'); popLayer(drawer); $('#burger').setAttribute('aria-expanded', 'false'); };
   $('#burger').setAttribute('aria-controls', 'drawer'); $('#burger').setAttribute('aria-expanded', 'false');
@@ -45,6 +45,7 @@ function shell() {
   $('#achBtn').onclick = () => openCabinet();
   const paintAch = () => { $('#achN').textContent = `${achCount()}/${ACH.length}`; }; paintAch(); onAch(paintAch);
   $('#fab').onclick = openCart; magnet($('#fab'));
+  setupApp();
   $$('.kon [data-k]').forEach(b => b.addEventListener('click', () => achFeed(b.dataset.k)));
   addEventListener('scroll', onScroll, { passive: true });
 }
@@ -81,7 +82,7 @@ function onScroll() { }
 
 /* ---------------- маршруты ---------------- */
 // «Этажи» разделов: по ним выбирается направление перехода-лифта (вверх или вниз)
-const FLOOR = { admin: -1, home: 0, staff: 1, me: 2, journal: 3, issue: 3, lost: 4, privacy: 5, contact: 20, stay: 23, dining: 30, cigars: 31, leisure: 39 };
+const FLOOR = { admin: -1, home: 0, staff: 1, me: 2, journal: 3, issue: 3, lost: 4, privacy: 5, jobs: 1, contact: 20, stay: 23, dining: 30, cigars: 31, leisure: 39 };
 const VT = typeof document.startViewTransition === 'function';
 if (VT) document.documentElement.classList.add('vt');
 let booted = false, vtRunning = null;
@@ -138,9 +139,9 @@ function doRoute() {
 const viewMod = h => ({ stay: 'tower', cigars: 'hum', staff: 'staff', issue: 'book', leisure: 'deck' }[h]);
 function render(h = current) {
   if (!S.pub) return;
-  try { ({ home: renderHome, stay: renderStay, leisure: renderLeisure, dining: renderDining, cigars: renderCigars, journal: renderJournal, issue: renderIssue, staff: renderStaff, contact: renderContact, me: renderMe, admin: renderAdmin, privacy: renderPrivacy, lost: renderLost }[h] || renderHome)(); }
+  try { ({ home: renderHome, stay: renderStay, leisure: renderLeisure, dining: renderDining, cigars: renderCigars, journal: renderJournal, issue: renderIssue, staff: renderStaff, contact: renderContact, me: renderMe, admin: renderAdmin, privacy: renderPrivacy, jobs: renderJobs, lost: renderLost }[h] || renderHome)(); }
   catch (e) { console.error(e); }
-  prefill();
+  prefill(); applyJobPrefill();
   reveal($(`.view[data-view="${h}"]`));
 }
 const view = h => $(`.view[data-view="${h}"]`);
@@ -228,6 +229,10 @@ function renderHome() {
     <div class="head reveal"><span class="eyebrow">Предложения</span><h2>Пакеты отеля</h2></div>
     <div class="offers">${p.offers.map(o => `<a class="offer reveal" href="${esc(o.link || '#stay')}"><div ${bg(o.image, '', '#F0177A', '#F7B50A', 'img')}></div><div class="ob"><span class="tag">${esc(o.tag || '')}</span><h3>${esc(o.title)}</h3><p>${esc(o.desc || '')}</p><div class="row" style="justify-content:space-between;margin-top:auto"><b class="num">${esc(o.price || '')}</b><span class="lnk">${esc(o.cta || 'Подробнее')} ${I.arrow}</span></div></div></a>`).join('')}</div>
   </div>` : ''}
+  ${p.reviews?.count ? `<div class="wrap sec" style="padding-top:0">
+    <div class="row reveal" style="justify-content:space-between;align-items:flex-end;margin-bottom:1.2rem"><div class="head" style="margin:0"><span class="eyebrow">Отзывы гостей</span><h2>Что говорят гости</h2></div><div class="rv-sum"><b class="num">${p.reviews.avg.toFixed(1)}</b>${stars(Math.round(p.reviews.avg))}<span class="note">${p.reviews.count} ${plural(p.reviews.count, 'отзыв', 'отзыва', 'отзывов')}</span></div></div>
+    <div class="reviews">${p.reviews.list.map(r => `<figure class="rv reveal">${stars(r.stars)}<blockquote>${esc(r.text)}</blockquote><figcaption><b>${esc(r.name)}</b><span class="note">${esc(r.typeName || '')} · ${new Date(r.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span></figcaption>${r.reply ? `<div class="rv-reply"><span class="lbl">Ответ отеля</span>${esc(r.reply)}</div>` : ''}</figure>`).join('')}</div>
+  </div>` : ''}
   <div class="wrap sec" style="padding-top:0">${shaftHtml(p, latest)}</div>
   <div class="wrap" style="padding-bottom:4rem"><div class="dc reveal">
     <div class="stack"><span class="eyebrow">Discord</span><h3 style="font-size:clamp(1.4rem,3vw,2.2rem)">Всё главное на сайте. В Discord общаемся.</h3><p class="mut">Бронь, заявки, меню и журнал живут здесь. На сервере — анонсы, события и бот, который показывает свободные номера.</p>
@@ -261,12 +266,13 @@ function renderHome() {
 function heroLayers(url) { const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); return m ? Promise.all(['-far.webp', '-mask.webp'].map(x => preload('img/layers/' + m[1] + x))) : null; }
 // слова через дефис («Лос-Сантос») не разрываются переносом; на вход — уже экранированный текст
 const nowrapHyphens = html => html.replace(/[^\s<>]+-[^\s<>]+/g, w => `<span class="nw">${w}</span>`);
+const stars = n => `<span class="stars" aria-label="${n} из 5">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= n ? 'on' : ''}">★</i>`).join('')}</span>`;
 function evCard(e) {
   // билет: корешок с датой (по времени отеля, как и часы), перфорация, тело с площадкой
   const live = e.start <= Date.now() && (e.end || e.start + 3 * 3600e3) > Date.now(), v = S.pub.venues.find(x => x.id === e.venueId);
   const day = new Date(e.start).toLocaleDateString('ru-RU', { day: 'numeric', timeZone: 'Europe/Moscow' }), mon = new Date(e.start).toLocaleDateString('ru-RU', { month: 'short', timeZone: 'Europe/Moscow' }).replace('.', '');
-  return `<${e.url ? `a href="${esc(e.url)}" target="_blank" rel="noopener"` : 'div'} class="ev${live ? ' live' : ''}" style="--a:${esc(v?.accent || '#F0177A')}"><div class="stub"${e.image ? ` style="background-image:linear-gradient(rgba(13,8,9,.5),rgba(13,8,9,.88)),url('${esc(e.image)}')"` : ''}><b class="num">${day}</b><span>${esc(mon)}</span><small class="num">${hhmm(e.start)}</small></div>
-    <div class="body"><div class="row">${live ? '<span class="chip p live"><span class="d"></span>Идёт сейчас</span>' : `<span class="chip m">${hhmm(e.start)}${e.end ? '–' + hhmm(e.end) : ''}</span>`}${e.source === 'discord' ? '<span class="chip v">Discord</span>' : ''}</div><h4>${esc(e.name)}</h4><span class="note">${esc(e.location || v?.name || '')}</span>${e.desc ? `<p class="note" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(e.desc)}</p>` : ''}</div></${e.url ? 'a' : 'div'}>`;
+  return `<div class="ev${live ? ' live' : ''}" style="--a:${esc(v?.accent || '#F0177A')}"><div class="stub"${e.image ? ` style="background-image:linear-gradient(rgba(13,8,9,.5),rgba(13,8,9,.88)),url('${esc(e.image)}')"` : ''}><b class="num">${day}</b><span>${esc(mon)}</span><small class="num">${hhmm(e.start)}</small></div>
+    <div class="body"><div class="row">${live ? '<span class="chip p live"><span class="d"></span>Идёт сейчас</span>' : `<span class="chip m">${hhmm(e.start)}${e.end ? '–' + hhmm(e.end) : ''}</span>`}${e.source === 'discord' ? '<span class="chip v">Discord</span>' : ''}</div><h4>${esc(e.name)}</h4><span class="note">${esc(e.location || v?.name || '')}</span>${e.desc ? `<p class="note" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(e.desc)}</p>` : ''}<div class="row ev-act">${goBtn(e)}${e.url ? `<a class="btn sm ghost" href="${esc(e.url)}" target="_blank" rel="noopener">Подробнее</a>` : ''}</div></div></div>`;
 }
 
 /* ---------------- номера ---------------- */
@@ -577,6 +583,58 @@ function wireCloche() {
   b.onclick = () => { clocheOpen = !clocheOpen; play(clocheOpen ? 'cloche' : 'clocheDown'); if (clocheOpen) unlock('chef'); const el = $('#cloche'), tmp = document.createElement('div'); tmp.innerHTML = clocheHtml(); el.querySelector('.ctext').replaceWith(tmp.querySelector('.ctext')); el.classList.toggle('open', clocheOpen); b.setAttribute('aria-label', clocheOpen ? 'Накрыть блюдо' : 'Поднять клош и узнать блюдо дня'); $('#clocheAdd')?.addEventListener('click', e => { const d = dishOfDay(); if (d) addCart(d.id, e.currentTarget); }); };
   $('#clocheAdd')?.addEventListener('click', e => { const d = dishOfDay(); if (d) addCart(d.id, e.currentTarget); });
 }
+// Сайт как приложение: значок на экране «Домой», запуск без адресной строки. Service worker ничего не кэширует.
+let installEvt = null;
+function setupApp() {
+  if (!DEMO && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (standalone) return;
+  $$('.appl').forEach(e => e.hidden = false);
+  addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; });
+  addEventListener('appinstalled', () => { installEvt = null; $$('.appl').forEach(e => e.hidden = true); toast('Mile High Club установлен на экран «Домой»'); });
+  $('#appBtn').onclick = openAppInfo;
+}
+function openAppInfo() {
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const how = installEvt ? '<p class="mut">Значок отеля появится на экране телефона или компьютера, сайт будет открываться как отдельное приложение, без адресной строки.</p>'
+    : ios ? '<ol class="app-steps"><li>Откройте сайт в Safari.</li><li>Нажмите «Поделиться» внизу экрана.</li><li>Выберите «На экран “Домой”» и нажмите «Добавить».</li></ol>'
+    : '<ol class="app-steps"><li>Откройте меню браузера (три точки).</li><li>Выберите «Установить приложение» или «Добавить на главный экран».</li></ol>';
+  modal(`<div class="stack" style="justify-items:center;text-align:center"><img src="img/app-192.png" alt="" width="88" height="88" style="border-radius:22px;box-shadow:0 10px 30px -10px rgba(240,23,122,.6)"><h3>Mile High Club на телефоне</h3>${how}
+    <div class="row" style="justify-content:center">${installEvt ? '<button class="btn" data-close="go">Установить</button>' : ''}<button class="btn ghost" data-close="">${installEvt ? 'Не сейчас' : 'Понятно'}</button></div></div>`)
+    .then(r => { if (r === 'go' && installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; }); } });
+}
+// вакансии: карточки по отделам; «Откликнуться» открывает заявку с темой «Работа в отеле» и заготовкой текста
+let jobPrefill = null;
+function renderJobs() {
+  const jobs = S.pub.jobs || [], dn = id => S.pub.depts.find(x => x.id === id)?.name || '';
+  view('jobs').innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Персонал · вакансии</span><h2>Работа в отеле</h2><p>Mile High Club ищет людей в команду. Выберите вакансию и откликнитесь: заявка придёт управляющим, ответ — в Discord или в чат на сайте.</p></div>
+    ${jobs.length ? `<div class="jobs">${jobs.map(j => `<article class="job reveal"><div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:nowrap;gap:1rem"><div style="min-width:0"><span class="eyebrow">${esc(dn(j.dept) || 'Отель')}</span><h3>${esc(j.title)}</h3></div>${j.pay ? `<b class="job-pay num">${esc(j.pay)}</b>` : ''}</div>
+      ${j.schedule ? `<span class="chip m">${esc(j.schedule)}</span>` : ''}${j.desc ? `<p>${esc(j.desc)}</p>` : ''}
+      ${j.duties || j.reqs ? `<div class="job-cols">${j.duties ? `<div><span class="lbl">Чем заниматься</span><p class="note">${esc(j.duties)}</p></div>` : ''}${j.reqs ? `<div><span class="lbl">Кого ищем</span><p class="note">${esc(j.reqs)}</p></div>` : ''}</div>` : ''}
+      <div><button class="btn sm" data-apply="${esc(j.id)}">Откликнуться</button></div></article>`).join('')}</div>`
+      : `<div class="empty">Сейчас открытых вакансий нет. Хотите к нам — напишите в <a href="#contact">заявке</a> с темой «Работа в отеле».</div>`}
+    <p class="note" style="margin-top:1.5rem">Познакомьтесь с командой в разделе <a href="#staff">«Персонал»</a>.</p></div>`;
+  $$('#main [data-apply]').forEach(b => b.onclick = () => { const j = jobs.find(x => x.id === b.dataset.apply); if (!j) return; jobPrefill = { topic: 'Работа в отеле', text: `Отклик на вакансию: ${j.title}${dn(j.dept) ? ` (${dn(j.dept)})` : ''}\nО себе и опыт: \nКогда удобно выходить на смены: ` }; location.hash = '#contact'; });
+  reveal(view('jobs'));
+}
+function applyJobPrefill() {
+  if (!jobPrefill || current !== 'contact') return; const t = $('#tTopic'), x = $('#tText'); if (!t || !x) return;
+  t.value = jobPrefill.topic; if (!x.value) x.value = jobPrefill.text; jobPrefill = null; x.focus(); x.setSelectionRange(x.value.indexOf('О себе и опыт: ') + 15, x.value.indexOf('О себе и опыт: ') + 15);
+}
+// «Пойду»: отметка гостя на событии, число отметившихся видно всем
+const goingSet = () => new Set(S.items?.going || []);
+function goBtn(e) { const on = goingSet().has(e.id); return `<button class="btn sm ${on ? '' : 'ghost'} go-btn" data-go="${esc(e.id)}" aria-pressed="${on}">${on ? '✓ Иду' : 'Пойду'}${e.going ? ` · <span class="num">${e.going}</span>` : ''}</button>`; }
+document.addEventListener('click', async ev => {
+  const b = ev.target.closest('[data-go]'); if (!b) return; ev.preventDefault(); ev.stopPropagation(); if (b.disabled) return; b.disabled = true;
+  try {
+    const r = await api('POST', `/events/${encodeURIComponent(b.dataset.go)}/going`), set = goingSet();
+    r.going ? set.add(b.dataset.go) : set.delete(b.dataset.go); if (S.items) S.items.going = [...set];
+    const e = S.pub.events.find(x => x.id === b.dataset.go); if (e) e.going = r.count;
+    $$(`[data-go="${CSS.escape(b.dataset.go)}"]`).forEach(x => { if (e) x.outerHTML = goBtn(e); });
+    play(r.going ? 'add' : 'soft');
+    if (r.going) toast(S.me ? 'Отмечено: бот напомнит в Discord за час до начала' : 'Отмечено. Войдите через Discord, чтобы бот напомнил за час до начала');
+  } catch (err) { fail(err); b.disabled = false; }
+});
 // политика конфиденциальности: текст в отдельном модуле, грузится только при открытии страницы
 function renderPrivacy() {
   const v = view('privacy'); if (v.dataset.ready) return;
@@ -720,8 +778,9 @@ function renderIssue() {
 let deptIdx = 0, gender = null, staffMode = 'team', teamDept = '';
 function renderStaff() {
   const d = S.pub.depts, v = view('staff'); if (deptIdx >= d.length) deptIdx = 0;
+  queueMicrotask(() => { const j = $('#stJobs'), n = (S.pub.jobs || []).length; if (j) { j.hidden = !n; j.textContent = `Вакансии · ${n}`; } });
   if (!v.querySelector('.stage')) {
-    v.innerHTML = `<div class="wrap sec"><div class="row staffhead"><div class="head" style="margin:0"><span class="eyebrow">Персонал</span><h2 id="stH">Команда отеля</h2><p id="stP"></p></div>
+    v.innerHTML = `<div class="wrap sec"><div class="row staffhead"><div class="head" style="margin:0"><span class="eyebrow">Персонал</span><h2 id="stH">Команда отеля</h2><p id="stP"></p><a class="btn sm ghost" href="#jobs" id="stJobs" hidden style="margin-top:.6rem;justify-self:start">Вакансии</a></div>
       <div class="seg" role="group" aria-label="Вид"><button data-sm="team">Команда</button><button data-sm="outfit">Униформа 360°</button><button data-sm="model">3D-манекен</button></div></div>
       <div id="teamV"></div>
       <div class="staff" id="uniV"><div class="deps" id="deps" role="group" aria-label="Отдел"></div><div><div class="outfit" id="outfit"></div><div class="stage" id="stage"><div class="loading" id="stLoad">Загружаем манекен…</div><div class="info"><div class="ucard" id="ucard"></div><div class="seg" role="group" aria-label="Манекен"><button data-g="male">Мужской</button><button data-g="female">Женский</button></div></div></div></div></div></div>`;
@@ -855,7 +914,12 @@ function bookingCard(b) {
     : `<ol class="bk-steps" aria-label="Статус брони">${STEPS.map(([k, n], i) => `<li class="${i < at ? 'done' : i === at ? 'now' : ''}"${i === at ? ' aria-current="step"' : ''}>${n}</li>`).join('')}</ol>`;
   return `<article class="bk"><div class="bk-top"><div><span class="lbl">Код брони</span><b class="bk-code num">${esc(b.code)}</b></div><span class="bk-type">${esc(b.typeName)}</span></div>${steps}
     <dl class="bk-facts"><div><dt>Заезд</dt><dd>${ruDate(b.date)}</dd></div><div><dt>Выезд</dt><dd>${ruDate(addDays(b.date, b.nights))}</dd></div><div><dt>Номер</dt><dd>${room ? `${esc(room.id)} · ${room.floor} этаж` : 'назначат при подтверждении'}</dd></div><div><dt>Сумма</dt><dd class="num">${money(b.total)}${b.discount ? ` <small>скидка ${b.discount}%${b.tier ? ' · ' + esc(b.tier) : ''}</small>` : ''}</dd></div></dl>
-    <div class="row bk-act">${room ? `<button class="btn sm ghost" data-tower="${esc(room.id)}">Показать на башне</button>` : ''}${b.status === 'new' ? `<button class="btn sm ghost" data-move="${esc(b.id)}">Перенести</button>` : ''}${['new', 'confirmed'].includes(b.status) ? `<button class="btn sm ghost danger-t" data-cancel="${esc(b.id)}">Отменить</button>` : ''}</div></article>`;
+    <div class="row bk-act">${room ? `<button class="btn sm ghost" data-tower="${esc(room.id)}">Показать на башне</button>` : ''}${b.status === 'new' ? `<button class="btn sm ghost" data-move="${esc(b.id)}">Перенести</button>` : ''}${['new', 'confirmed'].includes(b.status) ? `<button class="btn sm ghost danger-t" data-cancel="${esc(b.id)}">Отменить</button>` : ''}${b.status === 'done' ? reviewState(b) : ''}</div></article>`;
+}
+function reviewState(b) {
+  const r = (S.items.reviews || []).find(x => x.bookingId === b.id);
+  if (!r) return `<button class="btn sm" data-review="${esc(b.id)}">★ Оставить отзыв</button>`;
+  return `<span class="chip ${r.status === 'approved' ? 'ok' : 'm'}">${r.status === 'approved' ? 'Отзыв опубликован' : r.status === 'hidden' ? 'Отзыв не опубликован' : 'Отзыв на проверке'} · ${'★'.repeat(r.stars)}</span>`;
 }
 function tierBlock(st) {
   const T = S.pub.settings.tiers || [], cur = st.tier, nx = st.next;
@@ -906,6 +970,20 @@ function renderMe() {
   $('#meOut') && ($('#meOut').onclick = () => logout()); $('#meIn') && ($('#meIn').onclick = () => openLogin('me'));
   const reload = async msg => { await loadItems(); if (msg) toast(msg); };
   $$('#main [data-tower]').forEach(b => b.onclick = () => showOnTower(b.dataset.tower));
+  $$('#main [data-review]').forEach(b => b.onclick = async () => {
+    const bk = it.bookings.find(x => x.id === b.dataset.review); if (!bk) return;
+    const r = await modal(`<h3>Отзыв о проживании</h3><p class="note">${esc(bk.typeName)} · ${ruDate(bk.date)}. После проверки управляющими отзыв появится на главной под вашим именем персонажа «${esc(bk.name)}».</p>
+      <div class="rate" role="radiogroup" aria-label="Оценка">${[1, 2, 3, 4, 5].map(i => `<button type="button" role="radio" aria-checked="false" data-st="${i}" aria-label="${i} из 5">★</button>`).join('')}</div>
+      <label class="field"><span>Что понравилось и что улучшить</span><textarea id="rvText" maxlength="1000" placeholder="Номер, сервис, Le Ciel, бассейны…"></textarea></label>
+      <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Отмена</button><button class="btn" id="rvGo" disabled>Отправить</button></div>`, { onMount: (box, close) => {
+        let n = 0; const paintRate = () => box.querySelectorAll('[data-st]').forEach(x => { const on = +x.dataset.st <= n; x.classList.toggle('on', on); x.setAttribute('aria-checked', +x.dataset.st === n); });
+        const check = () => box.querySelector('#rvGo').disabled = !n || box.querySelector('#rvText').value.trim().length < 10;
+        box.querySelectorAll('[data-st]').forEach(x => x.onclick = () => { n = +x.dataset.st; paintRate(); check(); });
+        box.querySelector('#rvText').oninput = check; box.querySelector('#rvGo').onclick = () => close({ stars: n, text: box.querySelector('#rvText').value });
+      } });
+    if (!r || typeof r !== 'object') return;
+    try { await api('POST', '/me/reviews', { bookingId: bk.id, ...r }); play('success'); reload('Спасибо! Отзыв появится после проверки'); } catch (e) { fail(e); }
+  });
   $$('#main [data-cancel]').forEach(b => b.onclick = async () => {
     const bk = it.bookings.find(x => x.id === b.dataset.cancel); if (!bk) return;
     if (!await confirmBox('Отменить бронь?', `Бронь ${bk.code} будет отменена${bk.room ? ', номер освободится' : ''}. Это нельзя вернуть.`, 'Отменить бронь', true)) return;
@@ -992,7 +1070,7 @@ function onChange(cols) {
     const c = [...refCols]; refCols = new Set();
     try {
       if (c.includes('me')) { await loadMe(); if (current === 'admin') { mods.admin?.unmount?.(); renderAdmin(); } if (current === 'me') renderMe(); }
-      if (c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq'].includes(x))) { await loadPublic(); applyWeather(); if (!['contact', 'admin', 'me'].includes(current)) render(); updFab(); }
+      if (c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq', 'jobs', 'reviews', 'rsvp'].includes(x))) { await loadPublic(); applyWeather(); if (!['contact', 'admin', 'me'].includes(current)) render(); updFab(); }
       if (c.includes('guests') && !c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq'].includes(x))) { await loadPublic(); paintGuests(); }
       // свои брони и заявки нужны только на страницах «Заявка» и «Мои брони»: на остальных просто помечаем устаревшими
       if (c.some(x => ['bookings', 'tickets', 'orders'].includes(x))) { const it = S.items, live = it && (it.tickets.some(t => t.status !== 'closed') || it.bookings.some(b => ['new', 'confirmed', 'checkedin'].includes(b.status)) || it.orders.some(o => !['done', 'cancelled'].includes(o.status))); if (['contact', 'me'].includes(current) || live) await loadItems(); else itemsDirty = true; }

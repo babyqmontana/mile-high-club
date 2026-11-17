@@ -181,7 +181,7 @@ const limited = (ip) => { const now = Date.now(), h = (hits.get(ip) || []).filte
 setInterval(() => { const old = Date.now() - 60e3; for (const [ip, h] of hits) if (!h.length || h[h.length - 1] < old) hits.delete(ip); }, 60e3).unref();
 // Публичные данные одинаковы для всех гостей: собираем их один раз на версию данных (и раз в минуту — из-за
 // времени событий), сжимаем один раз и отдаём с ETag. Повторный запрос браузера получает 304 без тела.
-const PUBLIC_COLS = ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'team', 'offers', 'faq', 'issues', 'events', 'media'];
+const PUBLIC_COLS = ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'team', 'offers', 'faq', 'issues', 'events', 'media', 'jobs', 'reviews', 'rsvp'];
 let pubCache = null;
 app.get('/api/public', (req, res, next) => {
   try {
@@ -219,7 +219,7 @@ app.use('/uploads', express.static(UPLOADS, { maxAge: '30d', immutable: true }))
 // Текстовая статика (js, css, svg, json) сжимается один раз — brotli и gzip — и дальше отдаётся из памяти,
 // а не пережимается на каждый запрос. Сжатие идёт в пуле потоков, сервер не замирает.
 const brotli = promisify(zlib.brotliCompress), gzip = promisify(zlib.gzip), staticCache = new Map();
-const TEXT = { '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8' };
+const TEXT = { '.webmanifest': 'application/manifest+json; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8' };
 app.use(async (req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   const type = TEXT[path.extname(req.path)]; if (!type) return next();
@@ -235,7 +235,7 @@ app.use(async (req, res, next) => {
     entry.ready.then(([br, gz]) => { entry.br = br; entry.gz = gz; }).catch(() => {});
   }
   if (!entry.br) await entry.ready.catch(() => {});
-  const cc = req.query.v ? 'public, max-age=31536000, immutable' : 'public, max-age=3600';
+  const cc = req.path === '/sw.js' ? 'no-cache' : req.query.v ? 'public, max-age=31536000, immutable' : 'public, max-age=3600';
   sendBuf(req, res, entry, type, cc);
 });
 app.get(['/', '/index.html'], sendIndex);
@@ -274,6 +274,9 @@ function renderIndex() {
   html = html.replace(/<script type="importmap">[\s\S]*?<\/script>/, `<script type="importmap">${JSON.stringify({ imports })}</script>`);
   // прямые ссылки из разметки: css/app.css, js/main.js, vendor/page-flip.browser.js
   html = html.replace(/(href|src)="((?:css|js|vendor)\/[^"?]+\.(?:css|js))"/g, (m, attr, rel) => ver['/' + rel] ? `${attr}="${v('/' + rel)}"` : m);
+  // превью ссылки (Discord, Telegram) понимает только полные адреса: подставляем PUBLIC_URL
+  const site = (env.PUBLIC_URL || '').replace(/\/$/, '');
+  if (/^https?:\/\//.test(site)) html = html.replace(/(<meta (?:property|name)="(?:og:url|og:image|twitter:image)" content=")\//g, `$1${site}/`);
   return html;
 }
 
