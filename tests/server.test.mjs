@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from '../server/store.js';
 import { createCore, seed } from '../public/js/core.js';
+import { readProfile } from '../server/lifex.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'); // fileURLToPath: на Windows pathname даёт /C:/…
 const PORT = 3400 + Math.floor(Math.random() * 500), BASE = `http://127.0.0.1:${PORT}`;
@@ -188,5 +189,31 @@ test('кабинет: секреты отеля сохраняются в акк
   assert.deepEqual(r.achievements, ['logo', 'konami']);
   assert.deepEqual((await core.handle('POST', '/me/achievements', { body: { ids: ['night'] }, user: GUEST })).achievements, ['logo', 'konami', 'night']);
   assert.deepEqual((await core.handle('POST', '/me/achievements', { body: { ids: ['logo'] } })).achievements, [], 'без входа не хранится');
+  s.close();
+});
+
+/* ---------- LifeX ---------- */
+test('LifeX: профиль читается при разных названиях полей, опасные ссылки отбрасываются', () => {
+  const a = readProfile({ user: { id: 7, username: 'tony', display_name: 'Тони', avatar_url: 'https://cdn.x/a.png', profile_url: 'javascript:alert(1)' } });
+  assert.deepEqual([a.id, a.username, a.name, a.avatar, a.url], ['7', 'tony', 'Тони', 'https://cdn.x/a.png', '']);
+  const b = readProfile({ data: { sub: 'u1', preferred_username: 'bob', picture: 'ftp://x/a.png', avatar: { url: 'nope' } } });
+  assert.deepEqual([b.id, b.name, b.avatar], ['u1', 'bob', '']);
+});
+
+test('LifeX: привязка заполняет пустые поля профиля, отвязка и удаление данных убирают копию аватара', async () => {
+  const s = openStore(path.join(dir, 'lx.sqlite')); seed(s); const removed = [];
+  const core = createCore(s, { removeUpload: u => removed.push(u) }), me = { guestKey: 'k1' };
+  await core.handle('PUT', '/me/profile', { body: { phone: '111' }, ...me });
+  core.linkLifex('g:k1', { id: 'lx1', username: 'tony', name: 'Тони', phone: '999', avatar: '/uploads/lx-0123456789abcdef.png', url: 'https://lifex/tony' });
+  let p = (await core.handle('GET', '/me/items', me)).profile;
+  assert.equal(p.name, 'Тони'); assert.equal(p.phone, '111', 'заполненный телефон не перезаписывается'); assert.equal(p.lifex.username, 'tony');
+  core.linkLifex('g:k1', { id: 'lx1', username: 'tony', name: 'Тони', avatar: '/uploads/lx-fedcba9876543210.png' });
+  assert.deepEqual(removed, ['/uploads/lx-0123456789abcdef.png'], 'старая копия аватара удаляется при обновлении');
+  core.linkLifex('g:k1', { id: 'x', avatar: 'https://evil/a.png' }); assert.equal(s.get('profiles', 'g:k1').lifex.avatar, '', 'чужой адрес аватара не сохраняется');
+  core.linkLifex('g:k1', { id: 'lx1', avatar: '/uploads/lx-1111111111111111.png' });
+  await core.handle('DELETE', '/me/lifex', me); assert.equal((await core.handle('GET', '/me/items', me)).profile.lifex, undefined);
+  core.linkLifex('g:k1', { id: 'lx1', avatar: '/uploads/lx-2222222222222222.png' });
+  await core.handle('POST', '/me/delete', { body: { confirm: 'УДАЛИТЬ' }, ...me });
+  assert.ok(removed.includes('/uploads/lx-1111111111111111.png') && removed.includes('/uploads/lx-2222222222222222.png'));
   s.close();
 });

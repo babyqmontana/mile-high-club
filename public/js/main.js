@@ -1,5 +1,5 @@
 import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, confirmBox, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL, magnet } from './ui.js';
-import { api, subscribe, authConfig, login, logout, DEMO, pref } from './api.js';
+import { api, subscribe, authConfig, login, logout, DEMO, pref, guestKey } from './api.js';
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
 import { unlock, burst, openCabinet, count as achCount, LIST as ACH, onChange as onAch, ids as achIds, merge as achMerge } from './achievements.js';
@@ -51,7 +51,8 @@ function paintNav() {
   $('#sndBtn').innerHTML = soundOn ? I.sound : I.mute; $('#sndBtn').setAttribute('aria-label', soundOn ? 'Выключить звук' : 'Включить звук');
   $('#dSnd').innerHTML = `${soundOn ? I.sound : I.mute}${soundOn ? 'Звук включён' : 'Звук выключен'}`; $('#dSnd').setAttribute('aria-pressed', soundOn);
   const u = S.me;
-  $('#navUser').innerHTML = u ? `<button class="ibtn" id="userBtn" aria-label="Профиль" style="overflow:hidden;padding:0">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc((u.username || '?')[0])}</span>`}</button>` : `<button class="ibtn" id="userBtn" aria-label="Мои брони и вход">${I.user}</button>`;
+  const lx = S.items?.profile?.lifex, ava = lx?.avatar || u?.avatar;
+  $('#navUser').innerHTML = u || ava ? `<button class="ibtn" id="userBtn" aria-label="${u ? 'Профиль' : 'Мои брони'}" style="overflow:hidden;padding:0">${ava ? `<img class="avatar" src="${esc(ava)}" alt="">` : `<span class="avatar">${esc((u.username || '?')[0])}</span>`}</button>` : `<button class="ibtn" id="userBtn" aria-label="Мои брони и вход">${I.user}</button>`;
   $('#userBtn').onclick = () => location.hash = u && u.role !== 'guest' ? '#admin' : '#me';
   if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; { const nf = $('#navFree'), val = `${f}/${S.pub.rooms.length}`; if (nf.textContent !== val) { const had = nf.textContent !== '—'; nf.textContent = val; if (had) { nf.classList.remove('tick'); void nf.offsetWidth; nf.classList.add('tick'); } } } $('#foot').textContent = S.pub.settings.footer || ''; paintGuests(); }
 }
@@ -857,8 +858,17 @@ function tierBlock(st) {
 function meChat(t) {
   return `<div class="chat mechat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span></header><div class="msgs" id="meMsgs">${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}">${esc(m.text)}<small>${m.from === 'staff' ? 'Управляющий' + (m.by ? ' · ' + esc(m.by) : '') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? '<div class="compose note">Обращение закрыто.</div>' : `<form class="compose" id="meChatF"><input id="meChatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение управляющим"><button class="btn sm" data-sfx="">Отправить</button></form>`}</div>`;
 }
+// LifeX: доступна, если на сервере заданы адреса приложения LifeX
+let lxOn = null;
+function lifexBlock(p) {
+  const lx = p.lifex;
+  if (lx) return `<div class="lx-card"><div class="row" style="gap:.8rem;flex-wrap:nowrap;align-items:center">${lx.avatar ? `<img class="lx-ava" src="${esc(lx.avatar)}" alt="">` : `<span class="lx-ava">${esc((lx.name || '?')[0])}</span>`}<div style="min-width:0"><b>${esc(lx.name || lx.username)}</b>${lx.username ? `<div class="note">@${esc(lx.username)}</div>` : ''}</div><span class="chip ok" style="margin-left:auto">LifeX</span></div>
+    ${lx.bio ? `<p class="note" style="margin:0">${esc(lx.bio)}</p>` : ''}<div class="row" style="gap:.4rem">${lx.url ? `<a class="btn sm ghost" href="${esc(lx.url)}" target="_blank" rel="noopener">Открыть в LifeX</a>` : ''}<a class="btn sm ghost" href="/auth/lifex?gk=${encodeURIComponent(guestKey)}">Обновить из LifeX</a><button type="button" class="btn sm ghost danger-t" id="lxOff">Отвязать</button></div></div>`;
+  return lxOn ? `<div class="lx-card"><b>Профиль LifeX</b><p class="note" style="margin:0">Привяжите профиль из игровой соцсети: фото станет вашим аватаром на сайте, имя персонажа и телефон подставятся в профиль.</p><div><a class="btn sm" href="/auth/lifex?gk=${encodeURIComponent(guestKey)}">Привязать LifeX</a></div></div>` : '';
+}
 let meTicket = null;
 function renderMe() {
+  if (lxOn === null && !DEMO) { lxOn = false; authConfig().then(c => { lxOn = !!c.lifex; if (lxOn && current === 'me') renderMe(); }); }
   const it = S.items, u = S.me, p = it.profile || {}, st = it.stats || { nights: 0, stays: 0 };
   const chatT = it.tickets.find(t => t.id === meTicket && t.mode === 'site') || null;
   const draft = $('#meChatIn')?.value || '', focused = $('#meChatIn') === document.activeElement;
@@ -870,7 +880,7 @@ function renderMe() {
         <h3 style="font-size:1.1rem;margin-top:.5rem">Заявки</h3>${it.tickets.length ? `<div class="list">${it.tickets.map(t => `<div class="item${unreadOf(t) ? ' unread' : ''}"><div class="top"><b>${esc(t.topic)}${unreadOf(t) ? ' <span class="chip p">Новый ответ</span>' : ''}</b><span class="chip ${t.status === 'open' ? 'ok' : 'm'}">${TICKET_STATUS[t.status]}</span></div><span class="note">${t.mode === 'site' ? 'Чат на сайте' : t.mode === 'discord' ? 'В Discord' : ''} · ${when(t.createdAt)}</span>${t.mode === 'site' ? `<div><button class="btn sm ghost" data-chat="${esc(t.id)}" aria-expanded="${t.id === meTicket}">${t.id === meTicket ? 'Свернуть чат' : 'Открыть чат'}</button></div>` : ''}${t.id === meTicket && chatT ? meChat(chatT) : ''}</div>`).join('')}</div>` : '<div class="empty">Заявок нет. <a href="#contact">Написать управляющим</a></div>'}
       </div>
       <aside class="stack" style="gap:1rem;min-width:0">${tierBlock(st)}
-        <form class="card pad stack" id="meProf"><h3 style="font-size:1.05rem">Профиль гостя</h3><p class="note">Игровые данные. Подставляются в формы брони, заказа и заявки.</p>
+        <form class="card pad stack" id="meProf"><h3 style="font-size:1.05rem">Профиль гостя</h3><p class="note">Игровые данные. Подставляются в формы брони, заказа и заявки.</p>${lifexBlock(p)}
           <label class="field"><span>Имя персонажа</span><input id="pfName" value="${esc(p.name || '')}" maxlength="60" autocomplete="off"></label>
           <label class="field"><span>Игровой телефон</span><input id="pfPhone" value="${esc(p.phone || '')}" maxlength="20" autocomplete="off"></label>
           <label class="field"><span>Пожелания к номеру</span><textarea id="pfNote" maxlength="300">${esc(p.note || '')}</textarea></label>
@@ -909,6 +919,7 @@ function renderMe() {
   $('#meProf').onsubmit = async e => { e.preventDefault();
     try { await api('PUT', '/me/profile', { name: $('#pfName').value, phone: $('#pfPhone').value, note: $('#pfNote').value, dm: $('#pfDm').checked }); play('soft'); reload('Профиль сохранён'); } catch (err) { fail(err); } };
   $('#meAch').onclick = () => openCabinet();
+  $('#lxOff') && ($('#lxOff').onclick = async () => { if (!await confirmBox('Отвязать LifeX?', 'Фото из LifeX уберём, имя и телефон в профиле останутся.', 'Отвязать')) return; try { await api('DELETE', '/me/lifex'); reload('Профиль LifeX отвязан'); } catch (e) { fail(e); } });
   $('#meDel').onclick = async () => {
     const ok = await modal(`<h3>Удалить мои данные?</h3><p class="mut">Удалятся брони, заказы в номер, заявки с перепиской и профиль. Действующие брони будут отменены, тикет-каналы в Discord закроются без сохранения. Вернуть данные нельзя.</p><label class="field"><span>Для подтверждения введите УДАЛИТЬ</span><input id="delIn" autocomplete="off" placeholder="УДАЛИТЬ"></label><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Отмена</button><button class="btn danger" id="delGo" disabled>Удалить</button></div>`, { onMount: (box, close) => { const inp = box.querySelector('#delIn'), go = box.querySelector('#delGo'); inp.oninput = () => go.disabled = inp.value.trim() !== 'УДАЛИТЬ'; go.onclick = () => close(inp.value.trim()); } });
     if (ok !== 'УДАЛИТЬ') return;
@@ -946,7 +957,7 @@ async function syncAccount() {
 let achT = 0;
 onAch(() => { if (!S.me || DEMO) return; clearTimeout(achT); achT = setTimeout(() => api('POST', '/me/achievements', { ids: achIds() }).catch(() => {}), 1500); });
 let itemsDirty = true;
-async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } paintUnread(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
+async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } paintNav(); paintUnread(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
 // прочитанные ответы персонала помним в браузере: id обращения → время последнего просмотра
 const seenT = () => { try { return JSON.parse(pref.get('mhc-read') || '{}') || {}; } catch { return {}; } };
 const unreadOf = t => t.mode === 'site' && t.lastFrom === 'staff' && t.lastAt > (seenT()[t.id] || 0);
@@ -1010,6 +1021,10 @@ async function boot() {
   // раздел «Отдых» собирается заранее в простое: плееру нужно время на загрузку
   setTimeout(() => { if (!view('leisure').querySelector('#venuesList')) renderLeisure(); }, 2500);
   const unsubscribe = subscribe(onChange);
+  // вернулись из LifeX: сервер оставил короткую пометку, как прошла привязка
+  { const m = /(?:^|; )mhc_lx_msg=(\w+)/.exec(document.cookie)?.[1]; if (m) { document.cookie = 'mhc_lx_msg=; Max-Age=0; Path=/';
+    const t = { ok: ['Профиль LifeX привязан'], denied: ['Привязка отменена в LifeX', 'err'], off: ['Привязка LifeX ещё не настроена на сервере', 'err'], owner: ['Не удалось определить ваш кабинет. Обновите страницу и попробуйте снова', 'err'] }[m] || ['LifeX не ответил. Попробуйте ещё раз', 'err'];
+    setTimeout(() => toast(...t), 600); } }
   // свои брони и заявки — для отметки о новых ответах и подстановки профиля в формы
   if (!['me', 'contact'].includes(current)) loadItems();
   // Уход со страницы или перезагрузка: закрываем поток обновлений и отдаём видеопамять 3D-сцен.
