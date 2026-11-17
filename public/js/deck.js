@@ -91,7 +91,7 @@ export function mountDeck(host, url) {
   rec.addEventListener('pointermove', e => {
     if (!drag) return; const a = angleAt(e), now = performance.now(); let d = a - drag.a; d = Math.atan2(Math.sin(d), Math.cos(d));
     const dt = Math.max(8, now - drag.t) / 1000; ang += d; vel = d / dt; drag.a = a; drag.t = now; rec.style.transform = `rotate(${ang}rad)`;
-    if (Math.abs(vel) > 2) { scratch(Math.min(1, Math.abs(vel) / 30)); if (++scr > 40) unlock('dj'); }
+    if (Math.abs(vel) > 2) { scratch(Math.min(1, Math.abs(vel) / 30)); if (++scr > 40) unlock('scratch'); }
   });
   const up = () => { if (!drag) return; drag = null; if (playing) fade(vol, 400); kick(); };
   rec.addEventListener('pointerup', up); rec.addEventListener('pointercancel', up);
