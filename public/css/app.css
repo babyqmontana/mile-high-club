@@ -247,6 +247,7 @@ a.fb-row:hover .fb-k{color:var(--floor-accent)}
 .fb-row[data-st="guests"] .fb-v{color:var(--pink);text-shadow:0 0 18px rgba(240,23,122,.45)}
 .fb-row[data-st="guests"] .fb-k::before{content:"";display:inline-block;width:.45rem;height:.45rem;margin-right:.55rem;border-radius:50%;background:var(--pink);color:var(--pink);vertical-align:.08em;animation:pulse 1.6s infinite}
 .pill.gst{color:var(--fg);background:rgba(240,23,122,.08);border-color:rgba(240,23,122,.35)}
+.pill.gst[hidden]{display:none}
 .pill.gst .d{background:var(--pink);color:var(--pink);animation-duration:1.6s}
 .pill.gst .t{color:var(--mut);font-weight:600}
 @media(max-width:700px){.pill.gst{display:none}}
@@ -1099,4 +1100,14 @@ footer .credits .ooc b{font:700 .6rem var(--body);letter-spacing:.12em;padding:.
 
 /* профиль LifeX в кабинете */
 .lx-card{display:grid;gap:.6rem;padding:.8rem .9rem;border:1px solid var(--line2);border-radius:var(--r2,.9rem);background:var(--bg2)}
-.lx-ava{width:3rem;height:3rem;border-radius:50%;object-fit:cover;flex:none;display:grid;place-items:center;background:var(--card2);font-weight:700;border:2px solid color-mix(in srgb,var(--pink) 55%,transparent)}
+/* фирменный градиент логотипа LifeX — только в знаке, тонкой обводке и кольце аватара; форма и шрифт кнопок наши */
+:root{--lx-grad:linear-gradient(125deg,#9b06f4,#ef05b1 42%,#fb5831 76%,#fc9201)}
+.lx-mark{width:1.15rem;height:1.15rem;flex:none;display:block}
+.lx-card .lx-mark{width:1.35rem;height:1.35rem}
+.btn.lifex{background:linear-gradient(var(--card2),var(--card2)) padding-box,var(--lx-grad) border-box;border:1px solid transparent;color:var(--fg);box-shadow:none}
+.btn.lifex .lx-mark{width:1.05rem;height:1.05rem;margin-left:-.2rem}
+.btn.lifex:hover{box-shadow:0 .55rem 1.4rem -12px #ef05b1}
+.btn.lifex:focus-visible{outline:2px solid #ef05b1;outline-offset:2px}
+.lx-tag{margin-left:auto;display:inline-flex;align-items:center;gap:.35rem;font:700 .7rem var(--body);letter-spacing:.06em;color:var(--fg);padding:.2rem .55rem .2rem .25rem;border-radius:62rem;background:var(--card2);box-shadow:inset 0 0 0 1px var(--line2)}
+.lx-tag .lx-mark{width:1rem;height:1rem}
+.lx-ava{width:3rem;height:3rem;border-radius:50%;object-fit:cover;flex:none;display:grid;place-items:center;font-weight:700;border:2px solid transparent;background:linear-gradient(var(--card2),var(--card2)) padding-box,var(--lx-grad) border-box}
