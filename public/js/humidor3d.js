@@ -77,7 +77,7 @@ const PROFILES = {
   perfecto: [[0, 0.46], [0.05, 0.7], [0.14, 0.94], [0.25, 1], [0.78, 1], [0.9, 0.8], [0.97, 0.42], [1, 0]]
 };
 const shapeProfile = s => s === 'torpedo' ? PROFILES.torpedo : s === 'belicoso' ? PROFILES.belicoso : s === 'perfecto' ? PROFILES.perfecto : PROFILES.straight;
-const SEG = 8;
+const SEG = 16; // граней по окружности: сигара круглая, голова без углов
 export function buildCigar(c, mats) {
   const L = Math.max(90, Math.min(240, c.length || 140)) / 70, R = (Math.max(30, Math.min(64, c.ring || 50)) / 64 * 25.4) / 2 / 62;
   const prof = shapeProfile(c.shape);
@@ -164,6 +164,20 @@ export function mountHumidor(host, { onPick, onLid }) {
   const PUFFS = 26, puffs = [], smokeMat = new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, opacity: 0.5 });
   for (let i = 0; i < PUFFS; i++) { const sp = new THREE.Sprite(smokeMat.clone()); sp.visible = false; scene.add(sp); puffs.push({ sp, life: 1 + i / PUFFS, v: new THREE.Vector3() }); }
   const footWorld = new THREE.Vector3();
+  // дым из Blender: объёмная струйка, 16 кадров бесшовной петли в одной текстуре; два билборда со сдвигом фаз дают объём
+  let wisps = null;
+  function mountSmoke(img) {
+    const map = new THREE.Texture(img); map.needsUpdate = true;
+    const g = new THREE.PlaneGeometry(0.9, 1.8); g.translate(0, 0.86, 0);
+    const mk = (ph, sx) => { const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { map: { value: map }, f: { value: ph }, op: { value: 0 } },
+      vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+      fragmentShader: `uniform sampler2D map;uniform float f,op;varying vec2 vUv;
+        vec4 fr(float i){float c=mod(i,4.),r=floor(i/4.);return texture2D(map,(vec2(c,3.-r)+clamp(vUv,.004,.996))/4.);}
+        void main(){float i=floor(f),k=f-i;vec4 s=mix(fr(mod(i,16.)),fr(mod(i+1.,16.)),k);
+          gl_FragColor=vec4(mix(vec3(.5,.45,.42),vec3(.96,.92,.86),s.r),s.a*op);}` }));
+      m.scale.x = sx; m.renderOrder = 5; m.userData.ph = ph; scene.add(m); return m; };
+    wisps = [mk(0, 1), mk(7.3, -0.8)]; puffs.forEach(p => { p.sp.visible = false; });
+  }
   function light(m, on) { const f = m?.userData.foot; if (!f) return; if (on) { f.userData.orig ||= f.material; f.material = emberMat; f.add(emberLight); emberLight.position.set(0, 0, -0.08); } else if (f.userData.orig) { f.material = f.userData.orig; f.remove(emberLight); } }
   function select(i, quiet) {
     if (!meshes.length) return; i = (i + meshes.length) % meshes.length;
@@ -172,7 +186,7 @@ export function mountHumidor(host, { onPick, onLid }) {
     if (!open && !quiet) { setOpen(true); onLid?.(true); }
     show.visible = open; kick();
   }
-  function setOpen(v) { open = v; lidTarget = v ? -1.82 : 0; show.visible = open; if (!open) puffs.forEach(p => p.sp.visible = false); kick(); return open; }
+  function setOpen(v) { open = v; lidTarget = v ? -1.82 : 0; show.visible = open; if (!open) { puffs.forEach(p => p.sp.visible = false); wisps?.forEach(w => { w.material.uniforms.op.value = 0; }); } kick(); return open; }
 
   // ввод
   const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(), el = renderer.domElement;
@@ -193,7 +207,7 @@ export function mountHumidor(host, { onPick, onLid }) {
 
   let active = false, visible = true, raf = 0, last = performance.now();
   new IntersectionObserver(([en]) => { visible = en.isIntersecting; kick(); }).observe(host);
-  function size() { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cam.aspect = w / h; const k = w / h < 1.25 ? 1.25 / (w / h) : 1; cam.position.set(0, 6.6 * k, 6.9 * k); cam.lookAt(look); cam.updateProjectionMatrix(); kick(); }
+  function size() { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cam.aspect = w / h; const k = w / h < 1.25 ? 1.25 / (w / h) : 1; cam.position.set(0, 6.6 * k * 1.1, 6.9 * k * 1.1); cam.lookAt(look); cam.updateProjectionMatrix(); kick(); }
   new ResizeObserver(size).observe(host);
   function kick() { if (!raf && active && visible) { last = performance.now(); raf = requestAnimationFrame(loop); } }
   function loop(t) {
@@ -209,23 +223,63 @@ export function mountHumidor(host, { onPick, onLid }) {
       m.rotation.set(0, 0, 0); m.children[0].rotation.y = spin * 0.6;
       // дым поднимается от кончика
       m.userData.foot.getWorldPosition(footWorld); emberMat.color.setScalar(0.85 + Math.sin(t / 180) * 0.15);
-      puffs.forEach(p => { p.life += dt * 0.55; if (p.life >= 1) { p.life -= 1; p.sp.position.copy(footWorld); p.v.set((Math.random() - 0.5) * 0.08, 0.32 + Math.random() * 0.2, (Math.random() - 0.5) * 0.08); }
+      if (wisps) wisps.forEach((w, k) => { w.position.copy(footWorld); w.position.x += k * 0.05; w.quaternion.copy(cam.quaternion); w.material.uniforms.f.value = (t / 1000 * 11 + w.userData.ph) % 16; w.material.uniforms.op.value = e > 0.9 ? (k ? 0.55 : 0.8) : 0; });
+      else puffs.forEach(p => { p.life += dt * 0.55; if (p.life >= 1) { p.life -= 1; p.sp.position.copy(footWorld); p.v.set((Math.random() - 0.5) * 0.08, 0.32 + Math.random() * 0.2, (Math.random() - 0.5) * 0.08); }
         p.sp.visible = e > 0.9; p.sp.position.addScaledVector(p.v, dt); p.sp.position.x += Math.sin(t / 500 + p.life * 6) * 0.002; const sc = 0.08 + p.life * 0.55; p.sp.scale.set(sc, sc, 1); p.sp.material.opacity = Math.sin(p.life * Math.PI) * 0.32; });
       moving = true;
     }
     renderer.render(scene, cam);
     if (active && visible && moving) raf = requestAnimationFrame(loop);
   }
-  // текстуры из Blender: орех с рельефом волокон, испанский кедр и сигарный лаунж, который отражается в лаке и латуни.
-  // ~75 КБ webp, грузятся после первого кадра; если не пришли — остаются рисованные текстуры.
+  // Хьюмидор из Blender: модель по референсам дорогих хьюмидоров (скруглённый корпус из корня ореха, цоколь из поперечного
+  // ореха, крышка-подушка с маркетри — кромка, тройная струнка, табачные листья, овальный картуш с латунной табличкой,
+  // кедровый воротник, накладка с замочной скважиной, петли, гигрометр и увлажнитель) + запечённые мягкие тени (AO)
+  // и студийная панорама для отражений в лаке. ~400 КБ, грузится после первого кадра; без них остаётся простая модель.
   const BASE = 'img/hum/', ld = n => new Promise(ok => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = () => ok(null); i.src = BASE + n + '.webp'; });
-  Promise.all(['walnut', 'walnut-n', 'cedar', 'lounge'].map(ld)).then(([wal, wn, ced, env]) => {
-    const T = (img, srgb = true) => { const t = new THREE.Texture(img); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.needsUpdate = true; return t; };
-    if (wal) { outer.map.dispose(); outer.map = T(wal); outer.roughness = 0.42; if (outer.isMeshPhysicalMaterial) outer.clearcoat = 1; }
-    if (wn) { outer.normalMap = T(wn, false); outer.normalScale.set(0.35, 0.35); }
-    if (ced) { cedar.map.dispose(); cedar.map = T(ced); }
-    if (env) { const pm = new THREE.PMREMGenerator(renderer), e = T(env); e.mapping = THREE.EquirectangularReflectionMapping; scene.environment = pm.fromEquirectangular(e).texture; e.dispose(); pm.dispose(); brass.roughness = 0.22; scene.environmentIntensity = 0.4; }
-    outer.needsUpdate = cedar.needsUpdate = true; kick();
+  const glb = import('three/addons/loaders/GLTFLoader.js').then(m => new m.GLTFLoader().loadAsync(BASE + 'humidor.glb')).catch(() => null);
+  Promise.all([glb, ...['burl', 'burl-n', 'marq', 'cross', 'cedar', 'body-ao', 'lid-ao', 'studio', 'smoke', 'ember'].map(ld)]).then(([g, burl, bn, marq, cross, ced, aoB, aoL, env, smoke, ember]) => {
+    const T = (img, srgb = true, rep = 0) => { const t = new THREE.Texture(img); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; if (rep) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); } t.needsUpdate = true; return t; };
+    if (env) { const pm = new THREE.PMREMGenerator(renderer), e = T(env); e.mapping = THREE.EquirectangularReflectionMapping; scene.environment = pm.fromEquirectangular(e).texture; e.dispose(); pm.dispose(); brass.roughness = 0.38; brass.metalness = 0.85; brass.color.set(0xd8b060); }
+    if (smoke) mountSmoke(smoke);
+    if (ember) { emberMat.map = T(ember); emberMat.needsUpdate = true; }
+    if (!g || !burl || !marq || !ced) { kick(); return; }
+    const Lac = coarse ? THREE.MeshStandardMaterial : THREE.MeshPhysicalMaterial, coat = coarse ? { roughness: 0.3 } : { roughness: 0.5, clearcoat: 1, clearcoatRoughness: 0.05 };
+    // табличка: латунь с гравировкой (тёмная выборка и светлая кромка под ней)
+    const plaqueTex = tex(1024, 464, (c, w, h) => {
+      const gr = c.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#e2c27a'); gr.addColorStop(.5, '#c9a24a'); gr.addColorStop(1, '#a8832f'); c.fillStyle = gr; c.fillRect(0, 0, w, h);
+      c.globalAlpha = .08; for (let y = 0; y < h; y += 2) { c.fillStyle = y % 4 ? '#fff' : '#000'; c.fillRect(0, y, w, 1); } c.globalAlpha = 1;
+      const eng = (draw) => { c.save(); c.translate(0, 2); c.fillStyle = c.strokeStyle = 'rgba(255,240,200,.55)'; draw(); c.restore(); c.fillStyle = c.strokeStyle = '#4a3310'; draw(); };
+      c.lineWidth = 5; eng(() => { c.beginPath(); c.ellipse(w / 2, h / 2, w / 2 - 40, h / 2 - 34, 0, 0, 7); c.stroke(); });
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      eng(() => { c.font = '800 112px Unbounded, Arial Black, sans-serif'; c.fillText('MILE HIGH', w / 2, h / 2 - 40); });
+      eng(() => { c.font = '700 52px Onest, Arial, sans-serif'; c.fillText('C I G A R   C L U B', w / 2, h / 2 + 70); });
+    });
+    plaqueTex.flipY = false; // развёртка таблички в модели идёт от задней кромки к передней
+    const MAT = {
+      burl: () => new Lac({ map: T(burl, true, 1.3), normalMap: bn ? T(bn, false, 1.3) : null, normalScale: new THREE.Vector2(0.22, 0.22), color: 0xa8826a, metalness: 0, ...coat }),
+      marq: () => new Lac({ map: T(marq), color: 0xc4a48c, metalness: 0, ...coat }),
+      cross: () => new Lac({ map: T(cross || burl, true, 1), color: 0x9a7a66, metalness: 0, ...coat }),
+      cedar: () => new THREE.MeshStandardMaterial({ map: T(ced, true, 1), roughness: 0.85 }),
+      brass: () => brass.clone(),
+      plaque: () => new THREE.MeshStandardMaterial({ map: plaqueTex, metalness: 0.8, roughness: 0.42, emissive: 0x2a1c08, emissiveMap: plaqueTex, emissiveIntensity: 0.6 }),
+      hygro: () => new THREE.MeshStandardMaterial({ map: hygro.material.map, roughness: 0.5 }),
+      glass: () => new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, roughness: 0.02, metalness: 0, depthWrite: false }),
+      felt: () => new THREE.MeshStandardMaterial({ color: 0x0c0706, roughness: 1 })
+    };
+    const Body = g.scene.getObjectByName('Body'), LidM = g.scene.getObjectByName('Lid'); if (!Body || !LidM) { kick(); return; }
+    const aoT = { Body: aoB && T(aoB, false), Lid: aoL && T(aoL, false) };
+    [[Body, 'Body'], [LidM, 'Lid']].forEach(([root, k]) => root.traverse(o => {
+      if (!o.isMesh) return; const name = (o.material?.name || '').replace(/\.\d+$/, ''), make = MAT[name] || MAT.burl;
+      const m = make(); if (aoT[k] && o.geometry.attributes.uv1) { m.aoMap = aoT[k]; m.aoMap.channel = 1; m.aoMapIntensity = name === 'glass' ? 0 : k === 'Lid' ? 0.35 : 0.8; }
+      o.material = m;
+    }));
+    // простая модель уступает место: убираем её детали (кроме лотка с сигарами и петли крышки)
+    [...box.children].forEach(c => { if (c !== tray && c !== lidPivot && c !== sh) box.remove(c); });
+    [...lid.children].forEach(c => lid.remove(c));
+    // модель хранит обе части в координатах коробки (крышка закрыта); крышку переводим в систему петли
+    box.add(Body); LidM.position.y -= H; LidM.position.z += D / 2; lid.add(LidM);
+    tray.position.y = 0.37; sh.scale.setScalar(1.1);
+    kick();
   });
   function relight() { const day = document.documentElement.dataset.mode === 'day'; hemi.intensity = day ? 2 : 1.2; rim.intensity = day ? 3 : 10; kick(); }
   relight(); size();
