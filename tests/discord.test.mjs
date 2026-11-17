@@ -351,7 +351,18 @@ test('переписка и закрытие обновляют одну кар�
   await core.handle('POST', `/tickets/${t.id}/messages`, { user: { id: 'u1', username: 'guest1', role: 'guest' }, body: { text: 'ещё вопрос' } });
   await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'ответ' } });
   await core.handle('POST', `/admin/tickets/${t.id}/close`, { user: mod });
-  assert.deepEqual(kinds, ['ticket_site', 'ticket_update', 'ticket_update', 'ticket_update']);
+  // все виды «ticket*» правят одну карточку; ответ персонала и закрытие дополнительно пишут гостю в личку
+  assert.deepEqual(kinds, ['ticket_site', 'ticket_update', 'ticket_reply', 'ticket_closed']);
+});
+
+test('гость отключил личные сообщения — бот получает пометку quiet', async () => {
+  const got = [], { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => null, notify: async (k, d) => { got.push([k, d.quiet, d.discordId]); } });
+  const g = { id: 'u1', username: 'guest1', role: 'guest' };
+  await core.handle('PUT', '/me/profile', { user: g, body: { dm: false } });
+  const t = await ticket(core);
+  await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'ответ' } });
+  assert.deepEqual(got.find(x => x[0] === 'ticket_reply'), ['ticket_reply', true, 'u1']);
+  assert.equal(store.get('profiles', 'd:u1').dm, false);
 });
 
 test('снег только в новогодней теме', () => {

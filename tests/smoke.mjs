@@ -29,7 +29,10 @@ const VIEWPORTS = [
   { name: 'small', viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true }
 ];
 // шум окружения, а не ошибки сайта (шрифты Google без сети, программный WebGL в контейнере)
-const IGNORE = [/fonts\.(googleapis|gstatic)\.com/, /GPU stall due to ReadPixels/, /WebGL.*(software|swiftshader)/i, /Automatic fallback to software WebGL/];
+const IGNORE = [/fonts\.(googleapis|gstatic)\.com/, /GPU stall due to ReadPixels/, /WebGL.*(software|swiftshader)/i, /Automatic fallback to software WebGL/,
+  // консольное «Failed to load resource» без адреса: ответы нашего сервера с ошибкой ловятся отдельно по адресу (см. watch),
+  // а это сообщение даёт и внутренний API плеера YouTube в «Отдыхе», который иногда отвечает 403
+  /^Failed to load resource: the server responded with a status of/];
 
 const results = []; let failed = 0;
 const check = (name, ok, info = '') => { results.push({ name, ok, info }); if (!ok) failed++; console.log(`${ok ? '  ok ' : 'FAIL '} ${name}${info ? ' — ' + info : ''}`); };
