@@ -143,7 +143,9 @@ export async function startBot({ core, store, env, hooks }) {
     await c.send({ content: (r ? `<@&${r}> ` : '') + text.slice(0, 1900), components: links([['Открыть в панели', panel]]), allowedMentions: { parse: [], roles: r ? [r] : [] } });
   }
   hooks.notify = async (kind, d) => {
-    if (kind === 'booking' || kind === 'booking_status') card('b:' + d.id, 'booking', d);
+    if (kind === 'booking' || kind === 'booking_status' || kind === 'booking_message') card('b:' + d.id, 'booking', d);
+    // гость написал по брони — короткое сообщение в ленту, чтобы ответили из панели
+    if (kind === 'booking_message' && d.guestText) staffPing(S().bookingRole, `💬 **${d.name}** пишет по брони ${d.code}${d.room ? ` (номер ${d.room})` : ''}:\n> ${String(d.guestText).slice(0, 400).replace(/\n/g, '\n> ')}`);
     if (kind === 'order' || kind === 'order_status') card('o:' + d.id, 'order', d);
     if (kind.startsWith('ticket')) card('t:' + d.id, 'ticket', d);
     // новый отзыв и отклик на вакансию: отдельное сообщение в ленту с отметкой выбранной роли
@@ -154,6 +156,7 @@ export async function startBot({ core, store, env, hooks }) {
     const cabinet = site ? ` Кабинет: ${site}/#me` : '';
     if (kind === 'ticket_reply') { const m = await findMember(d.discord, d.discordId); if (m) m.send(`Управляющий ответил на обращение «${d.topic}»: ${String(d.replyText || '').slice(0, 1500)}${cabinet}`).catch(() => {}); }
     if (kind === 'ticket_closed' && d.mode === 'site') { const m = await findMember(d.discord, d.discordId); if (m) m.send(`Ваше обращение «${d.topic}» закрыто. Если вопрос остался, откройте новое.${cabinet}`).catch(() => {}); }
+    if (kind === 'booking_message' && d.replyText) { const m = await findMember(d.discord, d.discordId); if (m) m.send(`Отель ответил по брони ${d.code}: ${String(d.replyText).slice(0, 1500)}${cabinet}`).catch(() => {}); }
     if (kind === 'booking_status') {
       const text = { confirmed: `Бронь ${d.code} подтверждена. Ваш номер ${d.room}, заезд ${d.date}.`, cancelled: `Бронь ${d.code} отменена. Если это ошибка, напишите управляющим.`, checkedin: `Добро пожаловать в Mile High Club! Номер ${d.room}.`, done: `Спасибо, что остановились у нас. Ждём снова.` }[d.status];
       const m = await findMember(d.discord, d.discordId); if (m && text) m.send(text).catch(() => {});

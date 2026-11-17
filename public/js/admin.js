@@ -13,7 +13,8 @@ const SECTIONS = [
 ];
 const BUILTIN_IMG = ['img/atrium-night.webp', 'img/atrium-day.webp', 'img/reception.webp', 'img/library.webp', ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => `img/journal/p${n}.webp`)];
 const BCHIP = { new: 'p', confirmed: 'ok', checkedin: 'v', done: 'm', cancelled: 'bad' };
-let A = null, root = null, sec = 'overview', ctx = {}, sel = {}, bFilter = 'active', bq = '', aTicket = null;
+let A = null, root = null, sec = 'overview', ctx = {}, sel = {}, bFilter = 'active', bq = '', aTicket = null, bChat = null, bFocus = null;
+const bDraft = {};
 const APP_VER = (v => (v && v !== 'dev' ? 'v' + v : ''))(document.querySelector('meta[name="version"]')?.content); // версия сайта
 const isAdmin = () => S.me?.role === 'admin';
 const can = r => r === 'mod' || isAdmin();
@@ -35,7 +36,7 @@ export async function refresh(cols) {
   if (sec === 'tickets' && cols.every(c => c === 'tickets')) { paintTicketList(); paintChat(); return; }
   paint();
 }
-function badges() { if (!A) return {}; return { bookings: A.bookings.filter(b => b.status === 'new').length, tickets: A.tickets.filter(t => t.status === 'open' && t.mode === 'site' && t.lastFrom === 'guest').length, orders: A.orders.filter(o => ['new', 'cooking'].includes(o.status)).length, reviews: (A.reviews || []).filter(r => r.status === 'pending').length }; }
+function badges() { if (!A) return {}; return { bookings: A.bookings.filter(b => b.status === 'new' || b.staffUnread > 0).length, tickets: A.tickets.filter(t => t.status === 'open' && t.mode === 'site' && t.lastFrom === 'guest').length, orders: A.orders.filter(o => ['new', 'cooking'].includes(o.status)).length, reviews: (A.reviews || []).filter(r => r.status === 'pending').length }; }
 function paintAside() {
   const b = badges(), u = S.me;
   $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}${APP_VER ? ` · <span class="ver num">${APP_VER}</span>` : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div><div class="asearch"><input class="inp" id="aSq" type="search" placeholder="Поиск: код, ник, имя, номер" autocomplete="off" aria-label="Поиск по броням, заказам, обращениям и отзывам"><div class="ares" id="aRes" hidden></div></div><div class="anav" id="anav">` +
@@ -138,8 +139,21 @@ function bookings(m) {
     (list.length ? `<div class="list">${list.map(b => { const free = A.rooms.filter(r => r.type === b.type && r.status === 'free');
       return `<div class="item" data-flash="${esc(b.id)}"><div class="top"><span class="row"><b class="num">${esc(b.code)}</b><span>${esc(b.typeName)}${b.room ? ' · <b>номер ' + esc(b.room) + '</b>' : b.preferredRoom ? ` · просит ${esc(b.preferredRoom)}` : ''}</span></span><span class="chip ${BCHIP[b.status]}">${BOOKING_STATUS[b.status]}</span></div>
       <span class="note">${esc(b.name)} · Discord <b>${esc(b.discord)}</b>${b.phone ? ' · тел. ' + esc(b.phone) : ''} · заезд ${esc(b.date)}, ${b.nights} ноч., ${b.guests} гост. · ${money(b.total)}${b.discount ? ` (скидка ${b.discount}%${b.tier ? ', ' + esc(b.tier) : ''})` : ''}${b.cancelledBy === 'guest' ? ' · отменил гость' : ''} · ${when(b.createdAt)}${b.handledBy ? ' · ' + esc(b.handledBy) : ''}</span>${b.note ? `<span>${esc(b.note)}</span>` : ''}
-      <div class="acts" data-id="${esc(b.id)}">${b.status === 'new' ? `<select aria-label="Номер"><option value="">Назначить номер…</option>${free.map(r => `<option ${r.id === b.preferredRoom ? 'selected' : ''}>${esc(r.id)}</option>`).join('')}</select><button class="btn sm" data-a="confirm">Подтвердить</button><button class="btn sm ghost" data-a="cancel">Отклонить</button>` : ''}${b.status === 'confirmed' ? '<button class="btn sm" data-a="checkin">Заселить</button><button class="btn sm ghost" data-a="cancel">Отменить</button>' : ''}${b.status === 'checkedin' ? '<button class="btn sm" data-a="checkout">Выселить</button>' : ''}</div></div>`; }).join('')}</div>` : '<div class="empty">Броней нет.</div>');
+      <div class="acts" data-id="${esc(b.id)}">${b.status === 'new' ? `<select aria-label="Номер"><option value="">Назначить номер…</option>${free.map(r => `<option ${r.id === b.preferredRoom ? 'selected' : ''}>${esc(r.id)}</option>`).join('')}</select><button class="btn sm" data-a="confirm">Подтвердить</button><button class="btn sm ghost" data-a="cancel">Отклонить</button>` : ''}${b.status === 'confirmed' ? '<button class="btn sm" data-a="checkin">Заселить</button><button class="btn sm ghost" data-a="cancel">Отменить</button>' : ''}${b.status === 'checkedin' ? '<button class="btn sm" data-a="checkout">Выселить</button>' : ''}<button class="btn sm ${b.staffUnread ? '' : 'ghost'}" data-bchat="${esc(b.id)}" aria-expanded="${bChat === b.id}">Чат с гостем${b.staffUnread ? ` <span class="badge" aria-label="Новых сообщений: ${b.staffUnread}">${b.staffUnread}</span>` : (b.messages || []).some(m => m.from !== 'system') ? ` · ${(b.messages || []).filter(m => m.from !== 'system').length}` : ''}</button></div>
+      ${bChat === b.id ? bookingChat(b) : ''}</div>`; }).join('')}</div>` : '<div class="empty">Броней нет.</div>');
   $$('#amain [data-f]').forEach(x => x.onclick = () => { bFilter = x.dataset.f; paint(); });
+  $$('#amain [data-bchat]').forEach(x => x.onclick = () => { const id = x.dataset.bchat; bChat = bChat === id ? null : id; paint();
+    const b = A.bookings.find(q => q.id === id); if (bChat && b?.staffUnread) { b.staffUnread = 0; api('POST', `/admin/bookings/${id}/read`).then(() => paintAside()).catch(() => {}); }
+    if (bChat) { const box = $('#bcMsgs'); if (box) box.scrollTop = box.scrollHeight; $('#bcIn')?.focus({ preventScroll: true }); } });
+  if (bChat && $('#bcF')) { const b = A.bookings.find(q => q.id === bChat), ta = $('#bcIn'); const box = $('#bcMsgs'); if (box) box.scrollTop = box.scrollHeight;
+    if (bDraft[bChat]) ta.value = bDraft[bChat]; ta.oninput = () => { bDraft[bChat] = ta.value; };
+    // список перерисовывается при новых сообщениях: курсор остаётся в поле ответа
+    if (bFocus === bChat) ta.focus({ preventScroll: true }); ta.onfocus = () => { bFocus = bChat; }; ta.onblur = () => { setTimeout(() => { if (document.activeElement !== $('#bcIn')) bFocus = null; }, 0); };
+    wireTpl('bcTpl', ta, b?.name);
+    ta.onkeydown = e => { if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return; e.preventDefault(); if (e.isComposing || e.keyCode === 229) return; if (!e.repeat) $('#bcF').requestSubmit(); };
+    $('#bcF').onsubmit = async e => { e.preventDefault(); const text = ta.value.trim(); if (!text) return; const btn = $('#bcF button'); btn.disabled = true;
+      const r = await run(() => api('POST', `/admin/bookings/${bChat}/messages`, { text })); btn.disabled = false;
+      if (r) { bDraft[bChat] = ''; play('soft'); const i = A.bookings.findIndex(q => q.id === r.booking.id); if (i >= 0) A.bookings[i] = r.booking; paint(); $('#bcIn')?.focus({ preventScroll: true }); } }; }
   $('#bq').oninput = e => { bq = e.target.value; clearTimeout(bookings.t); bookings.t = setTimeout(() => { paint(); $('#bq').focus(); $('#bq').setSelectionRange(bq.length, bq.length); }, 250); };
   $$('#amain .acts').forEach(a => a.querySelectorAll('[data-a]').forEach(btn => btn.onclick = async () => {
     if (btn.dataset.a === 'cancel' && !await confirmBox('Отменить бронь?', 'Гость получит уведомление в Discord, номер освободится.', 'Отменить бронь', true)) return;
@@ -147,6 +161,14 @@ function bookings(m) {
   }));
 }
 
+// переписка по брони: гость пишет из кабинета, ответ уходит ему на сайт (колокольчик) и в личные сообщения Discord
+function bookingChat(b) {
+  const ms = b.messages || [];
+  return `<div class="bchat"><div class="msgs" id="bcMsgs" role="log" aria-label="Переписка по брони ${esc(b.code)}">${ms.map(m => m.from === 'system' ? `<div class="msg sys">${esc(m.text)} <small>${when(m.at)}</small></div>`
+      : `<div class="msg ${m.from === 'staff' ? 'me' : ''}">${m.from === 'guest' ? `<b class="who">${esc(b.name)}</b>` : `<b class="who">${esc(m.by || 'Отель')}</b>`}${esc(m.text)}<small>${when(m.at)}</small></div>`).join('') || '<div class="msg sys">Сообщений пока нет — напишите гостю первым</div>'}</div>
+    <form class="compose" id="bcF">${tplSelect('bcTpl')}<textarea id="bcIn" rows="1" maxlength="1000" placeholder="Ответ гостю ${esc(b.name)}…" aria-label="Ответ гостю"></textarea><button class="btn sm">Отправить</button></form>
+    <p class="note" style="margin:0">Гость увидит ответ в кабинете и в колокольчике${b.discord ? `, бот продублирует в личные сообщения Discord (${esc(b.discord)})` : ''}.</p></div>`;
+}
 /* ---------- доска номеров ---------- */
 // Доска номеров — «шахматка»: строки — этажи, клетки — номера, цвет — статус.
 // Счётчики сверху — фильтры и цели для перетаскивания. Клик по номеру — карточка: статус, гость, бронь.

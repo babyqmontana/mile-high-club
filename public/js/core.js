@@ -212,9 +212,31 @@ export function createCore(store, hooks = {}) {
     const b = myBooking(params.id, user, guestKey);
     if (!['new', 'confirmed'].includes(b.status)) bad(`Бронь сейчас «${BOOKING_STATUS[b.status]}» — отменить её можно только через управляющих`);
     const roomFreed = freeRoomOf(b);
-    Object.assign(b, { status: 'cancelled', cancelledBy: 'guest', updatedAt: Date.now() }); store.put('bookings', b.id, b);
+    Object.assign(b, { status: 'cancelled', cancelledBy: 'guest', updatedAt: Date.now() }); pushMsg(b, { from: 'system', text: 'Вы отменили бронь.' }); store.put('bookings', b.id, b);
     log(`Гость отменил бронь ${b.code}`, 'booking'); emit(['bookings', 'log']); if (roomFreed) roomsChanged();
     call('notify', 'booking_status', { ...b, quiet: true }); return { booking: b };
+  });
+  // переписка по брони: гость пишет отелю из кабинета, управляющий отвечает из панели; смены статуса — системные строки
+  const MSG_MAX = 200;
+  const pushMsg = (b, m) => { b.messages = [...(b.messages || []), { ...m, at: Date.now() }].slice(-MSG_MAX); b.lastMsgAt = Date.now(); };
+  on('POST', '/me/bookings/:id/messages', ({ params, body, user, guestKey }) => {
+    const b = myBooking(params.id, user, guestKey), text = str(body.text, 1000).trim(); if (!text) bad('Напишите сообщение');
+    const recent = (b.messages || []).filter(m => m.from === 'guest' && Date.now() - m.at < 60000).length; if (recent >= 6) bad('Слишком часто. Подождите минуту');
+    pushMsg(b, { from: 'guest', text }); b.staffUnread = (b.staffUnread || 0) + 1; store.put('bookings', b.id, b);
+    log(`Гость написал по брони ${b.code}`, 'booking'); emit(['bookings', 'log']); call('notify', 'booking_message', { ...b, guestText: text });
+    return { booking: b };
+  });
+  on('POST', '/admin/bookings/:id/messages', ({ params, body, user }) => {
+    need(user, 'mod'); const b = store.get('bookings', params.id); if (!b) throw new HttpError(404, 'Бронь не найдена');
+    const text = str(body.text, 1000).trim(); if (!text) bad('Напишите ответ');
+    pushMsg(b, { from: 'staff', text, by: user.username }); b.staffUnread = 0; store.put('bookings', b.id, b);
+    log(`${user.username} ответил по брони ${b.code}`, 'booking', user.username); emit(['bookings', 'log']);
+    notice(b.owner, 'booking', `Отель ответил по брони ${b.code}: ${text.slice(0, 160)}`); notifyGuest('booking_message', { ...b, replyText: text });
+    return { booking: b };
+  });
+  on('POST', '/admin/bookings/:id/read', ({ params, user }) => {
+    need(user, 'mod'); const b = store.get('bookings', params.id); if (!b) throw new HttpError(404, 'Бронь не найдена');
+    if (b.staffUnread) { b.staffUnread = 0; store.put('bookings', b.id, b); emit(['bookings']); } return { ok: true };
   });
   // перенос даты и срока — пока бронь не подтверждена; сумма пересчитывается по той же цене и скидке
   on('POST', '/me/bookings/:id/reschedule', ({ params, body, user, guestKey }) => {
@@ -223,7 +245,7 @@ export function createCore(store, hooks = {}) {
     const date = str(body.date, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) bad('Укажите дату заезда');
     const nights = Math.min(30, Math.max(1, Math.round(num(body.nights, b.nights))));
     const price = b.price ?? store.get('types', b.type)?.price ?? Math.round(b.total / b.nights);
-    Object.assign(b, { date, nights, total: Math.round(price * nights * (100 - (b.discount || 0)) / 100), updatedAt: Date.now() }); store.put('bookings', b.id, b);
+    Object.assign(b, { date, nights, total: Math.round(price * nights * (100 - (b.discount || 0)) / 100), updatedAt: Date.now() }); pushMsg(b, { from: 'system', text: `Бронь перенесена: заезд ${ruDay(date)}, ночей ${nights}.` }); store.put('bookings', b.id, b);
     log(`Гость перенёс бронь ${b.code}: ${date}, ночей ${nights}`, 'booking'); emit(['bookings', 'log']);
     call('notify', 'booking', b); return { booking: b };
   });
@@ -260,7 +282,8 @@ export function createCore(store, hooks = {}) {
     const owner0 = ownerOf(user, guestKey);
     if (owner0 && store.all('bookings').filter(x => x.owner === owner0 && ['new', 'confirmed'].includes(x.status)).length >= LIMITS.bookings) bad(`У вас уже ${LIMITS.bookings} активные брони. Дождитесь подтверждения или отмените лишнюю в кабинете`);
     const owner = owner0, tier = guestStats(owner).tier, discount = Math.min(50, Math.max(0, Math.round(num(tier?.discount, 0))));
-    const b = { id: uid('b'), code: bc, type: t.id, typeName: t.name, preferredRoom: room, room: null, name, discord, phone: str(body.phone, 20), date, nights, guests: Math.min(12, Math.max(1, Math.round(num(body.guests, 1)))), note: str(body.note, 600), price: t.price, discount, tier: tier?.name || null, total: Math.round(t.price * nights * (100 - discount) / 100), status: 'new', owner, discordId: user?.id || null, createdAt: Date.now() };
+    const b = { id: uid('b'), code: bc, type: t.id, typeName: t.name, preferredRoom: room, room: null, name, discord, phone: str(body.phone, 20), date, nights, guests: Math.min(12, Math.max(1, Math.round(num(body.guests, 1)))), note: str(body.note, 600), price: t.price, discount, tier: tier?.name || null, total: Math.round(t.price * nights * (100 - discount) / 100), status: 'new', owner, discordId: user?.id || null, createdAt: Date.now(),
+      messages: [{ from: 'system', text: 'Заявка принята. Управляющий проверит её и назначит номер — ответ придёт сюда.', at: Date.now() }] };
     store.put('bookings', b.id, b); log(`Новая бронь ${b.code}: ${t.name}, ${date}, ${b.name}`, 'booking');
     emit(['bookings', 'log']); call('notify', 'booking', b);
     return { booking: b };
@@ -417,7 +440,10 @@ export function createCore(store, hooks = {}) {
     else if (act === 'checkout') { b.status = 'done'; if (b.room) release(b.room, 'cleaning'); }
     else if (act === 'cancel') { b.status = 'cancelled'; if (b.room) release(b.room, 'free'); }
     else bad('Неизвестное действие');
-    b.updatedAt = Date.now(); b.handledBy = user.username; store.put('bookings', b.id, b);
+    b.updatedAt = Date.now(); b.handledBy = user.username;
+    const SYS = { confirmed: `Бронь подтверждена. Ваш номер ${b.room}, ключ-карта готова к заезду.`, checkedin: `Вы заселены в номер ${b.room}. Хорошего отдыха!`, done: 'Выезд оформлен. Спасибо, что выбрали Mile High Club.', cancelled: 'Бронь отменена отелем.' };
+    if (SYS[b.status]) pushMsg(b, { from: 'system', text: SYS[b.status] });
+    store.put('bookings', b.id, b);
     log(`${user.username}: бронь ${b.code} → ${BOOKING_STATUS[b.status]}${b.room ? ', номер ' + b.room : ''}`, 'booking', user.username);
     const BN = { confirmed: `Бронь ${b.code} подтверждена: номер ${b.room}, заезд ${ruDay(b.date)}.`, checkedin: `Добро пожаловать в Mile High Club! Вы заселены в номер ${b.room}.`, done: `Спасибо, что остановились у нас! Оцените проживание — оставьте отзыв в кабинете.`, cancelled: `Бронь ${b.code} отменена. Если это ошибка, напишите управляющим.` };
     if (BN[b.status]) notice(b.owner, 'booking', BN[b.status]);

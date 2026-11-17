@@ -492,8 +492,12 @@ function openBooking(type, room) {
     try {
       const { booking: b } = await api('POST', '/bookings', { type: $('#bType').value, room: $('#bRoom').value, name: $('#bName').value, discord: $('#bDiscord').value, date: $('#bDate').value, nights: $('#bNights').value, guests: $('#bGuests').value, phone: $('#bPhone').value, note: $('#bNote').value });
       play('swipe'); setTimeout(() => play('success'), 420);
-      el.innerHTML = `<div class="top"><h3>Бронь отправлена</h3><button class="ibtn x" aria-label="Закрыть">${I.x}</button></div><div class="success"><span class="mark">${I.check}</span><span class="code">${esc(b.code)}</span><p class="mut">${esc(b.typeName)}, заезд ${esc(b.date)}, ${b.nights} ${plural(b.nights, 'ночь', 'ночи', 'ночей')}. Сохраните код брони.</p><a class="btn ghost" href="#me">Мои брони</a></div>`;
-      el.querySelector('.x').onclick = () => closeSheet('bookSheet'); el.querySelector('a').onclick = () => closeSheet('bookSheet'); loadItems();
+      el.innerHTML = `<div class="top"><h3>Бронь отправлена</h3><button class="ibtn x" aria-label="Закрыть">${I.x}</button></div><div class="success"><span class="mark">${I.check}</span><span class="code">${esc(b.code)}</span><p class="mut">${esc(b.typeName)}, заезд ${ruDate(b.date)}, ${b.nights} ${plural(b.nights, 'ночь', 'ночи', 'ночей')}. Сохраните код брони.</p>
+        <ol class="next-steps" aria-label="Что дальше"><li class="now"><b>Управляющий проверит заявку</b><span>и назначит номер — увидите это в кабинете, в колокольчике и в Discord</span></li><li><b>Ключ-карта</b><span>появится в кабинете после подтверждения</span></li><li><b>Заселение на ресепшене</b><span>дальше — заказ в номер и чат с отелем прямо из брони</span></li></ol>
+        <div class="row" style="justify-content:center"><a class="btn" href="#me" data-goto="${esc(b.id)}">Открыть бронь</a><a class="btn ghost" href="#me" data-goto="${esc(b.id)}" data-chatnow="1">Написать отелю</a></div></div>`;
+      el.querySelector('.x').onclick = () => closeSheet('bookSheet');
+      el.querySelectorAll('[data-goto]').forEach(a => a.onclick = () => { meBk = a.dataset.chatnow ? b.id : null; bkFocus = a.dataset.chatnow ? b.id : null; closeSheet('bookSheet'); setTimeout(() => { const card = document.getElementById('bk-' + b.id); card?.scrollIntoView({ block: 'center' }); if (a.dataset.chatnow) card?.querySelector('textarea')?.focus({ preventScroll: true }); }, 450); });
+      loadItems();
     } catch (err) { fail(err); btn.disabled = false; }
   };
   openSheet('bookSheet');
@@ -684,7 +688,8 @@ function openCart() { sheet('cartSheet'); paintCart(); prefill(); openSheet('car
 function paintCart() {
   const el = sheet('cartSheet'), rows = [...S.cart].filter(([id]) => itemById(id)), total = rows.reduce((s, [id, q]) => s + itemById(id).price * q, 0);
   const keep = id => el.querySelector('#' + id)?.value;
-  const vals = { room: keep('oRoom'), name: keep('oName'), discord: keep('oDiscord') ?? S.me?.username ?? '' };
+  const stay = S.items?.bookings?.find(b => b.status === 'checkedin' && b.room);
+  const vals = { room: keep('oRoom') || stay?.room, name: keep('oName'), discord: keep('oDiscord') ?? S.me?.username ?? '' };
   el.innerHTML = `<div class="top"><h3>Заказ в номер</h3><button class="ibtn x" aria-label="Закрыть">${I.x}</button></div>
     ${rows.length ? `<div class="cl">${rows.map(([id, q]) => `<div><span>${esc(itemById(id).name)}<br><small class="note num">${money(itemById(id).price)}</small></span><span class="qty"><button data-m="${esc(id)}" data-sfx="soft">−</button><span class="num">${q}</span><button data-p="${esc(id)}" data-sfx="">+</button></span></div>`).join('')}</div><div class="tot"><span>Итого</span><span class="num">${money(total)}</span></div>
     <form id="oForm" class="stack" novalidate><label class="field"><span>Номер комнаты</span><select id="oRoom"><option value="">Выберите номер</option>${S.pub.rooms.map(r => `<option ${r.id === vals.room ? 'selected' : ''}>${esc(r.id)}</option>`).join('')}</select></label>
@@ -880,9 +885,34 @@ function bookingCard(b) {
   const room = b.room && S.pub.rooms.find(r => r.id === b.room), at = STEPS.findIndex(([k]) => k === b.status);
   const steps = b.status === 'cancelled' ? `<div class="bk-steps off"><span class="chip bad">Отменена${b.cancelledBy === 'guest' ? ' вами' : ''}</span></div>`
     : `<ol class="bk-steps" aria-label="Статус брони">${STEPS.map(([k, n], i) => `<li class="${i < at ? 'done' : i === at ? 'now' : ''}"${i === at ? ' aria-current="step"' : ''}>${n}</li>`).join('')}</ol>`;
-  return `<article class="bk"><div class="bk-top"><div><span class="lbl">Код брони</span><b class="bk-code num">${esc(b.code)}</b></div><span class="bk-type">${esc(b.typeName)}</span></div>${steps}
+  const unread = bkUnread(b), open = meBk === b.id || (meBk === null && unread > 0);
+  return `<article class="bk bk-${b.status}${bkMoved.has(b.id) ? ' moved' : ''}" id="bk-${esc(b.id)}" data-bk="${esc(b.id)}"><div class="bk-top"><div><span class="lbl">Код брони</span><b class="bk-code num">${esc(b.code)}</b></div><span class="bk-type">${esc(b.typeName)}</span></div>${steps}
+    ${bkStage(b, room)}
     <dl class="bk-facts"><div><dt>Заезд</dt><dd>${ruDate(b.date)}</dd></div><div><dt>Выезд</dt><dd>${ruDate(addDays(b.date, b.nights))}</dd></div><div><dt>Номер</dt><dd>${room ? `${esc(room.id)} · ${room.floor} этаж` : 'назначат при подтверждении'}</dd></div><div><dt>Сумма</dt><dd class="num">${money(b.total)}${b.discount ? ` <small>скидка ${b.discount}%${b.tier ? ' · ' + esc(b.tier) : ''}</small>` : ''}</dd></div></dl>
-    <div class="row bk-act">${room ? `<button class="btn sm ghost" data-tower="${esc(room.id)}">Показать на башне</button>` : ''}${b.status === 'new' ? `<button class="btn sm ghost" data-move="${esc(b.id)}">Перенести</button>` : ''}${['new', 'confirmed'].includes(b.status) ? `<button class="btn sm ghost danger-t" data-cancel="${esc(b.id)}">Отменить</button>` : ''}${b.status === 'done' ? reviewState(b) : ''}</div></article>`;
+    <div class="row bk-act"><button class="btn sm ${unread ? '' : 'ghost'} bk-chat-btn" data-bkchat="${esc(b.id)}" aria-expanded="${open}" aria-controls="bkc-${esc(b.id)}">Чат с отелем${unread ? ` <span class="badge" aria-label="Новых ответов: ${unread}">${unread}</span>` : ''}</button>${room ? `<button class="btn sm ghost" data-tower="${esc(room.id)}">Показать на башне</button>` : ''}${b.status === 'new' ? `<button class="btn sm ghost" data-move="${esc(b.id)}">Перенести</button>` : ''}${['new', 'confirmed'].includes(b.status) ? `<button class="btn sm ghost danger-t" data-cancel="${esc(b.id)}">Отменить</button>` : ''}${b.status === 'done' ? reviewState(b) : ''}</div>
+    ${open ? bkChat(b) : ''}</article>`;
+}
+// --- путь гостя по брони: что происходит сейчас и что дальше ---
+let meBk = null, bkFocus = null; const bkMoved = new Set(), bkDraft = {}; let bkPrev = null;
+const bkSeen = () => { try { return JSON.parse(pref.get('mhc-bkread') || '{}') || {}; } catch { return {}; } };
+const bkUnread = b => (b.messages || []).filter(m => m.from === 'staff' && m.at > (bkSeen()[b.id] || 0)).length;
+function bkMarkRead(b) { const last = (b.messages || []).filter(m => m.from === 'staff').at(-1); if (!last) return; const s = bkSeen(); if ((s[b.id] || 0) >= last.at) return; s[b.id] = last.at; pref.set('mhc-bkread', JSON.stringify(s)); paintNav(); }
+const daysTo = d => Math.round((new Date(d + 'T12:00:00Z') - new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00Z')) / 864e5);
+function bkStage(b, room) {
+  const dz = daysTo(b.date), out = addDays(b.date, b.nights), dOut = daysTo(out);
+  if (b.status === 'new') return `<div class="bk-stage wait"><span class="bk-pulse" aria-hidden="true"></span><div class="bk-next"><b>Ждём подтверждения</b><p>Управляющий проверит бронь и назначит номер${b.preferredRoom ? ` (вы просили ${esc(b.preferredRoom)})` : ''}. Ответ придёт сюда, в колокольчик и в Discord. Вопросы — в чат ниже.</p></div></div>`;
+  if (b.status === 'confirmed' && room) return `<div class="bk-stage"><div class="keycard" aria-label="Ключ-карта номера ${esc(room.id)}"><span class="kc-chip" aria-hidden="true"></span><span class="kc-brand">MILE HIGH CLUB</span><b class="kc-room num">${esc(room.id)}</b><span class="kc-meta">${room.floor} этаж · ${esc(roomGameFloor(S.pub.rooms, room.floor))}</span><span class="kc-date">заезд ${ruDate(b.date)}</span></div>
+      <div class="bk-next"><b>${dz > 1 ? `Заезд через ${dz} ${plural(dz, 'день', 'дня', 'дней')}` : dz === 1 ? 'Заезд завтра' : dz === 0 ? 'Заезд сегодня' : 'Ждём вас на ресепшене'}</b><p>Ключ-карта готова. Подойдите на ресепшен в лобби — управляющий заселит вас в номер ${esc(room.id)}. Лифт: ${esc(roomGameFloor(S.pub.rooms, room.floor))}.</p></div></div>`;
+  if (b.status === 'checkedin' && room) return `<div class="bk-stage in"><div class="bk-next"><b>Вы в номере ${esc(room.id)}</b><p>${dOut > 0 ? `Выезд ${ruDate(out)}, через ${dOut} ${plural(dOut, 'день', 'дня', 'дней')}.` : 'Выезд сегодня — ключ-карту оставьте на ресепшене.'} Хорошего отдыха!</p></div>
+      <div class="bk-quick"><button class="qa" data-roomsvc="${esc(room.id)}"><b>Заказать в номер</b><span>Le Ciel и сигары</span></button><button class="qa" data-bkchat="${esc(b.id)}" data-focus="1"><b>Ресепшен</b><span>Написать управляющим</span></button><a class="qa" href="#leisure"><b>Отдых</b><span>Бассейны и клуб</span></a></div></div>`;
+  if (b.status === 'done') return `<div class="bk-stage done"><div class="bk-next"><b>Спасибо, что выбрали Mile High Club</b><p>Будем рады видеть вас снова. Оцените проживание — отзыв появится на главной.</p></div></div>`;
+  return '';
+}
+function bkChat(b) {
+  const ms = b.messages || [], closed = ['done', 'cancelled'].includes(b.status);
+  return `<div class="chat mechat bkchat" id="bkc-${esc(b.id)}"><div class="msgs" id="bkMsgs-${esc(b.id)}" role="log" aria-label="Переписка по брони ${esc(b.code)}">${ms.map(m => m.from === 'system' ? `<div class="msg sys">${esc(m.text)} <small>${when(m.at)}</small></div>`
+      : `<div class="msg ${m.from === 'guest' ? 'me' : ''}">${m.from === 'staff' ? `<b class="who">${esc(m.by ? 'Управляющий' : 'Отель')}</b>` : ''}${esc(m.text)}<small>${when(m.at)}</small></div>`).join('') || '<div class="msg sys">Напишите отелю — ответ придёт сюда</div>'}</div>
+    ${closed ? '<p class="note" style="margin:.4rem 0 0">Бронь закрыта. Если остался вопрос — напишите, управляющие увидят.</p>' : ''}<form class="compose" data-bkform="${esc(b.id)}"><textarea rows="1" maxlength="1000" placeholder="Сообщение отелю…" aria-label="Сообщение отелю"></textarea><button class="btn sm">Отправить</button></form></div>`;
 }
 function reviewState(b) {
   const r = (S.items.reviews || []).find(x => x.bookingId === b.id);
@@ -918,7 +948,7 @@ function renderMe() {
   const chatT = it.tickets.find(t => t.id === meTicket && t.mode === 'site') || null;
   if (p.name && p.phone) unlock('passport'); if (p.lifex) unlock('lifex'); if (st.tier) unlock('loyal');
   const draft = $('#meChatIn')?.value || '', focused = $('#meChatIn') === document.activeElement;
-  view('me').innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Кабинет</span><h2>Мои брони и заявки</h2><p>${u ? `Вы вошли как <b>${esc(u.username)}</b>.` : 'Брони и заявки с этого устройства видны здесь. Войдите через Discord, чтобы видеть их на любом устройстве: всё, что вы оформили здесь, перейдёт в аккаунт.'}</p></div>
+  view('me').innerHTML = `<div class="wrap sec"><p class="sr-only" role="status" aria-atomic="true" id="meLive"></p><div class="head"><span class="eyebrow">Кабинет</span><h2>Мои брони и заявки</h2><p>${u ? `Вы вошли как <b>${esc(u.username)}</b>.` : 'Брони и заявки с этого устройства видны здесь. Войдите через Discord, чтобы видеть их на любом устройстве: всё, что вы оформили здесь, перейдёт в аккаунт.'}</p></div>
     <div class="row" style="margin-bottom:1.5rem">${u ? `<button class="btn ghost sm" id="meOut">${I.out} Выйти</button>${u.role !== 'guest' ? '<a class="btn sm" href="#admin">Панель персонала</a>' : ''}` : `<button class="btn discord sm" id="meIn">${I.discord} Войти через Discord</button>`}</div>
     <div class="me-grid">
       <div class="stack" style="gap:1rem;min-width:0"><h3 style="font-size:1.1rem">Брони</h3>${it.bookings.length ? it.bookings.map(bookingCard).join('') : '<div class="empty">Броней пока нет. <a href="#stay">Выбрать номер</a></div>'}
@@ -969,6 +999,18 @@ function renderMe() {
     if (!n) return toast('Этих позиций больше нет в меню', 'err');
     updFab(true); play('add'); unlock('again'); openCart(); const room = document.getElementById('oRoom'); if (room && !room.value) room.value = o.room;
   });
+  $$('#main [data-bkchat]').forEach(x => x.onclick = () => { const id = x.dataset.bkchat, isOpen = meBk === id || (meBk === null && bkUnread(it.bookings.find(b => b.id === id) || {}) > 0);
+    meBk = isOpen && !x.dataset.focus ? '' : id; renderMe(); const ta = document.querySelector(`[data-bkform="${CSS.escape(id)}"] textarea`); if (ta && (x.dataset.focus || !isOpen)) ta.focus({ preventScroll: true }); document.getElementById('bk-' + id)?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
+  $$('#main [data-roomsvc]').forEach(x => x.onclick = () => { location.hash = '#dining'; toast(`Заказ придёт в номер ${x.dataset.roomsvc}`); });
+  it.bookings.forEach(b => { const box = document.getElementById('bkMsgs-' + b.id); if (!box) return; box.scrollTop = box.scrollHeight; bkMarkRead(b); });
+  $$('#main [data-bkform]').forEach(f => { const ta = f.querySelector('textarea'), id = f.dataset.bkform;
+    if (bkFocus === id) ta.focus({ preventScroll: true }); ta.onfocus = () => { bkFocus = id; }; ta.onblur = () => setTimeout(() => { if (!document.activeElement?.closest?.('[data-bkform]')) bkFocus = null; }, 0);
+    if (bkDraft[id]) ta.value = bkDraft[id]; ta.oninput = () => { bkDraft[id] = ta.value; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
+    // Enter — отправить, Shift+Enter — новая строка; во время набора через IME Enter только подтверждает слово
+    ta.onkeydown = e => { if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return; e.preventDefault(); if (e.isComposing || e.keyCode === 229) return; if (!e.repeat) f.requestSubmit(); };
+    f.onsubmit = async e => { e.preventDefault(); const text = ta.value.trim(); if (!text) return; const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Отправляем…';
+      try { await api('POST', `/me/bookings/${id}/messages`, { text }); bkDraft[id] = ''; meBk = id; play('soft'); await loadItems(); document.querySelector(`[data-bkform="${CSS.escape(id)}"] textarea`)?.focus({ preventScroll: true }); }
+      catch (err) { fail(err); btn.disabled = false; btn.textContent = 'Отправить'; } }; });
   $$('#main [data-chat]').forEach(b => b.onclick = () => { meTicket = meTicket === b.dataset.chat ? null : b.dataset.chat; renderMe(); });
   if (chatT) {
     const ms = $('#meMsgs'); if (ms) ms.scrollTop = ms.scrollHeight; markRead(chatT);
@@ -1018,7 +1060,16 @@ async function syncAccount() {
 let achT = 0;
 onAch(() => { if (!S.me || DEMO) return; clearTimeout(achT); achT = setTimeout(() => api('POST', '/me/achievements', { ids: achIds() }).catch(() => {}), 1500); });
 let itemsDirty = true;
-async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } paintNav(); paintBell(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
+const BK_SAY = { confirmed: 'подтверждена — ключ-карта готова', checkedin: '— вы заселены, добро пожаловать', done: '— выезд оформлен', cancelled: 'отменена' };
+function bkWatch() {
+  const now = new Map((S.items?.bookings || []).map(b => [b.id, b.status + ':' + (b.messages || []).filter(m => m.from === 'staff').length]));
+  if (bkPrev) for (const b of S.items.bookings) { const was = bkPrev.get(b.id); if (!was || was === now.get(b.id)) continue;
+    const [st] = was.split(':'); bkMoved.add(b.id); setTimeout(() => { bkMoved.delete(b.id); document.getElementById('bk-' + b.id)?.classList.remove('moved'); }, 2600);
+    const msg = st !== b.status ? `Бронь ${b.code} ${BK_SAY[b.status] || ''}` : `Новый ответ отеля по брони ${b.code}`;
+    play(st !== b.status ? 'success' : 'soft'); /* подсказку уже показывает колокольчик */ const live = $('#meLive'); if (live) live.textContent = msg; }
+  bkPrev = now;
+}
+async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } bkWatch(); paintNav(); paintBell(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
 // прочитанные ответы персонала помним в браузере: id обращения → время последнего просмотра
 const seenT = () => { try { return JSON.parse(pref.get('mhc-read') || '{}') || {}; } catch { return {}; } };
 const unreadOf = t => t.mode === 'site' && t.lastFrom === 'staff' && t.lastAt > (seenT()[t.id] || 0);

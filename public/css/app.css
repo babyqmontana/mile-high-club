@@ -1066,6 +1066,52 @@ footer .credits .ver{margin-left:.35rem;padding-left:.8rem;border-left:1px solid
 .bk-facts div{min-width:0}.bk-facts dt{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
 .bk-facts dd{margin:.15rem 0 0;font-weight:600;overflow-wrap:anywhere}.bk-facts small{font-weight:400;color:var(--mut)}
 .bk-act{gap:.4rem}
+/* панель: переписка по брони в карточке */
+.bchat{display:grid;grid-template-columns:minmax(0,1fr);gap:.5rem;margin-top:.6rem;padding:.7rem;border-radius:.8rem;border:1px solid var(--line);background:var(--card)}
+.bchat .msgs{max-height:18rem;padding:.4rem}
+.bchat .compose{padding:0;border:0;flex-wrap:wrap}
+.bchat .compose .tpl{flex:0 0 auto;width:auto;max-width:11rem}
+.bchat .compose textarea{flex:1 1 14rem;min-width:0;min-height:2.625rem;max-height:9rem;resize:vertical;padding:.6rem .9rem;border-radius:1.2rem;border:1px solid var(--line2);background:var(--card);color:inherit;font:inherit;line-height:1.4}
+.bchat .compose textarea:focus{outline:none;border-color:var(--pink)}
+.next-steps{list-style:none;margin:.4rem 0 .6rem;padding:0;display:grid;gap:.55rem;text-align:left;width:100%;max-width:26rem;counter-reset:ns}
+.next-steps li{position:relative;padding-left:2.2rem;display:grid;gap:.1rem;counter-increment:ns}
+.next-steps li::before{content:counter(ns);position:absolute;left:0;top:.05rem;width:1.5rem;height:1.5rem;border-radius:50%;display:grid;place-items:center;font:800 .75rem var(--body);border:1px solid var(--line2);color:var(--mut)}
+.next-steps li.now::before{background:var(--pink);border-color:var(--pink);color:#fff}
+.next-steps b{font-size:.92rem}.next-steps span{font-size:.8rem;color:var(--mut)}
+/* путь гостя по брони: шаг «что сейчас», ключ-карта, быстрые действия, чат */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.bk.moved{animation:bkGlow 2.4s var(--ease-out,ease-out)}
+@keyframes bkGlow{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--gold) 0%,transparent)}25%{box-shadow:0 0 0 .2rem color-mix(in srgb,var(--gold) 55%,transparent),0 0 2.5rem color-mix(in srgb,var(--gold) 25%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+.bk.moved .bk-steps li.now::before{animation:bkFill .9s var(--ease-out,ease-out)}
+@keyframes bkFill{from{transform:scaleX(0);transform-origin:left}to{transform:scaleX(1);transform-origin:left}}
+.bk-stage{display:flex;gap:1rem;align-items:center;padding:.9rem 1rem;border-radius:.8rem;background:color-mix(in srgb,var(--gold) 6%,var(--bg2));border:1px solid color-mix(in srgb,var(--gold) 22%,var(--line));flex-wrap:wrap}
+.bk-stage p{margin:.2rem 0 0;color:var(--mut);font-size:.88rem;line-height:1.5}
+.bk-stage b{font-size:1rem}
+.bk-stage.wait{background:color-mix(in srgb,var(--pink) 7%,var(--bg2));border-color:color-mix(in srgb,var(--pink) 30%,var(--line))}
+.bk-stage.in{display:grid;gap:.8rem}
+.bk-stage.done{background:var(--bg2);border-color:var(--line)}
+.bk-next{flex:1 1 14rem;min-width:0}
+.bk-pulse{flex:none;width:.8rem;height:.8rem;border-radius:50%;background:var(--pink);box-shadow:0 0 0 0 color-mix(in srgb,var(--pink) 60%,transparent);animation:bkPulse 1.8s infinite}
+@keyframes bkPulse{70%{box-shadow:0 0 0 .7rem transparent}100%{box-shadow:0 0 0 0 transparent}}
+.keycard{position:relative;flex:none;width:14.5rem;aspect-ratio:1.586;border-radius:.75rem;padding:.85rem 1rem;display:grid;grid-template-rows:auto 1fr auto auto;overflow:hidden;color:#2a1a06;
+  background:linear-gradient(135deg,#f7d47a 0%,#e0a93a 38%,#f9e4a6 55%,#c98d23 100%);box-shadow:0 .6rem 1.6rem -.6rem rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.35)}
+.keycard::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.55) 45%,transparent 60%);transform:translateX(-120%);animation:kcShine 4.5s 1s infinite}
+@keyframes kcShine{0%,60%{transform:translateX(-120%)}85%,100%{transform:translateX(120%)}}
+.kc-chip{position:absolute;right:1rem;top:.9rem;width:2rem;height:1.5rem;border-radius:.3rem;background:linear-gradient(135deg,#fff3c8,#b98420);box-shadow:inset 0 0 0 1px rgba(80,50,0,.35)}
+.kc-brand{font:800 .62rem var(--body);letter-spacing:.22em}
+.kc-room{align-self:end;font:800 2.2rem/1 var(--display);letter-spacing:.04em}
+.kc-meta,.kc-date{font:600 .7rem var(--body);opacity:.8}
+.bk-quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.5rem}
+.qa{display:grid;gap:.15rem;text-align:left;padding:.7rem .85rem;min-height:2.75rem;border-radius:.7rem;border:1px solid var(--line2);background:var(--card);color:inherit;text-decoration:none;cursor:pointer;transition:border-color .2s,transform .2s}
+.qa:hover,.qa:focus-visible{border-color:var(--gold);transform:translateY(-1px)}
+.qa b{font-size:.9rem}.qa span{font-size:.75rem;color:var(--mut)}
+.bk-chat-btn .badge{margin-left:.35rem}
+.bkchat{height:auto;grid-template-rows:auto auto auto;grid-template-columns:minmax(0,1fr)}.bkchat .msgs{max-height:20rem}
+.bkchat .compose textarea{flex:1;min-width:0;min-height:2.625rem;max-height:9rem;resize:none;padding:.6rem .9rem;border-radius:1.2rem;border:1px solid var(--line2);background:var(--bg2);color:inherit;font:inherit;line-height:1.4}
+.bkchat .compose textarea:focus{outline:none;border-color:var(--pink)}
+.msg .who{display:block;font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);margin-bottom:.15rem}
+@media(max-width:560px){.keycard{width:100%;max-width:18rem}}
+@media(prefers-reduced-motion:reduce){.keycard::after,.bk-pulse,.bk.moved,.bk.moved .bk-steps li.now::before{animation:none}}
 .danger-t{color:var(--bad)}
 .tier-bar{height:.45rem;border-radius:1rem;background:var(--line2);overflow:hidden}
 .tier-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--pink));border-radius:inherit}

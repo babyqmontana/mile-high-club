@@ -178,6 +178,12 @@ try {
   await page.evaluate(() => { location.hash = '#me'; });
   const inMe = !!code && await page.waitForFunction(c => document.querySelector('.view[data-view="me"]')?.textContent.includes(c), code, { timeout: 8000 }).then(() => true).catch(() => false);
   check('бронь: видна в «Мои брони»', inMe);
+  // переписка по брони: гость пишет отелю прямо из карточки, видит «что дальше»
+  const stage = await page.$('.bk-stage.wait');
+  await page.click('.bk [data-bkchat]'); const bkTa = await page.waitForSelector('.bk [data-bkform] textarea', { timeout: 5000 }).catch(() => null);
+  if (bkTa) { await bkTa.fill('Смоук: вопрос по брони'); await page.click('.bk [data-bkform] button'); }
+  const sent = !!bkTa && await page.waitForFunction(() => /Смоук: вопрос по брони/.test(document.querySelector('.bk .bkchat .msgs')?.textContent || ''), null, { timeout: 6000 }).then(() => true).catch(() => false);
+  check('бронь: шаг «ждём подтверждения» и чат с отелем в карточке', !!stage && sent);
 
   // заказ в номер
   await page.evaluate(() => { location.hash = '#dining'; }); await page.waitForTimeout(900);

@@ -122,6 +122,28 @@ test('этаж правится целиком: новый номер этажа
   s.close();
 });
 
+test('переписка по брони: гость пишет только в свою, персонал отвечает, статусы попадают в ленту, частые сообщения отсекаются', async () => {
+  const s = openStore(path.join(dir, 'bm.sqlite')); seed(s); const core = createCore(s, {});
+  const admin = { id: 'a', username: 'A', role: 'admin' }, mod = { id: 'm', username: 'M', role: 'mod' };
+  const b = (await core.handle('POST', '/bookings', { body: { type: 'dlx', name: 'Гость', discord: 'g', date: '2026-12-01', nights: 2 }, guestKey: 'k1' })).booking;
+  assert.equal(b.messages[0].from, 'system');
+  await assert.rejects(core.handle('POST', `/me/bookings/${b.id}/messages`, { body: { text: 'чужая' }, guestKey: 'k2' }), /не найдена/);
+  await assert.rejects(core.handle('POST', `/me/bookings/${b.id}/messages`, { body: { text: '   ' }, guestKey: 'k1' }), /Напишите/);
+  await core.handle('POST', `/me/bookings/${b.id}/messages`, { body: { text: 'Можно с видом на город?' }, guestKey: 'k1' });
+  assert.equal(s.get('bookings', b.id).staffUnread, 1);
+  await assert.rejects(core.handle('POST', `/admin/bookings/${b.id}/messages`, { body: { text: 'x' }, user: null }), /прав|вход|доступ/i);
+  await core.handle('POST', `/admin/bookings/${b.id}/messages`, { body: { text: 'Подберём, ждите подтверждения' }, user: mod });
+  const after = s.get('bookings', b.id);
+  assert.equal(after.staffUnread, 0); assert.equal(after.messages.at(-1).from, 'staff'); assert.equal(after.messages.at(-1).by, 'M');
+  const items = await core.handle('GET', '/me/items', { guestKey: 'k1' });
+  assert.ok(items.notices.some(n => /Отель ответил по брони/.test(n.text)), 'гостю пришло уведомление');
+  await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act: 'confirm', room: '2201' }, user: admin });
+  assert.match(s.get('bookings', b.id).messages.at(-1).text, /подтверждена.*2201/);
+  for (let i = 0; i < 5; i++) await core.handle('POST', `/me/bookings/${b.id}/messages`, { body: { text: 'ещё ' + i }, guestKey: 'k1' });
+  await assert.rejects(core.handle('POST', `/me/bookings/${b.id}/messages`, { body: { text: 'спам' }, guestKey: 'k1' }), /часто/);
+  s.close();
+});
+
 test('ссылки и цвета из панели проходят только безопасные', async () => {
   const s = openStore(path.join(dir, 'url.sqlite')); seed(s); const core = createCore(s, {}); const admin = { id: 'a', username: 'A', role: 'admin' };
   const { doc } = await core.handle('PUT', '/admin/offers/new', { body: { title: 'x', link: 'javascript:alert(1)', image: 'https://ok.example/a.webp' }, user: admin });
