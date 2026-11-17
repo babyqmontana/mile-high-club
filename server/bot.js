@@ -314,9 +314,6 @@ export async function startBot({ core, store, env, hooks }) {
   // события приходят от Discord сразу; опрос — лишь страховка от пропущенных, поэтому раз в 15 минут
   const syncEvents = hooks.syncEvents;
   setInterval(() => syncEvents().catch(() => {}), 15 * 60e3).unref();
-  // «Пойду»: напоминание в личку примерно за час до начала события
-  const remind = async () => { for (const r of core.dueReminders?.() || []) { const m = await guild.members.fetch(r.discordId).catch(() => null); if (m) m.send(`Через ${r.minutes} мин — «${r.event.name}»${r.event.location ? `, ${r.event.location}` : ''}. Вы отметились «Пойду», ждём вас!${site ? ` Афиша: ${site}/#home` : ''}`).catch(() => {}); } };
-  setInterval(() => remind().catch(() => {}), 5 * 60e3).unref();
   pollGuests(); setInterval(() => pollGuests().catch(() => {}), 60e3).unref();
   // заявки, которые не дошли, пока бот был выключен (необязательный шаг: его сбой не выключает подключённого бота)
   for (const t of store.all('tickets').filter(x => x.status === 'open' && x.mode === 'discord' && !x.channel)) {
