@@ -116,3 +116,75 @@ test('способ связи по обращению выбирается од�
   assert.equal(made, 1); assert.equal(s.get('tickets', ticket.id).channel, 'ch1');
   s.close();
 });
+
+/* ---------- кабинет гостя ---------- */
+const cab = () => { const s = openStore(path.join(dir, 'cab-' + Math.random().toString(36).slice(2) + '.sqlite')); seed(s); return { s, core: createCore(s, {}) }; };
+const ADMIN = { id: 'a', username: 'A', role: 'admin' }, GUEST = { id: 'g1', username: 'G', role: 'guest' };
+const mkBooking = async (core, ctx, extra = {}) => (await core.handle('POST', '/bookings', { body: { type: 'dlx', name: 'Тони', discord: 'tony', date: '2026-12-01', nights: 2, ...extra }, ...ctx })).booking;
+
+test('кабинет: после входа брони, заказы, заявки и профиль с устройства переходят в аккаунт', async () => {
+  const { s, core } = cab(), dev = { guestKey: 'device-1' };
+  await mkBooking(core, dev); await core.handle('PUT', '/me/profile', { body: { name: 'Тони', phone: '555' }, ...dev });
+  assert.equal((await core.handle('POST', '/me/claim', { user: GUEST, guestKey: 'device-1' })).moved, 1);
+  const it = await core.handle('GET', '/me/items', { user: GUEST });
+  assert.equal(it.bookings.length, 1); assert.equal(it.profile.phone, '555');
+  assert.equal((await core.handle('GET', '/me/items', dev)).bookings.length, 0, 'на ключе устройства ничего не осталось');
+  s.close();
+});
+
+test('кабинет: гость отменяет только свою бронь до заселения, номер освобождается', async () => {
+  const { s, core } = cab(), me = { guestKey: 'k1' }, other = { guestKey: 'k2' };
+  const b = await mkBooking(core, me);
+  await assert.rejects(core.handle('POST', `/me/bookings/${b.id}/cancel`, other), /не найдена/);
+  await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act: 'confirm', room: '2201' }, user: ADMIN });
+  await core.handle('POST', `/me/bookings/${b.id}/cancel`, me);
+  assert.equal(s.get('bookings', b.id).status, 'cancelled'); assert.equal(s.get('rooms', '2201').status, 'free');
+  const b2 = await mkBooking(core, me);
+  await core.handle('POST', `/admin/bookings/${b2.id}/action`, { body: { act: 'confirm', room: '2201' }, user: ADMIN });
+  await core.handle('POST', `/admin/bookings/${b2.id}/action`, { body: { act: 'checkin' }, user: ADMIN });
+  await assert.rejects(core.handle('POST', `/me/bookings/${b2.id}/cancel`, me), /управляющих/);
+  s.close();
+});
+
+test('кабинет: перенос только неподтверждённой брони, сумма пересчитывается', async () => {
+  const { s, core } = cab(), me = { guestKey: 'k1' };
+  const b = await mkBooking(core, me), per = b.total / b.nights;
+  const r = await core.handle('POST', `/me/bookings/${b.id}/reschedule`, { body: { date: '2026-12-20', nights: 4 }, ...me });
+  assert.equal(r.booking.date, '2026-12-20'); assert.equal(r.booking.total, per * 4);
+  await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act: 'confirm', room: '2201' }, user: ADMIN });
+  await assert.rejects(core.handle('POST', `/me/bookings/${b.id}/reschedule`, { body: { date: '2026-12-25', nights: 1 }, ...me }), /неподтверждённую/);
+  s.close();
+});
+
+test('кабинет: статус гостя по прожитым ночам даёт скидку из настроек', async () => {
+  const { s, core } = cab(), me = { user: GUEST };
+  await core.handle('PUT', '/admin/settings/main', { body: { tiers: [{ name: 'Silver', nights: 2, discount: 10, perk: '' }] }, user: ADMIN });
+  const b = await mkBooking(core, me); assert.equal(b.discount, 0);
+  for (const act of ['confirm', 'checkin', 'checkout']) await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act, room: '2201' }, user: ADMIN });
+  const st = (await core.handle('GET', '/me/items', me)).stats; assert.equal(st.nights, 2); assert.equal(st.tier.name, 'Silver');
+  const b2 = await mkBooking(core, me); assert.equal(b2.discount, 10); assert.equal(b2.total, Math.round(b.total * 0.9));
+  s.close();
+});
+
+test('кабинет: «Удалить мои данные» убирает всё своё и не трогает чужое', async () => {
+  const { s, core } = cab(), me = { guestKey: 'k1' }, other = { guestKey: 'k2' };
+  const b = await mkBooking(core, me); await mkBooking(core, other);
+  await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act: 'confirm', room: '2201' }, user: ADMIN });
+  await core.handle('PUT', '/me/profile', { body: { name: 'Тони' }, ...me });
+  await assert.rejects(core.handle('POST', '/me/delete', { body: { confirm: 'да' }, ...me }), /УДАЛИТЬ/);
+  const r = await core.handle('POST', '/me/delete', { body: { confirm: 'УДАЛИТЬ' }, ...me });
+  assert.equal(r.deleted.bookings, 1); assert.equal(s.get('rooms', '2201').status, 'free');
+  assert.equal((await core.handle('GET', '/me/items', me)).profile, null);
+  assert.equal((await core.handle('GET', '/me/items', other)).bookings.length, 1, 'чужая бронь на месте');
+  assert.ok(!s.all('log').some(l => l.text.includes(b.code)), 'в журнале нет кода удалённой брони');
+  s.close();
+});
+
+test('кабинет: секреты отеля сохраняются в аккаунте, мусорные id отбрасываются', async () => {
+  const { s, core } = cab();
+  const r = await core.handle('POST', '/me/achievements', { body: { ids: ['logo', 'konami', '<script>', 'x'.repeat(40)] }, user: GUEST });
+  assert.deepEqual(r.achievements, ['logo', 'konami']);
+  assert.deepEqual((await core.handle('POST', '/me/achievements', { body: { ids: ['night'] }, user: GUEST })).achievements, ['logo', 'konami', 'night']);
+  assert.deepEqual((await core.handle('POST', '/me/achievements', { body: { ids: ['logo'] } })).achievements, [], 'без входа не хранится');
+  s.close();
+});

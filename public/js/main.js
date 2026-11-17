@@ -1,8 +1,8 @@
-import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL, magnet } from './ui.js';
+import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, confirmBox, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL, magnet } from './ui.js';
 import { api, subscribe, authConfig, login, logout, DEMO, pref } from './api.js';
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
-import { unlock, burst, openCabinet, count as achCount, LIST as ACH, onChange as onAch } from './achievements.js';
+import { unlock, burst, openCabinet, count as achCount, LIST as ACH, onChange as onAch, ids as achIds, merge as achMerge } from './achievements.js';
 import { venueState, mskMinutes, weatherNow, ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, minutesOf, inSpan, roomGameFloor } from './core.js';
 
 document.documentElement.classList.add('js');
@@ -136,6 +136,7 @@ function render(h = current) {
   if (!S.pub) return;
   try { ({ home: renderHome, stay: renderStay, leisure: renderLeisure, dining: renderDining, cigars: renderCigars, journal: renderJournal, issue: renderIssue, staff: renderStaff, contact: renderContact, me: renderMe, admin: renderAdmin, privacy: renderPrivacy, lost: renderLost }[h] || renderHome)(); }
   catch (e) { console.error(e); }
+  prefill();
   reveal($(`.view[data-view="${h}"]`));
 }
 const view = h => $(`.view[data-view="${h}"]`);
@@ -317,6 +318,12 @@ function setRoomFilter(patch) {
   if (rfOn() && floorsHit.length && !floorsHit.includes(selFloor)) { paintRoomFilter(); return goFloor(floorsHit.reduce((a, f) => Math.abs(f - selFloor) < Math.abs(a - selFloor) ? f : a, floorsHit[0])); }
   paintRoomFilter(); paintLift(); paintFloorPlan(); paintRoom();
 }
+// из кабинета: открыть «Номера» на этаже брони и подсветить номер на фасаде
+function showOnTower(id) {
+  const r = S.pub.rooms.find(x => x.id === id); if (!r) return;
+  selFloor = r.floor; selRoom = r.id; location.hash = '#stay';
+  setTimeout(() => { if (current !== 'stay') return; mods.tower?.update(S.pub.rooms, selFloor, S.pub.types); mods.tower?.focusRoom(selRoom); paintLift(); paintFloorPlan(); paintRoom(); }, 450);
+}
 let liftTimer = 0;
 function goFloor(f) {
   if (f === selFloor || f == null) return;
@@ -434,6 +441,7 @@ function openBooking(type, room) {
   el.querySelector('.x').onclick = () => closeSheet('bookSheet');
   const upd = () => { t = T.find(x => x.id === $('#bType').value); const free = p.rooms.filter(r => r.type === t.id && r.status === 'free'); $('#bRoom').innerHTML = `<option value="">Любой свободный (${free.length})</option>` + free.map(r => `<option ${r.id === room ? 'selected' : ''}>${esc(r.id)}</option>`).join(''); $('#bTot').textContent = money(t.price * Math.max(1, +$('#bNights').value || 1)); };
   $('#bType').onchange = () => { room = null; upd(); }; $('#bNights').oninput = upd; upd();
+  prefill();
   $('#bForm').onsubmit = async e => {
     e.preventDefault(); const btn = e.submitter || $('#bForm button[type=submit]'); btn.disabled = true;
     try {
@@ -588,7 +596,7 @@ function updFab(bump) {
   fab.classList.toggle('on', n > 0 && current !== 'admin'); $('#fabN').textContent = n; $('#fabT').textContent = money([...S.cart].reduce((s, [id, q]) => s + (itemById(id)?.price || 0) * q, 0));
   if (bump) { fab.classList.remove('bump'); void fab.offsetWidth; fab.classList.add('bump'); }
 }
-function openCart() { sheet('cartSheet'); paintCart(); openSheet('cartSheet'); }
+function openCart() { sheet('cartSheet'); paintCart(); prefill(); openSheet('cartSheet'); }
 function paintCart() {
   const el = sheet('cartSheet'), rows = [...S.cart].filter(([id]) => itemById(id)), total = rows.reduce((s, [id, q]) => s + itemById(id).price * q, 0);
   const keep = id => el.querySelector('#' + id)?.value;
@@ -809,22 +817,93 @@ function paintChat() {
     <div class="card pad stack"><h3 style="font-size:1.05rem">Мои обращения</h3>${mine.length ? `<div class="list">${mine.map(x => `<div class="item"><div class="top"><b>${esc(x.topic)}</b><span class="chip ${x.status === 'open' ? 'ok' : x.status === 'checking' ? 'warn' : 'm'}">${TICKET_STATUS[x.status]}</span></div><span class="note">${x.mode === 'discord' ? 'Ведётся в Discord' : x.mode === 'site' ? 'Чат на сайте' : 'Ожидает выбора'} · ${when(x.createdAt)}${x.lastFrom === 'staff' && x.mode === 'site' ? ' · <b style="color:var(--pink)">новый ответ</b>' : ''}</span>${x.mode === 'site' ? `<div><button class="btn sm ghost" data-open="${esc(x.id)}">Открыть чат</button></div>` : ''}</div>`).join('')}</div>` : '<p class="note">Пока пусто.</p>'}</div>`;
   if ($('#chatIn')) { $('#chatIn').value = draft; if (focused) $('#chatIn').focus(); }
   const ms = $('#msgs'); if (ms) ms.scrollTop = ms.scrollHeight;
+  markRead(t);
   $$('#tChatCol [data-open]').forEach(b => b.onclick = () => { openTicketId = b.dataset.open; paintChat(); });
   $('#chatF') && ($('#chatF').onsubmit = async e => { e.preventDefault(); const inp = $('#chatIn'), text = inp.value.trim(); if (!text) return; inp.value = '';
     try { await api('POST', `/tickets/${t.id}/messages`, { text }); play('soft'); await loadItems(); } catch (err) { fail(err); inp.value = text; } });
 }
 
 /* ---------------- кабинет ---------------- */
+const STEPS = [['new', 'Заявка'], ['confirmed', 'Подтверждена'], ['checkedin', 'Заселён'], ['done', 'Завершена']];
+const addDays = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+const ruDate = d => new Date(d + 'T12:00:00Z').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+function bookingCard(b) {
+  const room = b.room && S.pub.rooms.find(r => r.id === b.room), at = STEPS.findIndex(([k]) => k === b.status);
+  const steps = b.status === 'cancelled' ? `<div class="bk-steps off"><span class="chip bad">Отменена${b.cancelledBy === 'guest' ? ' вами' : ''}</span></div>`
+    : `<ol class="bk-steps" aria-label="Статус брони">${STEPS.map(([k, n], i) => `<li class="${i < at ? 'done' : i === at ? 'now' : ''}"${i === at ? ' aria-current="step"' : ''}>${n}</li>`).join('')}</ol>`;
+  return `<article class="bk"><div class="bk-top"><div><span class="lbl">Код брони</span><b class="bk-code num">${esc(b.code)}</b></div><span class="bk-type">${esc(b.typeName)}</span></div>${steps}
+    <dl class="bk-facts"><div><dt>Заезд</dt><dd>${ruDate(b.date)}</dd></div><div><dt>Выезд</dt><dd>${ruDate(addDays(b.date, b.nights))}</dd></div><div><dt>Номер</dt><dd>${room ? `${esc(room.id)} · ${room.floor} этаж` : 'назначат при подтверждении'}</dd></div><div><dt>Сумма</dt><dd class="num">${money(b.total)}${b.discount ? ` <small>скидка ${b.discount}%${b.tier ? ' · ' + esc(b.tier) : ''}</small>` : ''}</dd></div></dl>
+    <div class="row bk-act">${room ? `<button class="btn sm ghost" data-tower="${esc(room.id)}">Показать на башне</button>` : ''}${b.status === 'new' ? `<button class="btn sm ghost" data-move="${esc(b.id)}">Перенести</button>` : ''}${['new', 'confirmed'].includes(b.status) ? `<button class="btn sm ghost danger-t" data-cancel="${esc(b.id)}">Отменить</button>` : ''}</div></article>`;
+}
+function tierBlock(st) {
+  const T = S.pub.settings.tiers || [], cur = st.tier, nx = st.next;
+  const from = cur ? cur.nights : 0, pct = nx ? Math.min(100, Math.round((st.nights - from) / (nx.nights - from) * 100)) : 100;
+  return `<div class="card pad stack tierc"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.05rem">Статус гостя</h3><span class="chip ${cur ? 'p' : 'm'}">${cur ? esc(cur.name) : 'Гость'}</span></div>
+    <div class="tier-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="До следующего статуса"><i style="width:${pct}%"></i></div>
+    <p class="note">${nx ? `Прожито ночей: <b>${st.nights}</b>. До статуса «${esc(nx.name)}» — ${nx.nights - st.nights} ${plural(nx.nights - st.nights, 'ночь', 'ночи', 'ночей')}.` : `Прожито ночей: <b>${st.nights}</b>. Это высший статус отеля.`}</p>
+    <dl class="bk-facts"><div><dt>Проживаний</dt><dd>${st.stays}</dd></div><div><dt>Любимый номер</dt><dd>${st.favRoom ? esc(st.favRoom) : '—'}</dd></div><div><dt>Любимый тип</dt><dd>${st.favType ? esc(st.favType) : '—'}</dd></div></dl>
+    ${T.length ? `<ul class="tier-list">${T.map(t => `<li class="${cur?.name === t.name ? 'on' : ''}"><b>${esc(t.name)}</b><span>от ${t.nights} ${plural(t.nights, 'ночи', 'ночей', 'ночей')}${t.discount ? ` · скидка ${t.discount}%` : ''}${t.perk ? ' · ' + esc(t.perk) : ''}</span></li>`).join('')}</ul>` : ''}</div>`;
+}
+function meChat(t) {
+  return `<div class="chat mechat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span></header><div class="msgs" id="meMsgs">${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}">${esc(m.text)}<small>${m.from === 'staff' ? 'Управляющий' + (m.by ? ' · ' + esc(m.by) : '') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? '<div class="compose note">Обращение закрыто.</div>' : `<form class="compose" id="meChatF"><input id="meChatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение управляющим"><button class="btn sm" data-sfx="">Отправить</button></form>`}</div>`;
+}
+let meTicket = null;
 function renderMe() {
-  const it = S.items, u = S.me;
-  view('me').innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Кабинет</span><h2>Мои брони и заявки</h2><p>${u ? `Вы вошли как <b>${esc(u.username)}</b>.` : 'Брони и заявки с этого устройства видны здесь. Войдите через Discord, чтобы видеть их на любом устройстве.'}</p></div>
+  const it = S.items, u = S.me, p = it.profile || {}, st = it.stats || { nights: 0, stays: 0 };
+  const chatT = it.tickets.find(t => t.id === meTicket && t.mode === 'site') || null;
+  const draft = $('#meChatIn')?.value || '', focused = $('#meChatIn') === document.activeElement;
+  view('me').innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Кабинет</span><h2>Мои брони и заявки</h2><p>${u ? `Вы вошли как <b>${esc(u.username)}</b>.` : 'Брони и заявки с этого устройства видны здесь. Войдите через Discord, чтобы видеть их на любом устройстве: всё, что вы оформили здесь, перейдёт в аккаунт.'}</p></div>
     <div class="row" style="margin-bottom:1.5rem">${u ? `<button class="btn ghost sm" id="meOut">${I.out} Выйти</button>${u.role !== 'guest' ? '<a class="btn sm" href="#admin">Панель персонала</a>' : ''}` : `<button class="btn discord sm" id="meIn">${I.discord} Войти через Discord</button>`}</div>
-    <div class="g2" style="align-items:start">
-      <div class="stack"><h3 style="font-size:1.1rem">Брони</h3>${it.bookings.length ? `<div class="list">${it.bookings.map(b => `<div class="item"><div class="top"><b class="num">${esc(b.code)}</b><span class="chip ${({ new: 'p', confirmed: 'ok', checkedin: 'v', done: 'm', cancelled: 'bad' })[b.status]}">${BOOKING_STATUS[b.status]}</span></div><span class="note">${esc(b.typeName)} · заезд ${esc(b.date)}, ${b.nights} ноч.${b.room ? ' · номер ' + esc(b.room) : ''} · ${money(b.total)}</span></div>`).join('')}</div>` : '<div class="empty">Броней пока нет. <a href="#stay">Выбрать номер</a></div>'}</div>
-      <div class="stack"><h3 style="font-size:1.1rem">Заказы в номер</h3>${it.orders.length ? `<div class="list">${it.orders.map(o => `<div class="item"><div class="top"><b>Номер ${esc(o.room)} · ${money(o.total)}</b><span class="chip ${o.status === 'done' ? 'ok' : o.status === 'cancelled' ? 'bad' : 'warn'}">${ORDER_STATUS[o.status]}</span></div><span class="note">${o.items.map(i => esc(i.name) + ' ×' + i.qty).join(', ')}</span></div>`).join('')}</div>` : '<div class="empty">Заказов нет.</div>'}
-        <h3 style="font-size:1.1rem;margin-top:1rem">Заявки</h3>${it.tickets.length ? `<div class="list">${it.tickets.map(t => `<div class="item"><div class="top"><b>${esc(t.topic)}</b><span class="chip ${t.status === 'open' ? 'ok' : 'm'}">${TICKET_STATUS[t.status]}</span></div><span class="note">${t.mode === 'site' ? 'Чат на сайте' : t.mode === 'discord' ? 'В Discord' : ''} · ${when(t.createdAt)}</span>${t.mode === 'site' ? `<div><a class="btn sm ghost" href="#contact" data-open="${esc(t.id)}">Открыть чат</a></div>` : ''}</div>`).join('')}</div>` : '<div class="empty">Заявок нет.</div>'}</div></div></div>`;
+    <div class="me-grid">
+      <div class="stack" style="gap:1rem;min-width:0"><h3 style="font-size:1.1rem">Брони</h3>${it.bookings.length ? it.bookings.map(bookingCard).join('') : '<div class="empty">Броней пока нет. <a href="#stay">Выбрать номер</a></div>'}
+        <h3 style="font-size:1.1rem;margin-top:.5rem">Заказы в номер</h3>${it.orders.length ? `<div class="list">${it.orders.map(o => `<div class="item"><div class="top"><b>Номер ${esc(o.room)} · ${money(o.total)}</b><span class="chip ${o.status === 'done' ? 'ok' : o.status === 'cancelled' ? 'bad' : 'warn'}">${ORDER_STATUS[o.status]}</span></div><span class="note">${o.items.map(i => esc(i.name) + ' ×' + i.qty).join(', ')} · ${when(o.createdAt)}</span>${o.items.some(i => itemById(i.id)) ? `<div><button class="btn sm ghost" data-again="${esc(o.id)}">Заказать снова</button></div>` : ''}</div>`).join('')}</div>` : '<div class="empty">Заказов нет. <a href="#dining">Меню Le Ciel</a></div>'}
+        <h3 style="font-size:1.1rem;margin-top:.5rem">Заявки</h3>${it.tickets.length ? `<div class="list">${it.tickets.map(t => `<div class="item${unreadOf(t) ? ' unread' : ''}"><div class="top"><b>${esc(t.topic)}${unreadOf(t) ? ' <span class="chip p">Новый ответ</span>' : ''}</b><span class="chip ${t.status === 'open' ? 'ok' : 'm'}">${TICKET_STATUS[t.status]}</span></div><span class="note">${t.mode === 'site' ? 'Чат на сайте' : t.mode === 'discord' ? 'В Discord' : ''} · ${when(t.createdAt)}</span>${t.mode === 'site' ? `<div><button class="btn sm ghost" data-chat="${esc(t.id)}" aria-expanded="${t.id === meTicket}">${t.id === meTicket ? 'Свернуть чат' : 'Открыть чат'}</button></div>` : ''}${t.id === meTicket && chatT ? meChat(chatT) : ''}</div>`).join('')}</div>` : '<div class="empty">Заявок нет. <a href="#contact">Написать управляющим</a></div>'}
+      </div>
+      <aside class="stack" style="gap:1rem;min-width:0">${tierBlock(st)}
+        <form class="card pad stack" id="meProf"><h3 style="font-size:1.05rem">Профиль гостя</h3><p class="note">Игровые данные. Подставляются в формы брони, заказа и заявки.</p>
+          <label class="field"><span>Имя персонажа</span><input id="pfName" value="${esc(p.name || '')}" maxlength="60" autocomplete="off"></label>
+          <label class="field"><span>Игровой телефон</span><input id="pfPhone" value="${esc(p.phone || '')}" maxlength="20" autocomplete="off"></label>
+          <label class="field"><span>Пожелания к номеру</span><textarea id="pfNote" maxlength="300">${esc(p.note || '')}</textarea></label>
+          <label class="check"><input type="checkbox" id="pfDm" ${p.dm === false ? '' : 'checked'}><span>Присылать статусы брони, заказов и ответы в личные сообщения Discord</span></label>
+          <div><button class="btn sm">Сохранить профиль</button></div></form>
+        <div class="card pad stack"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.05rem">Секреты отеля</h3><b class="num" style="color:var(--gold)">${achCount()}/${ACH.length}</b></div><p class="note">${u ? 'Найденные секреты сохраняются в аккаунте и видны на любом устройстве.' : 'Секреты хранятся в этом браузере. Войдите, чтобы не потерять их.'}</p><div><button class="btn sm ghost" id="meAch">Открыть коллекцию</button></div></div>
+        <div class="card pad stack"><h3 style="font-size:1.05rem">Мои данные</h3><p class="note">Удалить брони, заказы, заявки и профиль${u ? ' из аккаунта и с этого устройства' : ' с этого устройства'}. Действующие брони отменятся. Подробнее — в <a href="#privacy">политике конфиденциальности</a>.</p><div><button class="btn sm ghost danger-t" id="meDel">Удалить мои данные</button></div></div>
+      </aside></div></div>`;
   $('#meOut') && ($('#meOut').onclick = () => logout()); $('#meIn') && ($('#meIn').onclick = () => openLogin('me'));
-  $$('#main [data-open]').forEach(a => a.addEventListener('click', () => { openTicketId = a.dataset.open; }));
+  const reload = async msg => { await loadItems(); if (msg) toast(msg); };
+  $$('#main [data-tower]').forEach(b => b.onclick = () => showOnTower(b.dataset.tower));
+  $$('#main [data-cancel]').forEach(b => b.onclick = async () => {
+    const bk = it.bookings.find(x => x.id === b.dataset.cancel); if (!bk) return;
+    if (!await confirmBox('Отменить бронь?', `Бронь ${bk.code} будет отменена${bk.room ? ', номер освободится' : ''}. Это нельзя вернуть.`, 'Отменить бронь', true)) return;
+    try { await api('POST', `/me/bookings/${bk.id}/cancel`); play('soft'); reload('Бронь отменена'); } catch (e) { fail(e); }
+  });
+  $$('#main [data-move]').forEach(b => b.onclick = async () => {
+    const bk = it.bookings.find(x => x.id === b.dataset.move); if (!bk) return;
+    const r = await modal(`<h3>Перенести бронь ${esc(bk.code)}</h3><div class="g2"><label class="field"><span>Дата заезда</span><input type="date" id="mvDate" value="${esc(bk.date)}"></label><label class="field"><span>Ночей</span><input type="number" id="mvN" min="1" max="30" value="${bk.nights}"></label></div><p class="note">Сумма пересчитается. Управляющий увидит новую дату.</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Отмена</button><button class="btn" data-close="ok">Перенести</button></div>`, { onMount: (box, close) => { box.querySelector('[data-close="ok"]').onclick = e => { e.stopPropagation(); close({ date: box.querySelector('#mvDate').value, nights: +box.querySelector('#mvN').value }); }; } });
+    if (!r || typeof r !== 'object') return;
+    try { await api('POST', `/me/bookings/${bk.id}/reschedule`, r); play('soft'); reload('Бронь перенесена'); } catch (e) { fail(e); }
+  });
+  $$('#main [data-again]').forEach(b => b.onclick = () => {
+    const o = it.orders.find(x => x.id === b.dataset.again); if (!o) return;
+    let n = 0; o.items.forEach(i => { if (itemById(i.id)) { S.cart.set(i.id, (S.cart.get(i.id) || 0) + i.qty); n++; } });
+    if (!n) return toast('Этих позиций больше нет в меню', 'err');
+    updFab(true); play('add'); openCart(); const room = document.getElementById('oRoom'); if (room && !room.value) room.value = o.room;
+  });
+  $$('#main [data-chat]').forEach(b => b.onclick = () => { meTicket = meTicket === b.dataset.chat ? null : b.dataset.chat; renderMe(); });
+  if (chatT) {
+    const ms = $('#meMsgs'); if (ms) ms.scrollTop = ms.scrollHeight; markRead(chatT);
+    if ($('#meChatIn')) { $('#meChatIn').value = draft; if (focused) $('#meChatIn').focus(); }
+    $('#meChatF') && ($('#meChatF').onsubmit = async e => { e.preventDefault(); const inp = $('#meChatIn'), text = inp.value.trim(); if (!text) return; inp.value = '';
+      try { await api('POST', `/tickets/${chatT.id}/messages`, { text }); play('soft'); await loadItems(); $('#meChatIn')?.focus(); } catch (err) { fail(err); inp.value = text; } });
+  }
+  $('#meProf').onsubmit = async e => { e.preventDefault();
+    try { await api('PUT', '/me/profile', { name: $('#pfName').value, phone: $('#pfPhone').value, note: $('#pfNote').value, dm: $('#pfDm').checked }); play('soft'); reload('Профиль сохранён'); } catch (err) { fail(err); } };
+  $('#meAch').onclick = () => openCabinet();
+  $('#meDel').onclick = async () => {
+    const ok = await modal(`<h3>Удалить мои данные?</h3><p class="mut">Удалятся брони, заказы в номер, заявки с перепиской и профиль. Действующие брони будут отменены, тикет-каналы в Discord закроются без сохранения. Вернуть данные нельзя.</p><label class="field"><span>Для подтверждения введите УДАЛИТЬ</span><input id="delIn" autocomplete="off" placeholder="УДАЛИТЬ"></label><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Отмена</button><button class="btn danger" id="delGo" disabled>Удалить</button></div>`, { onMount: (box, close) => { const inp = box.querySelector('#delIn'), go = box.querySelector('#delGo'); inp.oninput = () => go.disabled = inp.value.trim() !== 'УДАЛИТЬ'; go.onclick = () => close(inp.value.trim()); } });
+    if (ok !== 'УДАЛИТЬ') return;
+    try { const r = await api('POST', '/me/delete', { confirm: 'УДАЛИТЬ' }); meTicket = null; reload(`Удалено: броней ${r.deleted.bookings}, заказов ${r.deleted.orders}, заявок ${r.deleted.tickets}`); } catch (err) { fail(err); }
+  };
 }
 export async function openLogin(next = 'admin') {
   authCfg = await authConfig();
@@ -846,9 +925,28 @@ function renderAdmin() {
 
 /* ---------------- данные ---------------- */
 async function loadPublic() { S.pub = await api('GET', '/public'); paintNav(); }
-async function loadMe() { try { S.me = (await api('GET', '/me')).user; } catch { S.me = null; } paintNav(); }
+async function loadMe() { try { S.me = (await api('GET', '/me')).user; } catch { S.me = null; } paintNav(); if (S.me) syncAccount(); }
+// после входа: брони и заявки с этого устройства переходят в аккаунт, «Секреты отеля» объединяются
+let synced = null;
+async function syncAccount() {
+  if (DEMO || synced === S.me.id) return; synced = S.me.id;
+  try { const r = await api('POST', '/me/claim'); if (r.moved) { itemsDirty = true; if (['me', 'contact'].includes(current)) loadItems(); } } catch { }
+  try { achMerge((await api('POST', '/me/achievements', { ids: achIds() })).achievements); } catch { }
+}
+let achT = 0;
+onAch(() => { if (!S.me || DEMO) return; clearTimeout(achT); achT = setTimeout(() => api('POST', '/me/achievements', { ids: achIds() }).catch(() => {}), 1500); });
 let itemsDirty = true;
-async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
+async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } paintUnread(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
+// прочитанные ответы персонала помним в браузере: id обращения → время последнего просмотра
+const seenT = () => { try { return JSON.parse(pref.get('mhc-read') || '{}') || {}; } catch { return {}; } };
+const unreadOf = t => t.mode === 'site' && t.lastFrom === 'staff' && t.lastAt > (seenT()[t.id] || 0);
+function markRead(t) { if (!t || !unreadOf(t)) return; const s = seenT(); s[t.id] = t.lastAt; pref.set('mhc-read', JSON.stringify(s)); paintUnread(); }
+function paintUnread() { const n = (S.items?.tickets || []).filter(unreadOf).length; $('#navUser')?.classList.toggle('unread', n > 0); $('#navUser')?.setAttribute('title', n ? `Новые ответы управляющих: ${n}` : ''); }
+// профиль гостя подставляется в пустые поля форм брони, заказа и заявки
+function prefill() {
+  const p = S.items?.profile; if (!p) return;
+  for (const [id, v] of [['bName', p.name], ['bPhone', p.phone], ['bNote', p.note], ['oName', p.name], ['tName', p.name]]) { const el = document.getElementById(id); if (el && !el.value && v) el.value = v; }
+}
 let refT = null, refCols = new Set();
 // Изменение на сервере видят все открытые вкладки сразу. Чтобы они не пришли за данными в одну и ту же
 // миллисекунду, каждая ждёт случайные 0,25–1,75 с. Ответ /api/public кэширован на сервере и приходит 304, если не менялся.
@@ -860,7 +958,7 @@ function onChange(cols) {
       if (c.includes('me')) { await loadMe(); if (current === 'admin') { mods.admin?.unmount?.(); renderAdmin(); } if (current === 'me') renderMe(); }
       if (c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq'].includes(x))) { await loadPublic(); applyWeather(); if (!['contact', 'admin', 'me'].includes(current)) render(); updFab(); }
       // свои брони и заявки нужны только на страницах «Заявка» и «Мои брони»: на остальных просто помечаем устаревшими
-      if (c.some(x => ['bookings', 'tickets', 'orders'].includes(x))) { if (['contact', 'me'].includes(current)) await loadItems(); else itemsDirty = true; }
+      if (c.some(x => ['bookings', 'tickets', 'orders'].includes(x))) { const it = S.items, live = it && (it.tickets.some(t => t.status !== 'closed') || it.bookings.some(b => ['new', 'confirmed', 'checkedin'].includes(b.status)) || it.orders.some(o => !['done', 'cancelled'].includes(o.status))); if (['contact', 'me'].includes(current) || live) await loadItems(); else itemsDirty = true; }
       if (current === 'admin') mods.admin?.refresh?.(c);
     } catch (e) { console.error(e); }
   }, DEMO ? 250 : 250 + Math.random() * 1500);
@@ -901,6 +999,8 @@ async function boot() {
   // раздел «Отдых» собирается заранее в простое: плееру нужно время на загрузку
   setTimeout(() => { if (!view('leisure').querySelector('#venuesList')) renderLeisure(); }, 2500);
   const unsubscribe = subscribe(onChange);
+  // свои брони и заявки — для отметки о новых ответах и подстановки профиля в формы
+  if (!['me', 'contact'].includes(current)) loadItems();
   // Уход со страницы или перезагрузка: закрываем поток обновлений и отдаём видеопамять 3D-сцен.
   // На iPhone Safari иначе держит память старой страницы, и после пары перезагрузок подряд вкладка падает.
   addEventListener('pagehide', e => {

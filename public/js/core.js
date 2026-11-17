@@ -36,7 +36,7 @@ const EDITABLE = {
 };
 // Отправители постов в Discord: имя и аватарка вебхука
 const DEFAULT_SENDERS = [['concierge', '🛎️ Консьерж MHC', '#F7B50A'], ['reception', '🔑 Ресепшен MHC', '#F0177A'], ['manager', '🥂 Управляющий MHC', '#EF5617'], ['journal', '📰 Журнал «Высота»', '#F4D9A0']].map(([id, name, color], order) => ({ id, name, color, avatar: `img/discord/${id}.png`, order }));
-const PUBLIC_SETTINGS = ['deckUrl', 'staffExtras', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer'];
+const PUBLIC_SETTINGS = ['tiers', 'deckUrl', 'staffExtras', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer'];
 
 export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const bad = m => { throw new HttpError(400, m); };
@@ -59,6 +59,9 @@ export function venueState(venue, events, now = Date.now()) {
   return span ? { state: span.state || 'open', label: span.label || '', span } : { state: 'closed', label: 'Закрыто' };
 }
 
+export const DEFAULT_TIERS = [{ name: 'Silver', nights: 5, discount: 0, perk: '' }, { name: 'Gold', nights: 15, discount: 0, perk: '' }, { name: 'VIP', nights: 30, discount: 0, perk: '' }];
+const ACH_ID = /^[a-z0-9_-]{2,24}$/;
+
 export function createCore(store, hooks = {}) {
   const emit = cols => hooks.changed?.(cols); // бот подключается позже и оборачивает hooks.changed
   // журнал подрезается не на каждой записи, а раз в 25: сортировка всего журнала — лишняя работа
@@ -74,10 +77,26 @@ export function createCore(store, hooks = {}) {
   const ownerOf = (user, guestKey) => user ? 'd:' + user.id : guestKey ? 'g:' + str(guestKey, 64) : null;
   const isOwner = (doc, user, guestKey) => doc.owner && (doc.owner === ownerOf(user, guestKey) || (user && doc.owner === 'd:' + user.id));
   const sort = (arr, f = 'order') => arr.sort((a, b) => (a[f] ?? 0) - (b[f] ?? 0));
+  // кабинет гостя: профиль хранится по владельцу (Discord-аккаунт или ключ устройства)
+  const profileOf = owner => (owner && store.get('profiles', owner)) || null;
+  const tiers = () => { const t = settings().tiers; return (Array.isArray(t) && t.length ? t : DEFAULT_TIERS).slice().sort((a, b) => a.nights - b.nights); };
+  // статус гостя: по завершённым проживаниям; любимый тип и номер — по всем броням, кроме отменённых
+  function guestStats(owner) {
+    const all = owner ? store.all('bookings').filter(b => b.owner === owner) : [];
+    const done = all.filter(b => b.status === 'done'), nights = done.reduce((n, b) => n + (b.nights || 0), 0);
+    const top = list => { const c = {}; list.filter(Boolean).forEach(x => c[x] = (c[x] || 0) + 1); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || null; };
+    const live = all.filter(b => b.status !== 'cancelled'), T = tiers();
+    const tier = [...T].reverse().find(t => nights >= t.nights) || null, next = T.find(t => nights < t.nights) || null;
+    return { nights, stays: done.length, favType: top(live.map(b => b.typeName)), favRoom: top(live.map(b => b.room)), tier, next };
+  }
+  // уведомление гостю идёт вместе с карточкой персоналу; quiet — гость отключил личные сообщения в профиле
+  const discordIdOf = d => d.discordId || (String(d.owner || '').startsWith('d:') ? d.owner.slice(2) : null);
+  const notifyGuest = (kind, d) => call('notify', kind, { ...d, discordId: discordIdOf(d), quiet: profileOf(d.owner)?.dm === false });
 
   function publicData() {
     const s = settings(), pub = {};
     PUBLIC_SETTINGS.forEach(k => pub[k] = s[k]);
+    pub.tiers = tiers();
     const now = Date.now();
     return {
       settings: pub,
@@ -104,9 +123,74 @@ export function createCore(store, hooks = {}) {
   on('GET', '/public', () => publicData());
   on('GET', '/me', ({ user }) => ({ user: user || null }));
   on('GET', '/me/items', ({ user, guestKey }) => {
-    const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [] };
+    const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [], profile: null, stats: guestStats(null) };
     const mine = c => store.all(c).filter(d => d.owner === o).sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
-    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders') };
+    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: profileOf(o), stats: guestStats(o) };
+  });
+  // после входа брони, заказы, обращения и профиль с этого устройства переходят в аккаунт
+  on('POST', '/me/claim', ({ user, guestKey }) => {
+    if (!user || !guestKey) return { moved: 0 };
+    const from = ownerOf(null, guestKey), to = ownerOf(user); let moved = 0;
+    for (const c of ['bookings', 'orders', 'tickets']) store.all(c).filter(d => d.owner === from).forEach(d => { store.put(c, d.id, { ...d, owner: to, discordId: d.discordId || user.id }); moved++; });
+    const gp = profileOf(from);
+    if (gp) { const up = profileOf(to) || { id: to }; store.put('profiles', to, { ...gp, ...Object.fromEntries(Object.entries(up).filter(([, v]) => v !== '' && v != null)), id: to, achievements: [...new Set([...(gp.achievements || []), ...(up.achievements || [])])].slice(0, 40), updatedAt: Date.now() }); store.del('profiles', from); }
+    if (moved) emit(['bookings', 'orders', 'tickets']);
+    return { moved };
+  });
+  on('PUT', '/me/profile', ({ body, user, guestKey }) => {
+    const o = ownerOf(user, guestKey); if (!o) bad('Профиль недоступен');
+    const prev = profileOf(o) || { id: o, achievements: [] };
+    const doc = { ...prev, id: o, name: str(body.name ?? prev.name, 60), phone: str(body.phone ?? prev.phone, 20), note: str(body.note ?? prev.note, 300), dm: body.dm === undefined ? prev.dm !== false : !!body.dm, updatedAt: Date.now() };
+    store.put('profiles', o, doc); return { profile: doc };
+  });
+  // «Секреты отеля» вошедшего гостя хранятся в аккаунте и не теряются при смене устройства
+  on('POST', '/me/achievements', ({ body, user }) => {
+    if (!user) return { achievements: [] };
+    const o = ownerOf(user), prev = profileOf(o) || { id: o, dm: true };
+    const ids = (Array.isArray(body.ids) ? body.ids : []).slice(0, 60).filter(x => typeof x === 'string' && ACH_ID.test(x));
+    const achievements = [...new Set([...(prev.achievements || []), ...ids])].slice(0, 40);
+    if (achievements.length !== (prev.achievements || []).length) store.put('profiles', o, { ...prev, achievements, updatedAt: Date.now() });
+    return { achievements };
+  });
+  const myBooking = (id, user, guestKey) => { const b = store.get('bookings', id); if (!b || !isOwner(b, user, guestKey)) throw new HttpError(404, 'Бронь не найдена'); return b; };
+  const freeRoomOf = b => { const r = b.room && store.get('rooms', b.room); if (r && (!r.bookingId || r.bookingId === b.id) && r.status === 'booked') { store.put('rooms', r.id, { ...r, status: 'free', guest: null, discord: null, bookingId: null, updatedAt: Date.now() }); return true; } return false; };
+  // гость сам отменяет бронь до заселения; номер, если уже назначен, освобождается
+  on('POST', '/me/bookings/:id/cancel', ({ params, user, guestKey }) => {
+    const b = myBooking(params.id, user, guestKey);
+    if (!['new', 'confirmed'].includes(b.status)) bad(`Бронь сейчас «${BOOKING_STATUS[b.status]}» — отменить её можно только через управляющих`);
+    const roomFreed = freeRoomOf(b);
+    Object.assign(b, { status: 'cancelled', cancelledBy: 'guest', updatedAt: Date.now() }); store.put('bookings', b.id, b);
+    log(`Гость отменил бронь ${b.code}`, 'booking'); emit(['bookings', 'log']); if (roomFreed) roomsChanged();
+    call('notify', 'booking_status', { ...b, quiet: true }); return { booking: b };
+  });
+  // перенос даты и срока — пока бронь не подтверждена; сумма пересчитывается по той же цене и скидке
+  on('POST', '/me/bookings/:id/reschedule', ({ params, body, user, guestKey }) => {
+    const b = myBooking(params.id, user, guestKey);
+    if (b.status !== 'new') bad('Перенести можно только неподтверждённую бронь. Подтверждённую переносят управляющие');
+    const date = str(body.date, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) bad('Укажите дату заезда');
+    const nights = Math.min(30, Math.max(1, Math.round(num(body.nights, b.nights))));
+    const price = b.price ?? store.get('types', b.type)?.price ?? Math.round(b.total / b.nights);
+    Object.assign(b, { date, nights, total: Math.round(price * nights * (100 - (b.discount || 0)) / 100), updatedAt: Date.now() }); store.put('bookings', b.id, b);
+    log(`Гость перенёс бронь ${b.code}: ${date}, ночей ${nights}`, 'booking'); emit(['bookings', 'log']);
+    call('notify', 'booking', b); return { booking: b };
+  });
+  // «Удалить мои данные»: брони, заказы, обращения, профиль и упоминания в журнале. Действующие брони отменяются
+  on('POST', '/me/delete', async ({ body, user, guestKey }) => {
+    if (str(body.confirm, 20) !== 'УДАЛИТЬ') bad('Для подтверждения введите УДАЛИТЬ');
+    const owners = [ownerOf(user), guestKey && ownerOf(null, guestKey)].filter(Boolean); if (!owners.length) bad('Нечего удалять');
+    const mine = c => store.all(c).filter(d => owners.includes(d.owner));
+    const bookings = mine('bookings'), orders = mine('orders'), tickets = mine('tickets');
+    let rooms = false;
+    for (const b of bookings) { const r = b.room && store.get('rooms', b.room); if (r && r.bookingId === b.id && ['booked', 'occupied'].includes(r.status)) { store.put('rooms', r.id, { ...r, status: r.status === 'occupied' ? 'cleaning' : 'free', guest: null, discord: null, bookingId: null, updatedAt: Date.now() }); rooms = true; } store.del('bookings', b.id); }
+    orders.forEach(o => store.del('orders', o.id));
+    for (const t of tickets) { if (t.channel) await call('dropTicketChannel', t); store.del('tickets', t.id); }
+    // карточки в ленте персонала тоже убираем
+    for (const d of [...bookings.map(b => 'b:' + b.id), ...orders.map(o => 'o:' + o.id), ...tickets.map(t => 't:' + t.id)]) call('dropCard', d);
+    const marks = [...bookings.map(b => b.code), ...tickets.map(t => `от ${t.discord}`), ...tickets.map(t => `обращение ${t.discord}`)].filter(x => x && x.length > 3);
+    store.all('log').filter(l => marks.some(m => String(l.text).includes(m))).forEach(l => store.del('log', l.id));
+    owners.forEach(o => store.del('profiles', o));
+    emit(['bookings', 'orders', 'tickets', 'log']); if (rooms) roomsChanged();
+    return { deleted: { bookings: bookings.length, orders: orders.length, tickets: tickets.length } };
   });
 
   on('POST', '/bookings', async ({ body, user, guestKey }) => {
@@ -119,7 +203,8 @@ export function createCore(store, hooks = {}) {
     if (!store.all('rooms').some(r => r.type === t.id && r.status === 'free')) bad(`Свободных номеров «${t.name}» сейчас нет`);
     // код брони должен быть уникальным: по нему гость и персонал находят бронь
     let bc = code(); for (let k = 0; k < 20 && store.all('bookings').some(x => x.code === bc); k++) bc = code();
-    const b = { id: uid('b'), code: bc, type: t.id, typeName: t.name, preferredRoom: room, room: null, name, discord, phone: str(body.phone, 20), date, nights, guests: Math.min(12, Math.max(1, Math.round(num(body.guests, 1)))), note: str(body.note, 600), total: t.price * nights, status: 'new', owner: ownerOf(user, guestKey), discordId: user?.id || null, createdAt: Date.now() };
+    const owner = ownerOf(user, guestKey), tier = guestStats(owner).tier, discount = Math.min(50, Math.max(0, Math.round(num(tier?.discount, 0))));
+    const b = { id: uid('b'), code: bc, type: t.id, typeName: t.name, preferredRoom: room, room: null, name, discord, phone: str(body.phone, 20), date, nights, guests: Math.min(12, Math.max(1, Math.round(num(body.guests, 1)))), note: str(body.note, 600), price: t.price, discount, tier: tier?.name || null, total: Math.round(t.price * nights * (100 - discount) / 100), status: 'new', owner, discordId: user?.id || null, createdAt: Date.now() };
     store.put('bookings', b.id, b); log(`Новая бронь ${b.code}: ${t.name}, ${date}, ${b.name}`, 'booking');
     emit(['bookings', 'log']); call('notify', 'booking', b);
     return { booking: b };
@@ -130,7 +215,7 @@ export function createCore(store, hooks = {}) {
     const ids = Array.isArray(body.items) ? body.items.slice(0, 40) : [];
     const items = ids.map(i => { const it = store.get('menu', str(i.id, 40)) || store.get('cigars', str(i.id, 40)); const q = Math.min(20, Math.max(1, Math.round(num(i.qty, 1)))); return it ? { id: it.id, name: it.cat ? it.name : 'Сигара ' + it.name, qty: q, price: it.price } : null; }).filter(Boolean);
     if (!items.length) bad('Заказ пуст');
-    const o = { id: uid('o'), items, total: items.reduce((s, i) => s + i.qty * i.price, 0), room, name: str(body.name, 60), discord: str(body.discord || user?.username, 40), note: str(body.note, 300), status: 'new', owner: ownerOf(user, guestKey), createdAt: Date.now() };
+    const o = { id: uid('o'), items, total: items.reduce((s, i) => s + i.qty * i.price, 0), room, name: str(body.name, 60), discord: str(body.discord || user?.username, 40), note: str(body.note, 300), status: 'new', owner: ownerOf(user, guestKey), discordId: user?.id || null, createdAt: Date.now() };
     store.put('orders', o.id, o); log(`Заказ в номер ${room} на $${o.total}`, 'order'); emit(['orders', 'log']); call('notify', 'order', o);
     return { order: o };
   });
@@ -169,7 +254,7 @@ export function createCore(store, hooks = {}) {
     if (t.messages.length > 300) t.messages = t.messages.slice(-300);
     t.lastAt = Date.now(); t.lastFrom = staff ? 'staff' : 'guest'; store.put('tickets', t.id, t); emit(['tickets']);
     if (staff && t.mode === 'discord' && t.channel) call('ticketReply', t, text, user.username);
-    call('notify', 'ticket_update', t);
+    if (staff && t.mode === 'site') notifyGuest('ticket_reply', { ...t, replyText: text }); else call('notify', 'ticket_update', t);
     return { ticket: t };
   });
 
@@ -250,16 +335,16 @@ export function createCore(store, hooks = {}) {
     else bad('Неизвестное действие');
     b.updatedAt = Date.now(); b.handledBy = user.username; store.put('bookings', b.id, b);
     log(`${user.username}: бронь ${b.code} → ${BOOKING_STATUS[b.status]}${b.room ? ', номер ' + b.room : ''}`, 'booking', user.username);
-    emit(['bookings', 'log']); roomsChanged(); call('notify', 'booking_status', b); return { booking: b };
+    emit(['bookings', 'log']); roomsChanged(); notifyGuest('booking_status', b); return { booking: b };
   });
-  on('POST', '/admin/orders/:id/status', ({ params, body, user }) => { need(user, 'mod'); const o = store.get('orders', params.id); if (!o) throw new HttpError(404, 'Заказ не найден'); const st = str(body.status, 20); if (!ORDER_STATUS[st]) bad('Неверный статус'); o.status = st; o.updatedAt = Date.now(); store.put('orders', o.id, o); emit(['orders']); call('notify', 'order_status', o); return { order: o }; });
+  on('POST', '/admin/orders/:id/status', ({ params, body, user }) => { need(user, 'mod'); const o = store.get('orders', params.id); if (!o) throw new HttpError(404, 'Заказ не найден'); const st = str(body.status, 20); if (!ORDER_STATUS[st]) bad('Неверный статус'); o.status = st; o.updatedAt = Date.now(); store.put('orders', o.id, o); emit(['orders']); notifyGuest('order_status', o); return { order: o }; });
   on('POST', '/admin/tickets/:id/close', async ({ params, user }) => { need(user, 'mod'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения');
     if (t.status === 'closed') return { ticket: t };
     if (closing.has(t.id)) bad('Обращение уже закрывается'); closing.add(t.id);
     try {
     if (t.channel && hooks.closeTicketChannel) { let history; try { history = await hooks.closeTicketChannel(t, user.username); } catch (e) { bad('Обращение не закрыто: ' + e.message); } if (history.length) t.messages = [{ from: 'guest', by: t.name || t.discord, text: t.text, at: t.createdAt }, ...history.filter(m => m.from !== 'bot')].slice(-300); t.channel = null; }
     const fresh = store.get('tickets', t.id) || t; Object.assign(fresh, { messages: t.messages, channel: t.channel, status: 'closed', closedBy: user.username, lastAt: Date.now() });
-    store.put('tickets', fresh.id, fresh); log(`${user.username} закрыл обращение ${fresh.discord}`, 'ticket', user.username); emit(['tickets', 'log']); call('notify', 'ticket_update', fresh); return { ticket: fresh };
+    store.put('tickets', fresh.id, fresh); log(`${user.username} закрыл обращение ${fresh.discord}`, 'ticket', user.username); emit(['tickets', 'log']); notifyGuest('ticket_closed', fresh); return { ticket: fresh };
     } finally { closing.delete(t.id); } });
 
   // события
@@ -332,7 +417,7 @@ export function createCore(store, hooks = {}) {
     if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', U(400)); pick('date', N); pick('published', B); pick('accent', H); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: U(400)(p.image), cat: str(p.cat, 30) })); }
     if (col === 'events') { pick('name', S(100)); pick('desc', S(1000)); pick('start', N); pick('end', N); pick('location', S(100)); pick('venueId', S(40)); pick('image', U(400)); pick('status', v => ['scheduled', 'active', 'completed', 'cancelled'].includes(v) ? v : 'scheduled'); if (!('source' in o)) o.source = 'manual'; }
     if (col === 'senders') { pick('name', S(80)); pick('avatar', U(400)); pick('color', v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : '#F0177A'); pick('order', N); }
-    if (col === 'settings') { for (const k of ['hotelName', 'tagline', 'address', 'footer']) pick(k, S(400)); for (const k of ['heroDay', 'heroNight', 'discordInvite', 'deckUrl']) pick(k, U(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
+    if (col === 'settings') { if ('tiers' in b) o.tiers = (Array.isArray(b.tiers) ? b.tiers : []).slice(0, 6).map(t => ({ name: str(t.name, 30), nights: Math.max(1, Math.round(num(t.nights, 1))), discount: Math.min(50, Math.max(0, Math.round(num(t.discount, 0)))), perk: str(t.perk, 120) })).filter(t => t.name); for (const k of ['hotelName', 'tagline', 'address', 'footer']) pick(k, S(400)); for (const k of ['heroDay', 'heroNight', 'discordInvite', 'deckUrl']) pick(k, U(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
     return o;
   }
   const label = c => ({ types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие', senders: 'отправителя' }[c] || c);
