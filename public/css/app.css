@@ -1044,6 +1044,8 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 footer .wrap.credits{padding-block:0 1rem;margin-top:-1rem;font-size:.75rem;color:var(--mut);opacity:.8;gap:.4rem 1rem}
 footer .credits .ooc{display:inline-flex;align-items:center;gap:.45rem}
 footer .credits .ooc b{font:700 .6rem var(--body);letter-spacing:.12em;padding:.1rem .35rem;border:1px solid var(--line2);border-radius:.25rem;color:var(--mut)}
+footer .credits .ver{margin-left:.35rem;padding-left:.8rem;border-left:1px solid var(--line2);color:var(--gold);letter-spacing:.04em}
+.aside .who .ver{color:var(--gold)}
 
 /* кабинет гостя */
 .me-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:1.5rem;align-items:start}

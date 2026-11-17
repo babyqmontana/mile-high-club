@@ -14,6 +14,7 @@ const SECTIONS = [
 const BUILTIN_IMG = ['img/atrium-night.webp', 'img/atrium-day.webp', 'img/reception.webp', 'img/library.webp', ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => `img/journal/p${n}.webp`)];
 const BCHIP = { new: 'p', confirmed: 'ok', checkedin: 'v', done: 'm', cancelled: 'bad' };
 let A = null, root = null, sec = 'overview', ctx = {}, sel = {}, bFilter = 'active', bq = '', aTicket = null;
+const APP_VER = (v => (v && v !== 'dev' ? 'v' + v : ''))(document.querySelector('meta[name="version"]')?.content); // версия сайта
 const isAdmin = () => S.me?.role === 'admin';
 const can = r => r === 'mod' || isAdmin();
 
@@ -37,7 +38,7 @@ export async function refresh(cols) {
 function badges() { if (!A) return {}; return { bookings: A.bookings.filter(b => b.status === 'new').length, tickets: A.tickets.filter(t => t.status === 'open' && t.mode === 'site' && t.lastFrom === 'guest').length, orders: A.orders.filter(o => ['new', 'cooking'].includes(o.status)).length, reviews: (A.reviews || []).filter(r => r.status === 'pending').length }; }
 function paintAside() {
   const b = badges(), u = S.me;
-  $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div><div class="asearch"><input class="inp" id="aSq" type="search" placeholder="Поиск: код, ник, имя, номер" autocomplete="off" aria-label="Поиск по броням, заказам, обращениям и отзывам"><div class="ares" id="aRes" hidden></div></div><div class="anav" id="anav">` +
+  $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}${APP_VER ? ` · <span class="ver num">${APP_VER}</span>` : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div><div class="asearch"><input class="inp" id="aSq" type="search" placeholder="Поиск: код, ник, имя, номер" autocomplete="off" aria-label="Поиск по броням, заказам, обращениям и отзывам"><div class="ares" id="aRes" hidden></div></div><div class="anav" id="anav">` +
     SECTIONS.map(([g, items]) => { const vis = items.filter(([, , r]) => can(r)); return vis.length ? (g ? `<span class="grp">${g}</span>` : '') + vis.map(([k, n]) => `<button data-s="${k}" aria-pressed="${k === sec}" data-sfx="soft"><span>${n}</span>${b[k] ? `<span class="badge">${b[k]}</span>` : ''}</button>`).join('') : ''; }).join('') + '</div>';
   if (innerWidth <= 900) { const on = $('#anav [aria-pressed="true"]'), as = $('#anav'); if (on && as) as.scrollTo({ left: on.offsetLeft - as.clientWidth / 2 + on.offsetWidth / 2, behavior: 'smooth' }); }
   $$('#aside [data-s]').forEach(x => x.onclick = () => { sec = x.dataset.s; try { sessionStorage.setItem('mhc-sec', sec); } catch { } paintAside(); paint(); scrollTo({ top: 0 }); });

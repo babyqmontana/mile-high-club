@@ -261,13 +261,15 @@ function sendBuf(req, res, e, type, cacheControl) {
   res.set('Content-Length', body.length); return req.method === 'HEAD' ? res.end() : res.end(body);
 }
 function renderIndex() {
+  // версия сайта из package.json (npm run release) — видна в подвале и в панели
+  const APP_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
   const files = [];
   const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); if (e.isDirectory()) walk(f); else if (/\.(js|css)$/.test(e.name)) files.push(f); } };
   ['js', 'css', 'vendor'].forEach(d => fs.existsSync(path.join(PUBLIC, d)) && walk(path.join(PUBLIC, d)));
   const ver = {};
   for (const f of files) ver['/' + path.relative(PUBLIC, f).split(path.sep).join('/')] = crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex').slice(0, 10);
   const v = url => url + '?v=' + ver[url];
-  let html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
+  let html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace('<meta name="version" content="dev">', `<meta name="version" content="${APP_VERSION}">`);
   const map = JSON.parse(html.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]);
   const imports = {};
   for (const [k, target] of Object.entries(map.imports)) {

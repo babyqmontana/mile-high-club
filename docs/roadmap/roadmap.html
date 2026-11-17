@@ -22,7 +22,7 @@ header img{width:96px;height:96px;border-radius:50%;box-shadow:0 0 0 2px rgba(24
 .eb{font:700 15px Onest;letter-spacing:.32em;color:var(--gold);text-transform:uppercase}
 h1{margin:6px 0 0;font:800 64px/1 Unbounded;letter-spacing:-.02em}
 h1 span{color:var(--pink)}
-.legend{margin-left:auto;display:flex;gap:22px;font:600 15px Onest;color:var(--mut)}
+.legend{margin-left:auto;display:flex;flex-direction:column;gap:8px;font:600 15px Onest;color:var(--mut);white-space:nowrap}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px;vertical-align:-1px}
 .track{position:relative;margin:58px 0 0;height:56px}
 .rail{position:absolute;left:0;right:0;top:26px;height:4px;background:repeating-linear-gradient(90deg,#4a3033 0 14px,transparent 14px 24px);border-radius:2px}
@@ -41,6 +41,7 @@ h1 span{color:var(--pink)}
 .now .tag{background:var(--pink);color:#fff}
 .plan .tag{background:rgba(179,167,146,.12);color:var(--mut)}
 .ver{font:700 13px Onest;color:var(--mut);letter-spacing:.06em}
+.ver b{color:var(--gold);letter-spacing:.02em}
 h2{margin:0;font:800 23px/1.12 Unbounded;letter-spacing:-.01em}
 .date{font:600 13px Onest;color:var(--soft)}
 ul{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:8px}
@@ -51,38 +52,38 @@ li::before{content:"";position:absolute;left:2px;top:7px;width:8px;height:8px;bo
 li.ok::before{background:var(--gold)}
 .foot{position:absolute;left:72px;right:72px;bottom:30px;display:flex;justify-content:space-between;font:500 14px Onest;color:var(--soft)}
 .big{font:800 40px Unbounded;color:var(--gold);line-height:1}
-.stats{display:flex;gap:40px;margin-left:60px}
+.stats{display:flex;gap:36px;margin-left:auto}
 .stats div{display:grid;gap:4px}.stats small{font:600 12px Onest;letter-spacing:.14em;color:var(--mut);text-transform:uppercase}
 </style>
 <div class="bgimg"></div><div class="glow"></div>
 <div class="wrap">
 <header><img src="../../public/img/emblem.webp" alt=""><div><div class="eb">Mile High Club · dev roadmap</div><h1>Дорожная <span>карта</span></h1></div>
-<div class="stats"><div><span class="big">7</span><small>обновлений</small></div><div><span class="big">79</span><small>коммитов</small></div><div><span class="big">215</span><small>автотестов</small></div></div>
+<div class="stats"><div><span class="big" data-current>v5.4.0</span><small>текущая версия</small></div><div><span class="big">7</span><small>обновлений</small></div><div><span class="big">105</span><small>коммитов</small></div><div><span class="big">216</span><small>автотестов</small></div></div>
 <div class="legend"><span><i style="background:var(--gold)"></i>Выпущено</span><span><i style="background:var(--pink)"></i>В работе</span><span><i style="border:1.5px solid var(--mut)"></i>В планах</span></div></header>
 
 <div class="track"><div class="rail"></div><div class="prog" style="--p:92.86"></div>
 <div class="node done" style="left:7.14%">✓</div><div class="node done" style="left:21.43%">✓</div><div class="node done" style="left:35.71%">✓</div><div class="node done" style="left:50%">✓</div><div class="node done" style="left:64.29%">✓</div><div class="node done" style="left:78.57%">✓</div><div class="node now" style="left:92.86%">▶</div><div class="here" style="left:92.86%">ВЫ ЗДЕСЬ</div></div>
 
 <div class="cols">
-<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver">СЕЗОН 0</div><h2>Фундамент</h2><div class="date">03.11.2026</div><ul>
+<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver"><b>v0.1.0</b> · СЕЗОН 0</div><h2>Фундамент</h2><div class="date">03.11.2026</div><ul>
 <li>Бронь номеров с выбором номера</li><li>Le Ciel: меню и заказ в номер</li><li>Сигарный клуб и журнал</li><li>Панель персонала</li><li>Вход через Discord</li></ul></div>
 
-<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver">ОБНОВЛЕНИЕ 1</div><h2>Vertical Noir</h2><div class="date">03.11.2026</div><ul>
+<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver"><b>v1.0.0</b> · ОБНОВЛЕНИЕ 1</div><h2>Vertical Noir</h2><div class="date">03.11.2026</div><ul>
 <li>Новая визуальная система</li><li>Переходы-лифт между разделами</li><li>Табло отеля и шахта лифта</li><li>3D-хьюмидор с фильтрами</li><li>Работа без WebGL</li><li>Мобильная версия и микроанимации</li></ul></div>
 
-<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver">ОБНОВЛЕНИЕ 2</div><h2>Сервер</h2><div class="date">04.11.2026</div><ul>
+<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver"><b>v2.0.0</b> · ОБНОВЛЕНИЕ 2</div><h2>Сервер</h2><div class="date">04.11.2026</div><ul>
 <li>Уровни доступа: дирекция, персонал, разработка</li><li>Тикеты с транскриптами</li><li>Живая лента заявок</li><li>Посты с сайта через вебхуки</li><li>События сервера в афише</li><li>Профиль и приветствие сервера</li></ul></div>
 
-<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver">ОБНОВЛЕНИЕ 3</div><h2>Открытие</h2><div class="date">04–11.11.2026</div><ul>
+<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver"><b>v3.0.0</b> · ОБНОВЛЕНИЕ 3</div><h2>Открытие</h2><div class="date">04–11.11.2026</div><ul>
 <li>Логотип с оригинала</li><li>Вертушка с музыкой в «Отдыхе»</li><li>Башня как здание отеля в игре</li><li>Ночное небо и подсветка</li><li>Гирлянда и новогодняя тема</li><li>Промо-ролики и трейлер</li></ul></div>
 
-<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver">ОБНОВЛЕНИЕ 4</div><h2>Запуск</h2><div class="date">15.11.2026</div><ul>
+<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver"><b>v4.0.0</b> · ОБНОВЛЕНИЕ 4</div><h2>Запуск</h2><div class="date">15.11.2026</div><ul>
 <li>Сайт и бот на mhc-ls-project.ru</li><li>Вход через Discord на домене</li><li>54 номера на 6 этажах, как в лифте игры</li><li>Команда отеля с фото</li><li>Площадки Assmosphere и Спа</li><li>Журнал «Высота» № 02</li></ul></div>
 
-<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver">ПАТЧИ 4.1–4.2</div><h2>Надёжность и кабинет</h2><div class="date">14–17.11.2026</div><ul>
+<div class="c done"><span class="tag">ВЫПУЩЕНО</span><div class="ver"><b>v4.1.0 – v4.2.0</b> · ПАТЧИ</div><h2>Надёжность и кабинет</h2><div class="date">14–17.11.2026</div><ul>
 <li>Сервер держит в 5 раз больше запросов</li><li>Закрыты дыры безопасности</li><li>Тикеты закрываются без ошибки</li><li>Политика конфиденциальности</li><li>Кабинет: отмена и перенос брони</li><li>Чат и уведомления в кабинете</li><li>Статусы гостей и скидки</li><li>Удаление своих данных</li></ul></div>
 
-<div class="c now"><span class="tag">В РАБОТЕ</span><div class="ver">ОБНОВЛЕНИЕ 5</div><h2>Полировка</h2><div class="date">сейчас, на живом сайте</div><ul>
-<li class="ok">Отзывы и вакансии</li><li class="ok">Приложение и превью ссылки</li><li class="ok">Уведомления, антиспам</li><li class="ok">Панель: поиск, шаблоны, таблицы</li><li>Выкатить кабинет и счётчик</li><li>Обратный отсчёт до открытия</li><li>«Персонал на смене»</li><li>Замер скорости и отчёт</li><li>Подключить LifeX</li></ul></div>
+<div class="c now"><span class="tag">В РАБОТЕ</span><div class="ver"><b data-current>v5.4.0</b> · ОБНОВЛЕНИЕ 5</div><h2>Полировка</h2><div class="date">сейчас, на живом сайте</div><ul>
+<li class="ok">Отзывы и вакансии</li><li class="ok">Приложение и превью ссылки</li><li class="ok">Уведомления, антиспам</li><li class="ok">Панель: поиск, шаблоны, таблицы</li><li class="ok">Графика из Blender</li><li class="ok">Правка этажей и номеров</li><li>Выкатить кабинет и счётчик</li><li>Обратный отсчёт до открытия</li><li>«Персонал на смене»</li><li>Замер скорости и отчёт</li><li>Подключить LifeX</li></ul></div>
 </div></div>
 <div class="foot"><span>Сайт отеля и Discord-бот · Node.js, three.js, discord.js</span><span>Обновлено 17.11.2026</span></div>
