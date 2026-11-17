@@ -59,6 +59,12 @@ export async function login(role = 'admin', next = 'admin') {
   const cfg = await authConfig();
   location.href = cfg.oauth ? '/auth/discord?next=' + next : '/auth/demo?role=' + role;
 }
+export async function demoLifex() {
+  const d = await demoInit(), owner = d.user ? 'd:' + d.user.id : 'g:' + guestKey;
+  d.core.linkLifex(owner, { id: 'demo', username: 'demo_guest', name: 'Демо-гость LifeX', bio: 'Пример профиля: в демо-версии привязка показывается без настоящего LifeX.', url: 'https://lifex.ls-project.com' });
+  const p = d.store.get('profiles', owner); d.store.put('profiles', owner, { ...p, lifex: { ...p.lifex, avatar: 'img/discord/concierge.png' } });
+  listeners.forEach(fn => fn(['me']));
+}
 export async function logout() {
   if (DEMO) { const d = await demoInit(); d.user = null; listeners.forEach(fn => fn(['me'])); return; }
   await fetch('/auth/logout', { method: 'POST' }); location.hash = '#home'; location.reload();
