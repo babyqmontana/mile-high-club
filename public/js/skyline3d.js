@@ -93,11 +93,11 @@ function ledTex() { const c = document.createElement('canvas'); c.width = 4; c.h
 
 // --- запечённое в Blender (Cycles): панорамы города для отражений, фасад офисов, интерьер номера, тень от комплекса.
 // ~85 КБ webp, грузятся после первого кадра; пока не пришли или не загрузились — башня рисуется как раньше.
-const BAKE = {}, BAKE_URL = 'img/tower/';
+const BAKE = {}, BAKE_URL = 'img/tower/', BAKE_V = '?v=3'; // ?v — сброс кэша браузера при обновлении ассетов
 // кровельный набор из Blender (баки, вентиляция, мачты, карнизы, короны, градирни, техэтаж, гондола мойки фасада)
 let KIT = null;
 function loadKit() {
-  return import('three/addons/loaders/GLTFLoader.js').then(m => new m.GLTFLoader().loadAsync(BAKE_URL + 'kit.glb')).then(g => {
+  return import('three/addons/loaders/GLTFLoader.js').then(m => new m.GLTFLoader().loadAsync(BAKE_URL + 'kit.glb' + BAKE_V)).then(g => {
     const out = {}; g.scene.updateMatrixWorld(true);
     g.scene.traverse(o => { if (o.isMesh) { const geo = o.geometry.clone(); geo.applyMatrix4(o.matrixWorld); geo.computeBoundingSphere(); out[o.name] = geo; } });
     out.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, metalness: .15 }); KIT = out; return out;
@@ -105,7 +105,7 @@ function loadKit() {
 }
 function loadBake() {
   return Promise.all(['env-night', 'fac-glass', 'fac-lit', 'room', 'shadow', 'city-fac'].concat(document.documentElement.dataset.mode === 'day' ? ['env-day'] : []).map(n => new Promise(ok => {
-    const i = new Image(); i.decoding = 'async'; i.onload = () => { BAKE[n] = i; ok(); }; i.onerror = () => ok(); i.src = BAKE_URL + n + '.webp';
+    const i = new Image(); i.decoding = 'async'; i.onload = () => { BAKE[n] = i; ok(); }; i.onerror = () => ok(); i.src = BAKE_URL + n + '.webp' + BAKE_V;
   })));
 }
 

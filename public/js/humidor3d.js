@@ -17,13 +17,18 @@ function wood(base, dark, light, rings = 26) {
 }
 function seeded(str) { let h = 2166136261; for (const ch of String(str)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return () => { h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; }; }
 // покровный лист: пятна, прожилки и спиральный шов — у каждой сигары свой рисунок
+// текстуры сигар из Blender: лист с прожилками (светлота + рельеф), срез наполнителя, пепел. Грузит mountHumidor.
+const CIG = {};
 function wrapperTex(color, id) {
   const r = seeded(id || color);
-  return tex(256, 256, (g, w, h) => {
+  return tex(512, 512, (g, w, h) => {
     const c = new THREE.Color(color), hex = x => '#' + x.getHexString();
     const lt = hex(c.clone().offsetHSL(0.005, -0.04, 0.07)), dk = hex(c.clone().offsetHSL(-0.005, 0.03, -0.09)), dk2 = hex(c.clone().offsetHSL(0, 0.02, -0.16));
     g.fillStyle = color; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 120; i++) { g.globalAlpha = 0.05 + r() * 0.12; g.fillStyle = r() > 0.5 ? lt : dk; g.beginPath(); g.ellipse(r() * w, r() * h, 4 + r() * 26, 3 + r() * 10, r() * 3, 0, 7); g.fill(); }
+    if (CIG.leaf) { const ox = r() * w, oy = r() * h; g.globalAlpha = 0.85; g.globalCompositeOperation = 'overlay';
+      for (const dx of [0, -w]) for (const dy of [0, -h]) g.drawImage(CIG.leaf, ox + dx, oy + dy, w, h);
+      g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; }
     // спиральный шов листа
     const slope = 0.35 + r() * 0.3; g.globalAlpha = 0.45; g.strokeStyle = dk2; g.lineWidth = 1.5;
     for (let k = -2; k < 4; k++) { g.beginPath(); for (let x = 0; x <= w; x += 4) g.lineTo(x, (k * h / 2 + x * slope) % (h * 2)); g.stroke(); }
@@ -41,6 +46,13 @@ function seal(g, x, y, rad, gold, fill, t) {
   g.fillStyle = gold; g.font = `800 ${Math.round(rad * 0.62)}px "Cormorant Garamond", Georgia, serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y + 2);
 }
 // кольцо: classic, medallion, double, foot, stripe — пять разных дизайнов
+function metalRough(canvas) {
+  const w = canvas.width, h = canvas.height, src = canvas.getContext('2d').getImageData(0, 0, w, h).data, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'), out = g.createImageData(w, h), d = out.data;
+  for (let i = 0; i < src.length; i += 4) { const r = src[i], gg = src[i + 1], b = src[i + 2], gold = r > 110 && r >= gg && gg > b && r - b > 60 && gg > r * .5;
+    d[i] = 0; d[i + 1] = gold ? 70 : 190; d[i + 2] = gold ? 255 : 0; d[i + 3] = 255; }
+  g.putImageData(out, 0, 0); const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; return t;
+}
 function bandTex(c, kind = 'main') {
   const main = c.band || '#c9a24a', sec = c.band2 || '#1a1a1a', style = c.bandStyle || 'classic';
   const text = String(kind === 'main' ? (c.bandText || (c.name || 'MHC').split(' ')[0]) : (c.bandText2 || 'MHC')).toUpperCase().slice(0, 14);
@@ -84,14 +96,15 @@ export function buildCigar(c, mats) {
   const pts = [new THREE.Vector2(0, 0)].concat(prof.map(([u, r]) => new THREE.Vector2(Math.max(0.0001, r * R), u * L)));
   const geo = new THREE.LatheGeometry(pts, SEG);
   const wrap = wrapperTex(c.wrapper || '#7a4a28', c.id || c.name); wrap.wrapS = wrap.wrapT = THREE.RepeatWrapping; wrap.repeat.set(1, Math.max(1, Math.round(L)));
-  const body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: wrap, roughness: 0.82, metalness: 0 }));
+  const nm = CIG.leafN ? CIG.leafN.clone() : null; if (nm) { nm.wrapS = nm.wrapT = THREE.RepeatWrapping; nm.repeat.copy(wrap.repeat); nm.needsUpdate = true; mats.push(nm); }
+  const body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: wrap, roughness: 0.62, metalness: 0, normalMap: nm, normalScale: new THREE.Vector2(0.55, 0.55) }));
   mats.push(body.material, wrap);
   const g = new THREE.Group(); g.add(body);
-  const foot = new THREE.Mesh(new THREE.CircleGeometry(prof[0][1] * R * 0.97, SEG), new THREE.MeshStandardMaterial({ map: tobacco, roughness: 1 }));
+  const foot = new THREE.Mesh(new THREE.CircleGeometry(prof[0][1] * R * 0.97, SEG), new THREE.MeshStandardMaterial({ map: CIG.foot || tobacco, roughness: 1 }));
   foot.rotation.x = Math.PI / 2; foot.position.y = -0.003; g.add(foot);
   const addBand = (u, height, kind) => {
     const t = bandTex(c, kind); t.wrapS = THREE.RepeatWrapping;
-    const b = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.04, R * 1.04, height, SEG, 1, true), new THREE.MeshStandardMaterial({ map: t, roughness: 0.32, metalness: 0.4, side: THREE.DoubleSide }));
+    const mr = metalRough(t.image); const b = new THREE.Mesh(new THREE.CylinderGeometry(R * 1.04, R * 1.04, height, SEG, 1, true), new THREE.MeshStandardMaterial({ map: t, roughness: 1, metalness: 1, roughnessMap: mr, metalnessMap: mr, side: THREE.DoubleSide })); mats.push(mr);
     b.position.y = u * L; b.rotation.y = Math.PI; g.add(b); mats.push(b.material, t); return b;
   };
   const style = c.bandStyle || 'classic', bu = c.shape === 'torpedo' ? 0.6 : c.shape === 'belicoso' ? 0.7 : c.shape === 'perfecto' ? 0.7 : 0.78;
@@ -178,7 +191,13 @@ export function mountHumidor(host, { onPick, onLid }) {
       m.scale.x = sx; m.renderOrder = 5; m.userData.ph = ph; scene.add(m); return m; };
     wisps = [mk(0, 1), mk(7.3, -0.8)]; puffs.forEach(p => { p.sp.visible = false; });
   }
-  function light(m, on) { const f = m?.userData.foot; if (!f) return; if (on) { f.userData.orig ||= f.material; f.material = emberMat; f.add(emberLight); emberLight.position.set(0, 0, -0.08); } else if (f.userData.orig) { f.material = f.userData.orig; f.remove(emberLight); } }
+  const ashSide = new THREE.MeshStandardMaterial({ color: 0xbdb8b2, roughness: 1 }), ashCap = new THREE.MeshStandardMaterial({ color: 0x8f8a84, roughness: 1 });
+  function ashFor(m) { const f = m.userData.foot; if (m.userData.ash) return m.userData.ash;
+    const R0 = f.geometry.parameters.radius, AL = R0 * 1.7, a = new THREE.Group();
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(R0 * .95, R0 * .99, AL, SEG, 1), [ashSide, ashCap, ashCap]); col.rotation.x = Math.PI / 2; col.position.z = AL / 2 + .006; a.add(col);
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(R0 * 1.005, R0 * 1.005, .014, SEG, 1, true), emberMat); ring.rotation.x = Math.PI / 2; ring.position.z = .007; a.add(ring);
+    const tip = new THREE.Object3D(); tip.position.z = AL + .01; a.add(tip); a.userData.tip = tip; m.userData.ash = a; return a; }
+  function light(m, on) { const f = m?.userData.foot; if (!f) return; const ash = ashFor(m); if (on) f.add(ash); else f.remove(ash); if (on) { f.userData.orig ||= f.material; f.material = emberMat; f.add(emberLight); emberLight.position.set(0, 0, -0.08); } else if (f.userData.orig) { f.material = f.userData.orig; f.remove(emberLight); } }
   function select(i, quiet) {
     if (!meshes.length) return; i = (i + meshes.length) % meshes.length;
     const prev = meshes[sel]; if (prev && prev.parent === show) { show.remove(prev); tray.add(prev); prev.position.copy(prev.userData.slot); prev.rotation.copy(prev.userData.rest); prev.scale.setScalar(1); }
@@ -222,7 +241,7 @@ export function mountHumidor(host, { onPick, onLid }) {
       show.rotation.set(0.35, (Math.PI / 2) * e + dragSpin, 0.08 * Math.sin(t / 1300));
       m.rotation.set(0, 0, 0); m.children[0].rotation.y = spin * 0.6;
       // дым поднимается от кончика
-      m.userData.foot.getWorldPosition(footWorld); emberMat.color.setScalar(0.85 + Math.sin(t / 180) * 0.15);
+      (m.userData.ash?.userData.tip || m.userData.foot).getWorldPosition(footWorld); emberMat.color.setScalar(0.85 + Math.sin(t / 180) * 0.15);
       if (wisps) wisps.forEach((w, k) => { w.position.copy(footWorld); w.position.x += k * 0.05; w.quaternion.copy(cam.quaternion); w.material.uniforms.f.value = (t / 1000 * 11 + w.userData.ph) % 16; w.material.uniforms.op.value = e > 0.9 ? (k ? 0.55 : 0.8) : 0; });
       else puffs.forEach(p => { p.life += dt * 0.55; if (p.life >= 1) { p.life -= 1; p.sp.position.copy(footWorld); p.v.set((Math.random() - 0.5) * 0.08, 0.32 + Math.random() * 0.2, (Math.random() - 0.5) * 0.08); }
         p.sp.visible = e > 0.9; p.sp.position.addScaledVector(p.v, dt); p.sp.position.x += Math.sin(t / 500 + p.life * 6) * 0.002; const sc = 0.08 + p.life * 0.55; p.sp.scale.set(sc, sc, 1); p.sp.material.opacity = Math.sin(p.life * Math.PI) * 0.32; });
@@ -235,8 +254,15 @@ export function mountHumidor(host, { onPick, onLid }) {
   // ореха, крышка-подушка с маркетри — кромка, тройная струнка, табачные листья, овальный картуш с латунной табличкой,
   // кедровый воротник, накладка с замочной скважиной, петли, гигрометр и увлажнитель) + запечённые мягкие тени (AO)
   // и студийная панорама для отражений в лаке. ~400 КБ, грузится после первого кадра; без них остаётся простая модель.
-  const BASE = 'img/hum/', ld = n => new Promise(ok => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = () => ok(null); i.src = BASE + n + '.webp'; });
-  const glb = import('three/addons/loaders/GLTFLoader.js').then(m => new m.GLTFLoader().loadAsync(BASE + 'humidor.glb')).catch(() => null);
+  const V = '?v=3', BASE = 'img/hum/', ld = // ?v — сброс кэша браузера при обновлении ассетов
+    n => new Promise(ok => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = () => ok(null); i.src = BASE + n + '.webp' + V; });
+  const glb = import('three/addons/loaders/GLTFLoader.js').then(m => new m.GLTFLoader().loadAsync(BASE + 'humidor.glb' + V)).catch(() => null);
+  Promise.all(['cig-leaf', 'cig-leaf-n', 'cig-foot', 'cig-ash'].map(ld)).then(([leaf, leafN, foot, ash]) => {
+    const T = (img, srgb = true) => { const t = new THREE.Texture(img); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.needsUpdate = true; return t; };
+    if (leaf) CIG.leaf = leaf; if (leafN) CIG.leafN = T(leafN, false); if (foot) CIG.foot = T(foot);
+    if (ash) { const t = T(ash); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(.6, .18); t.rotation = .35; ashSide.map = t; ashSide.color.set(0xffffff); ashSide.needsUpdate = true; }
+    if (cigars.length) { const was = sel; setCigars.key = null; setCigars(cigars, was); }
+  });
   Promise.all([glb, ...['burl', 'burl-n', 'marq', 'cross', 'cedar', 'body-ao', 'lid-ao', 'studio', 'smoke', 'ember'].map(ld)]).then(([g, burl, bn, marq, cross, ced, aoB, aoL, env, smoke, ember]) => {
     const T = (img, srgb = true, rep = 0) => { const t = new THREE.Texture(img); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; if (rep) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); } t.needsUpdate = true; return t; };
     if (env) { const pm = new THREE.PMREMGenerator(renderer), e = T(env); e.mapping = THREE.EquirectangularReflectionMapping; scene.environment = pm.fromEquirectangular(e).texture; e.dispose(); pm.dispose(); brass.roughness = 0.38; brass.metalness = 0.85; brass.color.set(0xd8b060); }
