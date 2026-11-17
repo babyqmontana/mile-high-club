@@ -1,0 +1,22 @@
+{
+  "name": "Mile High Club — отель над Лос-Сантосом",
+  "short_name": "Mile High",
+  "description": "Бронь номеров на 3D-башне, Le Ciel и заказ в номер, бассейны, сигарный клуб и кабинет гостя.",
+  "lang": "ru",
+  "start_url": "/#home",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0D0809",
+  "theme_color": "#0D0809",
+  "icons": [
+    { "src": "img/app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "img/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "img/app-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Номера", "short_name": "Номера", "url": "/#stay", "icons": [{ "src": "img/app-192.png", "sizes": "192x192" }] },
+    { "name": "Мои брони", "short_name": "Кабинет", "url": "/#me", "icons": [{ "src": "img/app-192.png", "sizes": "192x192" }] },
+    { "name": "Le Ciel", "short_name": "Le Ciel", "url": "/#dining", "icons": [{ "src": "img/app-192.png", "sizes": "192x192" }] }
+  ]
+}
