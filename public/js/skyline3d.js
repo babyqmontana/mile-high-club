@@ -58,6 +58,8 @@ function glassAtlas() {
     }
     g.fillStyle = '#0c1116'; g.fillRect(0, y, 1024, 4); g.fillRect(0, y + 59, 1024, 5); g.fillStyle = '#20272e'; g.fillRect(0, y + 31, 1024, 2);
   }
+  // фасад из Blender: перегородки, жалюзи, столы и потолочный свет за стеклом (та же сетка 14 × 8)
+  if (BAKE['fac-glass'] && BAKE['fac-lit']) { g.drawImage(BAKE['fac-glass'], 0, 0, 1024, 64 * ROWS); l.drawImage(BAKE['fac-lit'], 0, 0, 1024, 64 * ROWS); l.globalAlpha = .16; l.globalCompositeOperation = 'lighter'; l.drawImage(BAKE['fac-glass'], 0, 0, 1024, 64 * ROWS); l.globalAlpha = 1; l.globalCompositeOperation = 'source-over'; } // тусклый дежурный свет: жалюзи и перегородки видны и в тёмных окнах
   const tex = c => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; return t; };
   return { glass: tex(gc), lit: tex(lc) };
 }
@@ -86,6 +88,15 @@ const reserved = (x, z) => (x > -7 && x < 13 && z > -6 && z < 7) || Math.abs(x -
 // светодиодная лента: короткие яркие сегменты с зазорами
 function ledTex() { const c = document.createElement('canvas'); c.width = 4; c.height = 32; const g = c.getContext('2d'); g.fillStyle = '#2a0b3d'; g.fillRect(0, 0, 4, 32); g.fillStyle = '#ffffff'; g.fillRect(0, 4, 4, 22); const t = new THREE.CanvasTexture(c); t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.NearestFilter; return t; }
 
+// --- запечённое в Blender (Cycles): панорамы города для отражений, фасад офисов, интерьер номера, тень от комплекса.
+// ~85 КБ webp, грузятся после первого кадра; пока не пришли или не загрузились — башня рисуется как раньше.
+const BAKE = {}, BAKE_URL = 'img/tower/';
+function loadBake() {
+  return Promise.all(['env-night', 'fac-glass', 'fac-lit', 'room', 'shadow'].concat(document.documentElement.dataset.mode === 'day' ? ['env-day'] : []).map(n => new Promise(ok => {
+    const i = new Image(); i.decoding = 'async'; i.onload = () => { BAKE[n] = i; ok(); }; i.onerror = () => ok(); i.src = BAKE_URL + n + '.webp';
+  })));
+}
+
 // --- окна этажа: для этажей отеля — по номерам, для остальных — офисные ---
 let seedN = 1; const rnd = () => (seedN = seedN * 16807 % 2147483647) / 2147483647;
 function floorCanvas(rooms, mode, hi = null, hov = null, dim = null) { // dim — номера, не прошедшие фильтр: окна гаснут
@@ -106,7 +117,13 @@ function floorCanvas(rooms, mode, hi = null, hov = null, dim = null) { // dim �
       col = r < mode ? (rnd() < 0.75 ? '#e8c27c' : '#f4ead0') : (rnd() < .5 ? '#1a2633' : '#121b25'); a = r < mode ? 0.55 + rnd() * 0.45 : 1; // тёмное синее стекло, часть окон светится
     }
     g.globalAlpha = a; const gr = g.createLinearGradient(0, 8, 0, 56); gr.addColorStop(0, col); gr.addColorStop(1, shade(col, -0.32));
-    g.fillStyle = gr; g.fillRect(i * cw + 5, 8, cw - 11, 48); g.globalAlpha = 1;
+    g.fillStyle = gr; g.fillRect(i * cw + 5, 8, cw - 11, 48);
+    if (rooms && BAKE.room) { // комната из Blender: шторы, торшеры, кровать — умножается на цвет статуса
+      const n = Math.max(1, rooms.length), ri = Math.floor(i / COLS * n), a0 = Math.ceil(ri * COLS / n), a1 = Math.floor((ri + 1) * COLS / n) - 1;
+      const v = a0 === a1 ? 1 : i === a0 ? 0 : i === a1 ? 2 : 1;
+      g.globalCompositeOperation = 'multiply'; g.drawImage(BAKE.room, v * 128 + 6, 6, 116, 231, i * cw + 5, 8, cw - 11, 48); g.globalCompositeOperation = 'source-over';
+    }
+    g.globalAlpha = 1;
     g.fillStyle = '#2c3540'; g.fillRect(i * cw, 0, 2, 64); // стальной импост
     g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(i * cw + 3, 8, (cw - 8) * 0.35, 48);
     g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(i * cw + 3, 30, cw - 8, 1.5); // импост
@@ -181,11 +198,14 @@ function beamGeo(r0, r1, h) { const g = new THREE.CylinderGeometry(r1, r0, h, 24
 
 export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  // чёткость: на телефонах сразу ниже, дальше подстраивается под реальную скорость кадров (только вниз, без скачков)
+  const coarse = matchMedia('(pointer: coarse)').matches; let dpr = Math.min(devicePixelRatio, coarse ? 1.25 : 1.5);
+  renderer.setPixelRatio(dpr); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
   host.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   const fogCol = new THREE.Color(0x2a1f24); scene.fog = new THREE.FogExp2(fogCol, 0.021); scene.background = fogCol.clone();
-  const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+  const pm = new THREE.PMREMGenerator(renderer), envRoom = pm.fromScene(new RoomEnvironment(renderer), 0.04).texture; scene.environment = envRoom;
+  let envBake = null; // { night, day } — отражения настоящего города вместо студийного света
   const cam = new THREE.PerspectiveCamera(32, 1, 0.2, 400);
   const hemi = new THREE.HemisphereLight(0xf2e2c8, 0x1a120a, 0.55), key = new THREE.DirectionalLight(0xffcf98, 1.5), rim = new THREE.PointLight(0xb45cff, 34, 34, 1.6), rim2 = new THREE.PointLight(0xf7b50a, 30, 40, 1.6);
   key.position.set(-14, 22, 12); rim.position.set(-8, 22, -8); rim2.position.set(9, 2, -8); scene.add(hemi, key, rim, rim2);
@@ -530,6 +550,7 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     searchBeams = [[1.3, -.7, 0], [-1.6, .8, Math.PI]].map(([x, z, ph]) => { const piv = new THREE.Group(); piv.position.set(x, topY + 5 * FH + .8, z); piv.userData.ph = ph; const b = new THREE.Mesh(beamGeo(.07, 2.6, 70), beamMat(0xd6c2ff, .55, .9)); b.rotation.z = .42; piv.add(b); root.add(piv); return piv; });
     applyWx(); relight();
     root.position.y = GROUND; world.position.y = 0;
+    if (BAKE.shadow) root.add(shadowM ??= contactShadow());
     built = JSON.stringify(rooms.map(r => [r.id, r.floor])) + venueKey();
   }
   const venueKey = () => JSON.stringify(venues.map(v => [v.id, v.floor, v.kind]));
@@ -578,9 +599,11 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
   function size() { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); kick(); }
   new ResizeObserver(size).observe(host);
   function kick() { if (!raf && active && visible) { last = performance.now(); raf = requestAnimationFrame(loop); } }
-  let odd = 0;
+  let odd = 0, prevT = 0, ftSum = 0, ftN = 0;
   function loop(t) {
     raf = 0;
+    const ft = t - prevT; prevT = t;
+    if (ft > 0 && ft < 200) { ftSum += ft; if (++ftN === 120) { if (ftSum / ftN > 26 && dpr > 1) { dpr = Math.max(1, dpr - .25); renderer.setPixelRatio(dpr); size(); } ftSum = ftN = 0; } }
     // в покое рисуем 30 кадров в секунду: машины и огни плывут так же плавно, а нагрузка на видеокарту вдвое ниже
     const calm = !drag && rotTarget == null && Math.abs(vel) < 1e-3 && Math.abs(camTargetY - camY) < .01 && !rain.visible && !snow.visible;
     if (calm && (odd ^= 1)) { if (active && visible) raf = requestAnimationFrame(loop); return; }
@@ -611,6 +634,19 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     renderer.render(scene, cam);
     if (active && visible) raf = requestAnimationFrame(loop);
   }
+  // мягкая тень комплекса на земле, посчитанная в Blender от того же ключевого света: одна плоскость, без карт теней
+  let shadowM = null;
+  function contactShadow() {
+    const t = new THREE.Texture(BAKE.shadow); t.needsUpdate = true;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), new THREE.MeshBasicMaterial({ color: 0x07040a, alphaMap: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+    m.rotation.x = -Math.PI / 2; m.position.set(3, .012, 0); m.renderOrder = -1; return m;
+  }
+  // когда запечённое пришло: отражения города, фасады, комнаты и тень
+  loadBake().then(() => {
+    const eq = img => { const t = new THREE.Texture(img); t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; const r = pm.fromEquirectangular(t).texture; t.dispose(); return r; };
+    if (BAKE['env-night']) { const night = eq(BAKE['env-night']); envBake = { night, day: BAKE['env-day'] ? eq(BAKE['env-day']) : envRoom }; }
+    if (curRooms.length) { build(curRooms); update(curRooms, sel); } else relight();
+  });
   function relight() {
     const day = document.documentElement.dataset.mode === 'day' ? 1 : 0;
     skyU.uDay.value = day; ground.material.uniforms.uDay.value = day; cityM.userData.uniforms.uDay.value = day; cityM.userData.uniforms.uLit.value = day ? .12 : .42;
@@ -618,11 +654,12 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     if (wx?.kind === 'rain' || wx?.kind === 'fog') { fogCol.lerp(new THREE.Color(day ? 0x9a948c : 0x2e2427), .55); skyU.uFog.value.copy(fogCol); scene.fog.color.copy(fogCol); scene.background.copy(fogCol); }
     if (wx?.kind === 'snow') { fogCol.lerp(new THREE.Color(day ? 0xe6e1d8 : 0x463a3d), .5); skyU.uFog.value.copy(fogCol); scene.fog.color.copy(fogCol); scene.background.copy(fogCol); }
     rain.material.color.set(day ? 0x8f8a84 : 0xd8d2c8);
+    const cityEnv = envBake ? (day ? envBake.day : envBake.night) : null;
     world.traverse(o => { if (o.isMesh || o.isInstancedMesh) [].concat(o.material).forEach(m => { if (m?.isMeshStandardMaterial) { m.userData.env0 ??= m.envMapIntensity; m.envMapIntensity = m.userData.env0 * (day ? 1 : .25); } }); });
     hemi.intensity = day ? 1.6 : .42; hemi.color.set(day ? 0xf2e2c8 : 0x6a58b0); hemi.groundColor.set(day ? 0x1a120a : 0x120a10); key.intensity = day ? 2.8 : .75; cityM.roughness = day ? .55 : .9; cityM.metalness = day ? .35 : .1; stone.roughness = day ? .6 : .9; key.color.set(day ? 0xfff0d8 : 0xaab6ff); if (!day) key.position.copy(MOON).multiplyScalar(30);
     cityM.color.set(day ? 0x6a5f5c : 0x1f1517); hills.material.color.set(day ? 0x6a5a52 : 0x0c0814);
     cloudMats.forEach(m => m.color.set(day ? 0xfff3dc : 0x4a3460)); lamps.visible = carPts.visible = true; lamps.material.opacity = day ? .25 : 1; carPts.material.opacity = day ? .4 : 1;
-    rim.intensity = day ? 6 : 34; officeK = day ? .16 : .6; ledM?.color.set(day ? 0x39c6e6 : 0xb766ff); if (crownLit) crownLit.material.emissiveIntensity = day ? 0 : 1.1; landmarkMats.forEach(m => { m.emissiveIntensity = day ? .04 : .85; m.color.set(day ? 0xffffff : 0x353b4a); }); officeMats.forEach(m => { m.emissiveIntensity = day ? .04 : .9; m.color.set(day ? 0xffffff : 0x4a5562); m.metalness = day ? .45 : .85; m.envMapIntensity = day ? 1.6 : .5; }); if (bannerM) bannerM.emissiveIntensity = day ? .1 : .42; if (shopM) shopM.opacity = day ? .12 : .55; if (screenM) screenM.emissiveIntensity = day ? .12 : .45; kick();
+    rim.intensity = day ? 6 : 34; officeK = day ? .16 : .6; ledM?.color.set(day ? 0x39c6e6 : 0xb766ff); if (crownLit) crownLit.material.emissiveIntensity = day ? 0 : 1.1; landmarkMats.forEach(m => { m.emissiveIntensity = day ? .04 : .85; m.color.set(day ? 0xffffff : 0x353b4a); }); if (shadowM) shadowM.material.opacity = day ? .62 : .38; officeMats.forEach(m => { m.emissiveIntensity = day ? .04 : .9; m.color.set(day ? 0xffffff : 0x4a5562); m.metalness = day ? .45 : .85; m.envMapIntensity = day ? 1.6 : cityEnv ? 1.2 : .5; if (m.envMap !== cityEnv) { m.envMap = cityEnv; m.needsUpdate = true; } }); hotel.forEach(f => { if (f.material.envMap !== cityEnv) { f.material.envMap = cityEnv; f.material.needsUpdate = true; } }); if (bannerM) bannerM.emissiveIntensity = day ? .1 : .42; if (shopM) shopM.opacity = day ? .12 : .55; if (screenM) screenM.emissiveIntensity = day ? .12 : .45; kick();
   }
   relight(); size();
   function setVenues(list) { const before = venueKey(); venues = list || []; if (venueKey() !== before && curRooms.length) { build(curRooms); update(curRooms, sel); } else venueMeshes.forEach(m => { const nv = venues.find(x => x.id === m.userData.venue.id); if (nv) m.userData.venue = nv; }); kick(); }
