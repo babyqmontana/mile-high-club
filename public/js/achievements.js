@@ -57,18 +57,54 @@ function next() {
   const qid = queue.shift(), a = LIST.find(x => x.id === qid);
   let host = document.getElementById('achs'); if (!host) { host = document.createElement('div'); host.id = 'achs'; host.setAttribute('aria-live', 'polite'); document.body.append(host); }
   const el = document.createElement('button'); el.className = 'ach' + (a.id === 'platinum' ? ' plat' : ''); el.type = 'button'; el.dataset.sfx = '';
-  el.dataset.r = a.r || 1; el.innerHTML = `<span class="ai">${a.i}</span><span class="at"><small>${RARITY[a.r || 1]} · достижение получено</small><b>${esc(a.t)}</b><span>${esc(a.d)}</span></span>`;
+  const r = a.r || 1, n = LIST.filter(x => got[x.id] && got[x.id] <= got[qid]).length;
+  el.dataset.r = r; el.innerHTML = `<span class="gl" aria-hidden="true"></span><span class="aw" aria-hidden="true"><span class="rays"></span><span class="burst">${sparks(r === 3 ? 16 : r === 2 ? 12 : 9)}</span><span class="ai">${a.i}</span></span>
+    <span class="at"><small>${RARITY[r]} · достижение получено</small><b>${esc(a.t)}</b><span>${esc(a.d)}</span><span class="ap">${bar(n, LIST.length, n - 1, 'sm')}<em class="num">${n}/${LIST.length}</em></span></span>`;
   el.onclick = () => openCabinet();
   host.append(el); play('achievement');
-  requestAnimationFrame(() => el.classList.add('in'));
+  requestAnimationFrame(() => { el.classList.add('in'); setTimeout(() => grow(el), 450); });
+  if (r === 3 || a.id === 'platinum') confetti(a.id === 'platinum' ? 70 : 36);
   setTimeout(() => { el.classList.remove('in'); el.classList.add('out'); setTimeout(() => { el.remove(); showing = false; next(); }, 450); }, 5600);
 }
+// ---------- эффекты ----------
+const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const rnd = (a, b) => a + Math.random() * (b - a);
+function sparks(n) {
+  return Array.from({ length: n }, (_, i) => { const t = (i / n) * Math.PI * 2 + rnd(-.25, .25), d = rnd(52, 96);
+    return `<i style="--x:${(Math.cos(t) * d).toFixed(1)}px;--y:${(Math.sin(t) * d).toFixed(1)}px;--d:${rnd(0, .18).toFixed(2)}s;--s:${rnd(.55, 1.15).toFixed(2)}"></i>`; }).join('');
+}
+function confetti(n) {
+  if (reduce()) return;
+  const fx = document.createElement('div'); fx.className = 'achfx'; fx.setAttribute('aria-hidden', 'true');
+  const C = ['#f7b50a', '#ffe0a0', '#f0177a', '#ef5617', '#fff3dc'];
+  fx.innerHTML = Array.from({ length: n }, () => `<i style="left:${rnd(0, 100).toFixed(1)}%;--c:${C[Math.floor(Math.random() * C.length)]};--x:${rnd(-14, 14).toFixed(1)}vw;--r:${rnd(-540, 540).toFixed(0)}deg;--t:${rnd(1.8, 3.2).toFixed(2)}s;--d:${rnd(0, .6).toFixed(2)}s;--w:${rnd(.35, .7).toFixed(2)}rem"></i>`).join('');
+  document.body.append(fx); setTimeout(() => fx.remove(), 4200);
+}
+// полоса прогресса: заполняется от прежнего значения к новому, с бегущим бликом и делениями
+export function bar(n, total, from = n, size = '') {
+  const pc = v => (Math.max(0, Math.min(total, v)) / total * 100).toFixed(2);
+  return `<span class="xbar ${size}" style="--n:${total}" data-to="${pc(n)}" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${n}" aria-label="Найдено секретов: ${n} из ${total}"><i style="width:${pc(from)}%"></i><span class="tk"></span></span>`;
+}
+export function grow(root) {
+  root.querySelectorAll('.xbar[data-to]').forEach(b => { const i = b.firstElementChild; requestAnimationFrame(() => requestAnimationFrame(() => { i.style.width = b.dataset.to + '%'; b.classList.add('go'); })); });
+  root.querySelectorAll('[data-count]').forEach(el => { const to = +el.dataset.count, from = +(el.dataset.from || 0); if (reduce() || to === from) { el.textContent = to; return; }
+    const t0 = performance.now(), D = 900; const step = t => { const k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 3); el.textContent = Math.round(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); });
+}
+// что гость уже видел в коллекции: новое подсвечивается, полоса растёт от прошлого значения
+const SEEN = 'mhc-ach-seen';
+export const seenCount = () => { try { return (JSON.parse(pref.get(SEEN) || '[]') || []).filter(id => got[id]).length; } catch { return 0; } };
+const seenSet = () => { try { return new Set(JSON.parse(pref.get(SEEN) || '[]') || []); } catch { return new Set(); } };
+export function markSeen() { try { pref.set(SEEN, JSON.stringify(ids())); } catch { } }
+export function rarityStats() { return [1, 2, 3].map(r => { const all = LIST.filter(a => (a.r || 1) === r); return { r, name: ({ 1: 'Обычные', 2: 'Редкие', 3: 'Легендарные' })[r], got: all.filter(a => got[a.id]).length, total: all.length }; }); }
+export const rarityChips = () => `<div class="rchips">${rarityStats().map(s => `<span class="rchip" data-r="${s.r}"><i></i>${s.name}<b class="num">${s.got}/${s.total}</b></span>`).join('')}</div>`;
+
 export function openCabinet() {
-  const n = count();
-  modal(`<div class="cab"><div><span class="eyebrow">Секреты отеля</span><h3>${n} из ${LIST.length}</h3><div class="cbar"><i style="width:${n / LIST.length * 100}%"></i></div><p class="note">Секреты спрятаны по всему сайту, у каждого своя редкость. Прогресс хранится в этом браузере, а после входа через Discord — и в аккаунте. Сезонные для «Платинового гостя» не нужны.</p></div>
-    <div class="clist">${LIST.map(a => got[a.id] ? `<div class="ci on" data-r="${a.r || 1}"><span class="ai">${a.i}</span><span><b>${esc(a.t)}</b><em class="rar">${RARITY[a.r || 1]}${a.season ? ' · сезонное' : ''}</em><small>${esc(a.d)}</small></span><time>${new Date(got[a.id]).toLocaleDateString('ru-RU')}</time></div>`
-      : `<div class="ci" data-r="${a.r || 1}"><span class="ai">?</span><span><b>Скрытое достижение</b><em class="rar">${RARITY[a.r || 1]}${a.season ? ' · сезонное' : ''}</em><small>${esc(a.h)}</small></span></div>`).join('')}</div>
-    <div class="row" style="justify-content:flex-end"><button class="btn sm ghost" data-close="">Закрыть</button></div></div>`, { wide: true });
+  const n = count(), was = seenCount(), seen = seenSet();
+  let k = 0; const order = [...LIST].sort((a, b) => (!!got[b.id] - !!got[a.id]) || ((got[b.id] || 0) - (got[a.id] || 0)));
+  modal(`<div class="cab"><div><span class="eyebrow">Секреты отеля</span><h3><span class="num" data-count="${n}" data-from="${was}">${was}</span> из ${LIST.length}${n > was ? ` <span class="newn">+${n - was}</span>` : ''}</h3>${bar(n, LIST.length, was)}${rarityChips()}<p class="note">Секреты спрятаны по всему сайту, у каждого своя редкость. Прогресс хранится в этом браузере, а после входа через Discord — и в аккаунте. Сезонные для «Платинового гостя» не нужны.</p></div>
+    <div class="clist">${order.map(a => got[a.id] ? `<div class="ci on${seen.has(a.id) ? '' : ' fresh'}" data-r="${a.r || 1}" style="--i:${k++}"><span class="ai">${a.i}</span><span><b>${esc(a.t)}${seen.has(a.id) ? '' : ' <em class="newtag">Новое</em>'}</b><em class="rar">${RARITY[a.r || 1]}${a.season ? ' · сезонное' : ''}</em><small>${esc(a.d)}</small></span><time>${new Date(got[a.id]).toLocaleDateString('ru-RU')}</time></div>`
+      : `<div class="ci" data-r="${a.r || 1}" style="--i:${k++}"><span class="ai">?</span><span><b>Скрытое достижение</b><em class="rar">${RARITY[a.r || 1]}${a.season ? ' · сезонное' : ''}</em><small>${esc(a.h)}</small></span></div>`).join('')}</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn sm ghost" data-close="">Закрыть</button></div></div>`, { wide: true, onMount: box => { grow(box); markSeen(); listeners.forEach(f => f()); } });
 }
 
 // ---------- ловушки, которые не привязаны к конкретной странице ----------

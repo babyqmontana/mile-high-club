@@ -1223,3 +1223,62 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
 @media(max-width:900px){.aside{overflow:visible!important;min-width:0}}
 @media(max-width:640px){.compose:has(.tpl){flex-wrap:wrap}.compose .tpl{order:-1;flex:1 1 100%;max-width:none}}
 @media(max-width:900px){#amain .item,#amain .atop{scroll-margin-top:calc(var(--nav) + 8rem)}}
+
+/* ---------- достижения: эффекты получения и прогресс ---------- */
+.ach{overflow:visible}
+.ach::after{display:none}
+.ach .gl{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none}
+.ach .gl::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 35%,rgba(255,236,190,.18) 50%,transparent 65%);transform:translateX(-120%)}
+.ach.in .gl::after{animation:achShine 1.4s .45s ease-out}
+.ach .aw{position:relative;display:grid;place-items:center}
+.ach .aw .ai{position:relative;z-index:1}
+.ach.in .aw .ai{animation:achPop .8s .25s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes achPop{0%{transform:scale(.2) rotate(-25deg);opacity:0}55%{transform:scale(1.18) rotate(6deg);opacity:1}100%{transform:none}}
+.ach .aw::after{content:"";position:absolute;inset:-2px;border-radius:.8rem;border:2px solid var(--gold);opacity:0;pointer-events:none}
+.ach.in .aw::after{animation:achRing 1.1s .4s ease-out}
+@keyframes achRing{0%{opacity:.9;transform:scale(.9)}100%{opacity:0;transform:scale(1.9)}}
+.ach .rays{position:absolute;width:320%;aspect-ratio:1;border-radius:50%;opacity:0;pointer-events:none;
+  background:repeating-conic-gradient(from 0deg,rgba(255,214,120,.62) 0 6deg,transparent 6deg 20deg);-webkit-mask:radial-gradient(circle,#000 22%,transparent 68%);mask:radial-gradient(circle,#000 22%,transparent 68%)}
+.ach[data-r="2"] .rays{background:repeating-conic-gradient(from 0deg,rgba(255,90,170,.6) 0 6deg,transparent 6deg 20deg)}
+.ach.in .rays{animation:achRays 3.4s .35s ease-out}
+@keyframes achRays{0%{opacity:0;transform:rotate(0) scale(.5)}15%,45%{opacity:1}100%{opacity:0;transform:rotate(120deg) scale(1.1)}}
+.ach[data-r="1"] .rays{display:none}
+.ach .burst{position:absolute;inset:50% auto auto 50%;width:0;height:0;pointer-events:none;z-index:2}
+.ach .burst i{position:absolute;left:-4px;top:-4px;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px var(--gold);opacity:0;transform:scale(var(--s))}
+.ach .burst i:nth-child(3n){background:#fff3dc;box-shadow:0 0 6px #fff3dc}
+.ach[data-r="2"] .burst i:nth-child(2n){background:var(--pink);box-shadow:0 0 6px var(--pink)}
+.ach .burst i:nth-child(4n){width:4px;height:12px;border-radius:2px}
+.ach.in .burst i{animation:achSpark 1.15s calc(.42s + var(--d)) cubic-bezier(.1,.7,.3,1) forwards}
+@keyframes achSpark{0%{opacity:1;transform:translate(0,0) scale(var(--s))}70%{opacity:1}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(0)}}
+.ach[data-r="2"]{box-shadow:0 0 0 1px color-mix(in srgb,var(--pink) 60%,transparent),0 1.2rem 2.6rem -1rem rgba(0,0,0,.7),0 0 2rem -.8rem var(--pink)}
+.ach[data-r="3"]{box-shadow:0 0 0 1px var(--gold),0 1.2rem 2.6rem -1rem rgba(0,0,0,.7),0 0 2.4rem -.6rem rgba(247,181,10,.55)}
+.ach .ap{display:flex;align-items:center;gap:.5rem;margin-top:.35rem}
+.ach .ap .xbar{flex:1}.ach .ap em{font:700 .66rem var(--body);font-style:normal;color:var(--mut)}
+
+.xbar{position:relative;display:block;height:.7rem;border-radius:9rem;background:color-mix(in srgb,var(--card2) 80%,#000);box-shadow:inset 0 1px 2px rgba(0,0,0,.55),0 0 0 1px var(--line);overflow:hidden;margin:.3rem 0 .2rem}
+.xbar.sm{height:.32rem;margin:0}
+.xbar>i{position:absolute;inset:0 auto 0 0;display:block;border-radius:inherit;background:var(--sunset);background-size:200% 100%;transition:width 1.4s cubic-bezier(.22,1,.36,1);box-shadow:0 0 .8rem -.1rem rgba(247,181,10,.6)}
+.xbar.go>i{animation:xflow 4s linear infinite}
+.xbar>i::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.45) 50%,transparent 70%);background-size:220% 100%;animation:xshine 2.6s ease-in-out infinite;border-radius:inherit}
+.xbar>i::before{content:"";position:absolute;right:-.15rem;top:50%;width:.9rem;height:.9rem;border-radius:50%;transform:translateY(-50%);background:radial-gradient(circle,#fff6dc 0,rgba(247,181,10,.7) 35%,transparent 70%);filter:blur(1px)}
+.xbar.sm>i::before{width:.6rem;height:.6rem}
+.xbar .tk{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(90deg,transparent calc(100% - 2px),rgba(10,6,8,.55) 0);background-size:calc(100% / var(--n)) 100%}
+.xbar.sm .tk{display:none}
+@keyframes xflow{to{background-position:-200% 0}}
+@keyframes xshine{0%{background-position:160% 0}60%,100%{background-position:-60% 0}}
+.rchips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.55rem 0 .2rem}
+.rchip{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .6rem;border-radius:9rem;background:var(--card);border:1px solid var(--line);font:600 .74rem var(--body);color:var(--mut)}
+.rchip i{width:.5rem;height:.5rem;border-radius:50%;background:var(--mut)}.rchip b{color:var(--fg)}
+.rchip[data-r="2"] i{background:var(--pink);box-shadow:0 0 6px var(--pink)}.rchip[data-r="3"] i{background:var(--gold);box-shadow:0 0 6px var(--gold)}
+.cab h3 .newn{display:inline-block;font:800 .8rem var(--body);color:#1a1205;background:var(--gold);padding:.15rem .5rem;border-radius:9rem;vertical-align:middle;animation:achPop .7s .5s cubic-bezier(.2,1.6,.4,1) both}
+.clist .ci{animation:ciIn .5s calc(var(--i,0) * 35ms) cubic-bezier(.2,.9,.3,1) both}
+@keyframes ciIn{from{opacity:0;transform:translateY(.6rem)}}
+.ci.fresh{border-color:color-mix(in srgb,var(--gold) 60%,var(--line));box-shadow:0 0 1.4rem -.6rem rgba(247,181,10,.6)}
+.ci.fresh .ai{animation:achPop .8s calc(var(--i,0) * 35ms + .2s) cubic-bezier(.2,1.6,.4,1) both}
+.newtag{display:inline-block;margin-left:.3rem;font:800 .56rem var(--body);font-style:normal;letter-spacing:.1em;text-transform:uppercase;color:#1a1205;background:var(--gold);padding:.1rem .35rem;border-radius:.3rem;vertical-align:middle}
+.achfx{position:fixed;inset:0;z-index:119;pointer-events:none;overflow:hidden}
+.achfx i{position:absolute;top:-1rem;width:var(--w);height:calc(var(--w) * 1.6);background:var(--c);border-radius:2px;opacity:.95;animation:achFall var(--t) var(--d) cubic-bezier(.3,.6,.5,1) forwards}
+.achfx i:nth-child(3n){border-radius:50%;height:var(--w)}
+@keyframes achFall{0%{transform:translate(0,0) rotate(0)}100%{transform:translate(var(--x),105vh) rotate(var(--r));opacity:.2}}
+@media(prefers-reduced-motion:reduce){.ach .rays,.ach .burst,.achfx{display:none}.xbar>i::after,.xbar.go>i{animation:none}}
+.xbar[aria-valuenow="0"]>i{visibility:hidden}
