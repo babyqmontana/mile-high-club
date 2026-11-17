@@ -59,9 +59,12 @@ function glassAtlas() {
     g.fillStyle = '#0c1116'; g.fillRect(0, y, 1024, 4); g.fillRect(0, y + 59, 1024, 5); g.fillStyle = '#20272e'; g.fillRect(0, y + 31, 1024, 2);
   }
   // фасад из Blender: перегородки, жалюзи, столы и потолочный свет за стеклом (та же сетка 14 × 8)
-  if (BAKE['fac-glass'] && BAKE['fac-lit']) { g.drawImage(BAKE['fac-glass'], 0, 0, 1024, 64 * ROWS); l.drawImage(BAKE['fac-lit'], 0, 0, 1024, 64 * ROWS); l.globalAlpha = .16; l.globalCompositeOperation = 'lighter'; l.drawImage(BAKE['fac-glass'], 0, 0, 1024, 64 * ROWS); l.globalAlpha = 1; l.globalCompositeOperation = 'source-over'; } // тусклый дежурный свет: жалюзи и перегородки видны и в тёмных окнах
+  paintBake(g, l);
   const tex = c => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; return t; };
   return { glass: tex(gc), lit: tex(lc) };
+}
+function paintBake(g, l) {
+  if (BAKE['fac-glass'] && BAKE['fac-lit']) { g.drawImage(BAKE['fac-glass'], 0, 0, 1024, 64 * ROWS); l.drawImage(BAKE['fac-lit'], 0, 0, 1024, 64 * ROWS); l.globalAlpha = .16; l.globalCompositeOperation = 'lighter'; l.drawImage(BAKE['fac-glass'], 0, 0, 1024, 64 * ROWS); l.globalAlpha = 1; l.globalCompositeOperation = 'source-over'; } // тусклый дежурный свет: жалюзи и перегородки видны и в тёмных окнах
 }
 // вертикальные импосты: тонкие рёбра по шагу панелей, дают фасаду глубину и блики
 function finsFor(pts, y0, y1) {
@@ -645,6 +648,9 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
   loadBake().then(() => {
     const eq = img => { const t = new THREE.Texture(img); t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; const r = pm.fromEquirectangular(t).texture; t.dispose(); return r; };
     if (BAKE['env-night']) { const night = eq(BAKE['env-night']); envBake = { night, day: BAKE['env-day'] ? eq(BAKE['env-day']) : envRoom }; }
+    // стеклянные ориентиры города получают тот же фасад
+    const gi = cityAtlas.glass.image, li = cityAtlas.lit.image; paintBake(gi.getContext('2d'), li.getContext('2d'));
+    world.traverse(o => [].concat(o.material || []).forEach(m => [m.map, m.emissiveMap].forEach(t => { if (t && (t.image === gi || t.image === li)) t.needsUpdate = true; })));
     if (curRooms.length) { build(curRooms); update(curRooms, sel); } else relight();
   });
   function relight() {

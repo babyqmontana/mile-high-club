@@ -114,7 +114,9 @@ export function mountHumidor(host, { onPick, onLid }) {
 
   const W = 6, D = 3.7, H = 1.5, T = 0.16;
   const box = new THREE.Group(); scene.add(box);
-  const outer = new THREE.MeshStandardMaterial({ map: wood('#3a1c0e', '#1a0b05', '#6b3a1d', 34), roughness: 0.38, metalness: 0.05 });
+  // на телефонах обычный материал, на компьютере — с прозрачным лаком поверх дерева
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  const outer = new (coarse ? THREE.MeshStandardMaterial : THREE.MeshPhysicalMaterial)({ map: wood('#3a1c0e', '#1a0b05', '#6b3a1d', 34), roughness: 0.38, metalness: 0.05, ...(coarse ? {} : { clearcoat: 0, clearcoatRoughness: 0.12 }) });
   const cedar = new THREE.MeshStandardMaterial({ map: wood('#b9774a', '#8a4f2c', '#d9a172', 22), roughness: 0.85 });
   const brass = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.3, metalness: 0.9 });
   const part = (w, h, d, x, y, z, m) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); box.add(o); return o; };
@@ -214,6 +216,17 @@ export function mountHumidor(host, { onPick, onLid }) {
     renderer.render(scene, cam);
     if (active && visible && moving) raf = requestAnimationFrame(loop);
   }
+  // текстуры из Blender: орех с рельефом волокон, испанский кедр и сигарный лаунж, который отражается в лаке и латуни.
+  // ~75 КБ webp, грузятся после первого кадра; если не пришли — остаются рисованные текстуры.
+  const BASE = 'img/hum/', ld = n => new Promise(ok => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = () => ok(null); i.src = BASE + n + '.webp'; });
+  Promise.all(['walnut', 'walnut-n', 'cedar', 'lounge'].map(ld)).then(([wal, wn, ced, env]) => {
+    const T = (img, srgb = true) => { const t = new THREE.Texture(img); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.needsUpdate = true; return t; };
+    if (wal) { outer.map.dispose(); outer.map = T(wal); outer.roughness = 0.42; if (outer.isMeshPhysicalMaterial) outer.clearcoat = 1; }
+    if (wn) { outer.normalMap = T(wn, false); outer.normalScale.set(0.35, 0.35); }
+    if (ced) { cedar.map.dispose(); cedar.map = T(ced); }
+    if (env) { const pm = new THREE.PMREMGenerator(renderer), e = T(env); e.mapping = THREE.EquirectangularReflectionMapping; scene.environment = pm.fromEquirectangular(e).texture; e.dispose(); pm.dispose(); brass.roughness = 0.22; scene.environmentIntensity = 0.4; }
+    outer.needsUpdate = cedar.needsUpdate = true; kick();
+  });
   function relight() { const day = document.documentElement.dataset.mode === 'day'; hemi.intensity = day ? 2 : 1.2; rim.intensity = day ? 3 : 10; kick(); }
   relight(); size();
   return {
