@@ -1332,3 +1332,112 @@ p{text-wrap:pretty}
 @media(prefers-reduced-motion:reduce){.bookbar,.offer,.btn{transition:none}}
 .scrollbar{background:linear-gradient(90deg,#8a6228,var(--accent) 50%,var(--accent-hi))}
 @media(max-width:760px){footer{padding-bottom:calc(6rem + env(safe-area-inset-bottom,0px))}}
+
+/* =====================================================================
+   Редизайн v2 «Цветовые блоки»: огромная типографика, сплошные цвета бренда
+   (закат: оранжевый, маджента, золото), монета-медальон как главный объект.
+   ===================================================================== */
+:root{--mx-orange:#E2461C;--mx-orange-d:#B8300C;--mx-gold:#F7B50A;--mx-mag:#E8177A;--mx-ink:#120808;--mx-cream:#FFF1D6}
+.mx-h1,.mx-h2,.mx-giant{font-family:var(--display);text-transform:uppercase;letter-spacing:-.035em}
+.mx-h2{font-weight:800;font-size:clamp(2.8rem,8.6vw,8.2rem);line-height:.86;margin:0;text-wrap:balance}
+.mx-tag{display:inline-block;font:800 .74rem var(--body);letter-spacing:.24em;text-transform:uppercase;margin-bottom:1.1rem}
+.mx-head{margin-bottom:clamp(2rem,4vw,3.5rem)}
+.mx-band{padding-block:clamp(4.5rem,10vw,9rem)}
+.mx-black{background:var(--mx-ink);color:var(--mx-cream)}.mx-black .mx-tag{color:var(--mx-gold)}
+.mx-gold{background:var(--mx-gold);color:var(--mx-ink)}.mx-gold .mx-tag{color:var(--mx-ink)}
+.mx-magenta{background:var(--mx-mag);color:#fff}.mx-magenta .mx-tag{color:#fff}
+.mx-magenta .rv{background:rgba(18,8,8,.88)}.mx-magenta .rv-sum .note{color:#fff}
+/* кнопки на цветном фоне: тёмная таблетка и контурная */
+.btn.mx-dark{background:var(--mx-ink);color:var(--mx-gold);box-shadow:none;text-transform:uppercase;letter-spacing:.06em}
+.btn.mx-dark:hover{background:#000;color:#ffd35a;box-shadow:0 1rem 2rem -1rem rgba(0,0,0,.6)}
+.btn.mx-line{background:transparent;color:inherit;box-shadow:inset 0 0 0 2px currentColor;text-transform:uppercase;letter-spacing:.06em}
+.btn.mx-line:hover{background:rgba(0,0,0,.12)}
+/* ---------- первый экран ---------- */
+.mx-hero{position:relative;height:320vh;background:var(--mx-orange);color:var(--mx-cream)}
+.mx-stick{position:sticky;top:0;height:100vh;overflow:hidden;perspective:1400px}
+@supports(height:100svh){.mx-stick{height:100svh}}
+.mx-giant{position:absolute;inset:0 0 18vh;display:grid;place-content:center;text-align:center;font-weight:800;font-size:clamp(4.2rem,17vw,20rem);line-height:.8;color:var(--mx-orange-d);pointer-events:none;user-select:none;transform-origin:50% 50%}
+.mx-giant span{display:block;white-space:nowrap}
+.mx-reveal{position:absolute;inset:0;background:#000 center/cover no-repeat;clip-path:circle(0 at 50% 50%);opacity:0}
+.mx-reveal::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(18,8,8,.35),rgba(18,8,8,.15) 40%,rgba(18,8,8,.85))}
+.mx-coinwrap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);will-change:transform}
+.mx-coin{width:min(46vmin,520px);aspect-ratio:1;transform-style:preserve-3d;filter:drop-shadow(0 3rem 3rem rgba(80,10,0,.45))}
+.mx-coin-in{position:relative;width:100%;height:100%;transform-style:preserve-3d}
+.mx-edge{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,#7a4a14 60%,#c99a3a 85%,#6b3f10)}
+.mx-face,.mx-back{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.mx-face{transform:translateZ(7.5px)}
+.mx-back{transform:rotateY(180deg) translateZ(7.5px);display:grid;place-content:center;text-align:center;gap:.3em;background:radial-gradient(circle at 35% 30%,#ffe39a,#e2a53a 45%,#8a5a16 100%);box-shadow:inset 0 0 0 .6em rgba(90,50,10,.35),inset 0 0 0 .75em rgba(255,230,160,.5);color:#5a3208}
+.mx-back b{font:800 clamp(2.5rem,9vmin,6rem)/1 var(--display);letter-spacing:.04em}.mx-back small{font:700 clamp(.6rem,1.6vmin,.95rem) var(--body);letter-spacing:.2em;text-transform:uppercase}
+.mx-copy{position:absolute;left:var(--gl);right:var(--gr);bottom:clamp(1.5rem,6vh,4rem);display:grid;gap:1.2rem;justify-items:start;padding-inline:clamp(0rem,3vw,3rem)}
+.mx-h1{font-weight:800;font-size:clamp(2rem,5.4vw,5rem);line-height:.92;max-width:14ch;margin:0;text-shadow:0 .2rem 2rem rgba(120,20,0,.35)}
+.mx-h1 em{display:block;font:italic 600 .62em/1.1 var(--serif);text-transform:none;letter-spacing:0;color:var(--mx-ink);margin-top:.35em}
+.mx-copy2{position:absolute;inset:0;display:grid;align-content:center;justify-items:center;text-align:center;gap:1.4rem;padding:0 var(--gr) 0 var(--gl);opacity:0}
+.mx-copy2 .mx-tag{color:var(--mx-gold);margin:0}
+.mx-copy2 .mx-h2{color:var(--mx-cream);text-shadow:0 .3rem 3rem rgba(0,0,0,.6)}
+.mx-stats{display:grid;grid-template-columns:repeat(3,minmax(0,13rem));gap:1rem;margin:0}
+.mx-stats div{padding:1rem 1.1rem;border-radius:1.1rem;background:rgba(18,8,8,.6);backdrop-filter:blur(10px);border:1px solid rgba(255,241,214,.18)}
+.mx-stats dt{font:800 clamp(2rem,4vw,3.2rem)/1 var(--display);color:var(--mx-gold)}.mx-stats dd{margin:.35rem 0 0;font-size:.9rem;color:var(--mx-cream)}
+.mx-hint{position:absolute;left:50%;bottom:1.2rem;transform:translateX(-50%);font:800 .7rem var(--body);letter-spacing:.3em;text-transform:uppercase;color:var(--mx-ink)}
+@media(max-width:760px){.mx-hero{height:260vh}.mx-coin{width:62vmin}.mx-copy{bottom:5.5rem}.mx-stats{grid-template-columns:1fr;max-width:20rem;width:100%}.mx-stats div{display:flex;align-items:baseline;gap:.8rem;text-align:left}.mx-hint{display:none}}
+.mx-hero.static{height:auto}
+.mx-hero.static .mx-stick{position:relative;height:auto;min-height:100vh;padding-bottom:2rem}
+.mx-hero.static .mx-copy2{position:relative;opacity:1;padding-block:4rem;background:var(--mx-ink)}
+.mx-hero.static .mx-reveal,.mx-hero.static .mx-hint{display:none}
+/* ---------- разрезанный экран ---------- */
+.mx-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);min-height:100vh}
+.mx-split-l{background:var(--mx-ink);color:var(--mx-cream);padding:clamp(3.5rem,8vw,7rem) clamp(1.2rem,5vw,5rem)}
+.mx-split-l .mx-tag{color:var(--mx-mag)}
+.mx-list{list-style:none;margin:2.5rem 0 0;padding:0;display:grid}
+.mx-list a{display:grid;grid-template-columns:5.5rem 1fr;gap:1rem;align-items:baseline;padding:1rem 0;border-top:1px solid rgba(255,241,214,.14);color:inherit;text-decoration:none;transition:color .2s,padding .25s}
+.mx-list a:hover{color:var(--mx-gold);padding-left:.5rem}
+.mx-fl{font:800 1.9rem/1 var(--display);color:var(--mx-mag)}
+.mx-list b{display:block;font:800 1.15rem var(--display);text-transform:uppercase;letter-spacing:-.01em}.mx-list small{display:block;color:rgba(255,241,214,.65);font-size:.9rem;margin-top:.2rem}
+.mx-split-r{position:relative;background:var(--mx-mag);display:grid;place-items:center;overflow:hidden;padding:3rem}
+.mx-split-r::before{content:"";position:absolute;inset:-20%;background:repeating-linear-gradient(115deg,transparent 0 3.5rem,rgba(255,255,255,.07) 3.5rem 7rem)}
+.mx-photo{position:relative;width:min(80%,30rem);aspect-ratio:4/5;border-radius:1.6rem;background:#000 center/cover;box-shadow:0 2.5rem 4rem -1.5rem rgba(60,0,30,.7);transform:rotate(-4deg)}
+.mx-sticker{position:absolute;right:clamp(1rem,6vw,4rem);bottom:clamp(1.5rem,8vh,5rem);width:9.5rem;height:9.5rem;border-radius:50%;display:grid;place-items:center;text-align:center;background:var(--mx-gold);color:var(--mx-ink);font:800 .95rem/1.15 var(--display);text-transform:uppercase;transform:rotate(12deg);box-shadow:0 1rem 2rem -1rem rgba(0,0,0,.5)}
+@media(max-width:860px){.mx-split{grid-template-columns:1fr}.mx-split-r{min-height:70vh}}
+/* пакеты на золоте */
+.mx-gold .offer{background:var(--mx-ink);border-color:transparent;color:var(--mx-cream)}
+.mx-gold .offer .ob{background:var(--mx-ink)}.mx-gold .offer p{color:rgba(255,241,214,.7)}
+.mx-gold .offer:hover{box-shadow:0 2rem 3rem -1.5rem rgba(90,50,0,.55)}
+/* ---------- коллаж ---------- */
+.mx-collage{background:var(--mx-ink);padding-bottom:clamp(4rem,9vw,8rem);overflow:hidden}
+.mx-marquee{display:flex;width:max-content;background:var(--mx-gold);color:var(--mx-ink);font:800 clamp(1.4rem,3vw,2.4rem)/1 var(--display);text-transform:uppercase;letter-spacing:-.02em;padding:1.1rem 0;margin-bottom:clamp(2.5rem,6vw,5rem);transform:rotate(-1.5deg);animation:mxMarq 32s linear infinite}
+.mx-marquee span{white-space:nowrap;padding-right:1rem}
+@keyframes mxMarq{to{transform:rotate(-1.5deg) translateX(-50%)}}
+.mx-grid{display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:clamp(9rem,16vw,15rem);gap:1rem}
+.mx-tile{position:relative;border-radius:1.4rem;background:#000 center/cover;overflow:hidden;color:var(--mx-cream);text-decoration:none;display:flex;align-items:flex-end;padding:1.1rem 1.2rem;transition:transform .35s var(--ease-out)}
+.mx-tile::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 45%,rgba(18,8,8,.8))}
+.mx-tile b{position:relative;z-index:1;font:800 1.1rem var(--display);text-transform:uppercase}
+.mx-tile:hover{transform:scale(.985)}
+.t1{grid-column:span 4;grid-row:span 2}.t2{grid-column:span 2}.t3{grid-column:span 2}.t4{grid-column:span 3}.t5{grid-column:span 3}
+.mx-tile-c{background:var(--mx-orange);align-items:center;justify-content:center}.mx-tile-c::after{display:none}
+.mx-tile-c .mx-h2{font-size:clamp(3rem,7vw,6rem);text-align:center;color:var(--mx-cream)}.mx-tile-c small{font-size:.32em;letter-spacing:.08em}
+@media(max-width:760px){.mx-grid{grid-template-columns:repeat(2,1fr);grid-auto-rows:9.5rem}.t1{grid-column:span 2;grid-row:span 2}.t2,.t3{grid-column:span 1}.t4,.t5{grid-column:span 2}}
+/* ---------- финальный призыв ---------- */
+.mx-cta{position:relative;overflow:hidden;background:var(--mx-orange);color:var(--mx-cream);min-height:90vh;display:grid;place-items:center;padding:6rem var(--gr) 5rem var(--gl);text-align:center}
+.mx-giant-sm{inset:0 0 30%;font-size:clamp(3rem,10.2vw,12rem);color:var(--mx-orange-d)}
+.mx-coin-sm{position:relative;width:min(30vmin,300px);margin:0 auto}
+.mx-coin.spin .mx-coin-in{animation:none}
+.mx-cta-in{position:relative;display:grid;gap:1.2rem;justify-items:center;margin-top:2rem}
+.mx-cta-in p{max-width:42ch;font-size:1.1rem;color:var(--mx-ink);font-weight:600;margin:0}
+/* ---------- новости ---------- */
+.mx-news{display:grid;grid-template-columns:1.1fr 1fr;min-height:70vh}
+.mx-news-l{background:var(--mx-gold);color:var(--mx-ink);padding:clamp(3.5rem,8vw,7rem) clamp(1.2rem,5vw,5rem);display:grid;align-content:center;gap:1.4rem}
+.mx-news-l p{max-width:44ch;font-size:1.08rem;margin:0}
+.mx-news-r{background:var(--mx-mag);display:grid;place-items:center;padding:3rem}
+.mx-news-r img{width:min(85%,30rem);height:auto;filter:drop-shadow(0 1.5rem 2rem rgba(60,0,30,.45))}
+@media(max-width:860px){.mx-news{grid-template-columns:1fr}.mx-news-r{min-height:40vh}}
+/* шахта и табло на чёрном */
+.mx-black .shaft .head h2{font-family:var(--display);text-transform:uppercase;font-size:clamp(2.8rem,8.6vw,8.2rem);line-height:.86;letter-spacing:-.035em}
+@media(prefers-reduced-motion:reduce){.mx-marquee{animation:none}}
+@media(max-width:760px){
+  .mx-h2,.mx-black .shaft .head h2{font-size:clamp(2rem,9.4vw,3.4rem)}
+  .mx-giant{inset:0 0 42vh;font-size:clamp(3rem,19vw,6rem)}
+  .mx-coinwrap{top:38%}
+  .mx-copy{bottom:5rem}
+  .mx-h1{font-size:clamp(1.8rem,8.4vw,2.6rem)}
+  .mx-giant-sm{inset:0 0 50%;font-size:clamp(2.4rem,11vw,4rem)}
+}
+@media(max-width:760px){.mx-coin{width:54vmin}.mx-coinwrap{top:33%}}

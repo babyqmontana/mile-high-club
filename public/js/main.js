@@ -207,19 +207,27 @@ function wireHome() {
 function renderHome() {
   const p = S.pub, s = p.settings, m = mode(), free = p.rooms.filter(r => r.status === 'free').length;
   const evs = p.events.filter(e => (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 12);
-  const latest = p.issues[0];
+  const latest = p.issues[0], atrium = m === 'day' ? s.heroDay : s.heroNight;
+  const roomFloors = [...new Set(p.rooms.map(r => r.floor))].sort((a, b) => a - b);
+  const pub = p.venues.filter(v => v.id !== 'yusuf');
+  const coin = (cls = '') => `<div class="mx-coin ${cls}" aria-hidden="true"><div class="mx-coin-in">${Array.from({ length: 14 }, (_, i) => `<i class="mx-edge" style="transform:translateZ(${i - 7}px)"></i>`).join('')}<img class="mx-face" src="img/medallion.webp" alt="" width="720" height="720"><div class="mx-back"><b>MHC</b><small>40 этажей · Лос-Сантос</small></div></div></div>`;
+  // 1. первый экран: монета-медальон крутится, при прокрутке раскрывает атриум
   const heroHtml = `
-  <section class="dive" id="dive"><div class="stick">
-    <div class="bg" style="background-image:url('${esc(m === 'day' ? s.heroDay : s.heroNight)}')"></div><canvas id="heroGl" aria-hidden="true"></canvas><canvas class="wxc" id="heroWx" aria-hidden="true"></canvas>
-    <div class="wrap dv dv1" id="dv1"><img class="logo" id="heroLogo" src="img/logo.webp?v=3" alt="${esc(s.hotelName)}" width="500" height="300">
-      <h1>${nowrapHyphens(esc(s.tagline || 'Отель над Лос-Сантосом'))}. <span class="serif">${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</span></h1>
-      <div class="row"><a class="btn" href="#stay">Забронировать номер</a><a class="btn ghost" href="#leisure">Что сейчас открыто</a></div></div>
-    <div class="wrap dv dv2" id="dv2"><span class="eyebrow">Вы в атриуме</span><h2>Сорок этажей стекла, латуни и неона</h2><p>Лифт поднимет в номера с 20 этажа, бассейны ждут на 38 и 40, Le Ciel на 30.</p><div class="row"><a class="btn" href="#stay">Выбрать номер</a><a class="btn ghost" href="#cigars">Сигарный клуб</a></div></div>
-    <span class="hint" id="dvHint">Листайте, чтобы войти</span>
-  </div></section>
-`;
+  <section class="mx-hero" id="mxHero" aria-label="${esc(s.hotelName)}">
+    <div class="mx-stick">
+      <div class="mx-giant" aria-hidden="true"><span>Mile High</span><span>Club</span></div>
+      <div class="mx-reveal" id="mxReveal" style="background-image:url('${esc(atrium)}')"></div>
+      <div class="mx-coinwrap" id="mxCoin">${coin()}</div>
+      <div class="mx-copy" id="mxCopy1"><h1 class="mx-h1">${nowrapHyphens(esc(s.tagline || 'Отель над Лос-Сантосом'))}. <em>${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</em></h1>
+        <div class="row"><a class="btn mx-dark" href="#stay">Забронировать номер</a><a class="btn mx-line" href="#leisure">Что сейчас открыто</a></div></div>
+      <div class="mx-copy2" id="mxCopy2"><span class="mx-tag">Вы в атриуме</span><h2 class="mx-h2">40 этажей<br>над городом</h2>
+        <dl class="mx-stats"><div><dt>${p.rooms.length}</dt><dd>${plural(p.rooms.length, 'номер', 'номера', 'номеров')} на ${roomFloors.length ? `${roomFloors[0]}–${roomFloors.at(-1)}` : ''} этажах</dd></div><div><dt>${free}</dt><dd>свободно прямо сейчас</dd></div><div><dt>${pub.length}</dt><dd>${plural(pub.length, 'площадка', 'площадки', 'площадок')}: бассейны, клуб, ресторан</dd></div></dl>
+        <div class="row"><a class="btn" href="#stay">Выбрать номер</a></div></div>
+      <span class="mx-hint" id="mxHint">Листайте вниз</span>
+    </div>
+  </section>`;
   const restHtml = `
-  <div class="wrap">
+  <section class="mx-band mx-black" aria-label="Табло отеля"><div class="wrap">
     <section class="fboard" aria-label="Табло отеля">
       <div class="fb-head"><span class="eyebrow">Табло отеля</span><span class="fb-live"><span class="d"></span>Обновляется вживую</span></div>
       <div class="fb-rows">
@@ -229,49 +237,83 @@ function renderHome() {
       <div class="fb-row" data-st="clock"><span class="fb-k">Время в отеле</span><span class="fb-v" id="clock">${flap('clock', hhmm(Date.now()))}</span><span class="fb-s" id="wxTile">${wxNow ? '' : (m === 'day' ? 'День' : 'Ночь')}</span></div>
       </div>
     </section>
-  </div>
-  <div class="wrap sec">
-    <div class="row reveal" style="justify-content:space-between;margin-bottom:1.2rem"><div class="head" style="margin:0"><span class="eyebrow">Афиша</span><h2>События отеля</h2></div>${s.discordInvite ? `<a class="btn ghost sm" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} События в Discord</a>` : ''}</div>
-    ${evs.length ? `<div class="events reveal">${evs.map(evCard).join('')}</div>` : `<div class="empty-x reveal"><span class="ex-i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><div><b>Афиша пока пустая</b><p>События появляются здесь сразу после анонса на сервере.</p></div></div>`}
-  </div>
-  ${(p.offers || []).length ? `<div class="wrap sec" style="padding-top:0">
-    <div class="head reveal"><span class="eyebrow">Предложения</span><h2>Пакеты отеля</h2></div>
+  </div></section>
+  <section class="mx-split" aria-label="Что внутри">
+    <div class="mx-split-l"><span class="mx-tag">Внутри отеля</span><h2 class="mx-h2">Не просто<br>номер.</h2>
+      <ul class="mx-list">${pub.map(v => `<li><a href="#${venueRoute(v)}" data-venue="${esc(v.id)}"><span class="mx-fl num">${esc((String(v.floor || '').match(/\d+/) || ['A'])[0])}</span><span><b>${esc(v.name)}</b><small>${esc(v.desc || '')}</small></span></a></li>`).join('')}</ul></div>
+    <div class="mx-split-r"><div class="mx-photo" style="background-image:url('img/reception.webp')"></div><span class="mx-sticker">${p.rooms.length} ${plural(p.rooms.length, 'номер', 'номера', 'номеров')}<br>над городом</span></div>
+  </section>
+  ${(p.offers || []).length ? `<section class="mx-band mx-gold"><div class="wrap">
+    <div class="mx-head"><span class="mx-tag">Предложения</span><h2 class="mx-h2">Пакеты<br>отеля</h2></div>
     <div class="offers">${p.offers.map(o => `<a class="offer reveal${o.image ? '' : ' noimg'}" href="${esc(o.link || '#stay')}">${o.image ? `<div ${bg(o.image, '', '#F0177A', '#F7B50A', 'img')}></div>` : `<div class="img tp" aria-hidden="true"><span>${esc(o.tag || 'Mile High Club')}</span></div>`}<div class="ob"><span class="tag">${esc(o.tag || '')}</span><h3>${esc(o.title)}</h3><p>${esc(o.desc || '')}</p><div class="row" style="justify-content:space-between;margin-top:auto"><b class="num">${esc(o.price || '')}</b><span class="lnk">${esc(o.cta || 'Подробнее')} ${I.arrow}</span></div></div></a>`).join('')}</div>
-  </div>` : ''}
-  ${p.reviews?.count ? `<div class="wrap sec" style="padding-top:0">
-    <div class="row reveal" style="justify-content:space-between;align-items:flex-end;margin-bottom:1.2rem"><div class="head" style="margin:0"><span class="eyebrow">Отзывы гостей</span><h2>Что говорят гости</h2></div><div class="rv-sum"><b class="num">${p.reviews.avg.toFixed(1)}</b>${stars(Math.round(p.reviews.avg))}<span class="note">${p.reviews.count} ${plural(p.reviews.count, 'отзыв', 'отзыва', 'отзывов')}</span></div></div>
+  </div></section>` : ''}
+  <section class="mx-band mx-black"><div class="wrap">
+    <div class="row" style="justify-content:space-between;align-items:flex-end;gap:1rem;margin-bottom:2rem"><div class="mx-head" style="margin:0"><span class="mx-tag">Афиша</span><h2 class="mx-h2">События<br>отеля</h2></div>${s.discordInvite ? `<a class="btn ghost sm" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} События в Discord</a>` : ''}</div>
+    ${evs.length ? `<div class="events reveal">${evs.map(evCard).join('')}</div>` : `<div class="empty-x reveal"><span class="ex-i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><div><b>Афиша пока пустая</b><p>События появляются здесь сразу после анонса на сервере.</p></div></div>`}
+  </div></section>
+  <section class="mx-collage" aria-label="Отель в кадрах">
+    <div class="mx-marquee" aria-hidden="true"><span>Спать · Ужинать · Плавать · Танцевать · Курить сигары · Читать журнал · </span><span>Спать · Ужинать · Плавать · Танцевать · Курить сигары · Читать журнал · </span></div>
+    <div class="wrap mx-grid">
+      <a class="mx-tile t1" href="#stay" style="background-image:url('${esc(atrium)}')"><b>Атриум</b></a>
+      <a class="mx-tile t2" href="#dining" style="background-image:url('img/reception.webp')"><b>Ресепшен</b></a>
+      <a class="mx-tile t3" href="#cigars" style="background-image:url('img/library.webp')"><b>Библиотека</b></a>
+      ${latest ? `<a class="mx-tile t4" href="#issue-${esc(latest.id)}" style="background-image:url('${esc(latest.cover || (latest.pages || []).find(x => x.image)?.image || 'img/journal/p1.webp')}')"><b>Журнал «${esc(latest.title)}»</b></a>` : ''}
+      <a class="mx-tile t5 mx-tile-c" href="#leisure"><span class="mx-h2">${pub.filter(v => /pool|бассейн/i.test(v.name + v.kind + v.id)).length || 2}<br><small>бассейна</small></span></a>
+    </div>
+  </section>
+  ${p.reviews?.count ? `<section class="mx-band mx-magenta"><div class="wrap">
+    <div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:2rem"><div class="mx-head" style="margin:0"><span class="mx-tag">Отзывы гостей</span><h2 class="mx-h2">Что говорят<br>гости</h2></div><div class="rv-sum"><b class="num">${p.reviews.avg.toFixed(1)}</b>${stars(Math.round(p.reviews.avg))}<span class="note">${p.reviews.count} ${plural(p.reviews.count, 'отзыв', 'отзыва', 'отзывов')}</span></div></div>
     <div class="reviews">${p.reviews.list.map(r => `<figure class="rv reveal">${stars(r.stars)}<blockquote>${esc(r.text)}</blockquote><figcaption><b>${esc(r.name)}</b><span class="note">${esc(r.typeName || '')} · ${new Date(r.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span></figcaption>${r.reply ? `<div class="rv-reply"><span class="lbl">Ответ отеля</span>${esc(r.reply)}</div>` : ''}</figure>`).join('')}</div>
-  </div>` : ''}
-  <div class="wrap sec" style="padding-top:0">${shaftHtml(p, latest)}</div>
-  <div class="wrap"><section class="cta-band reveal" aria-label="Бронь номера"><span class="eyebrow">Номера с 20 по 26 этаж</span><h2>Ваш номер <em>над городом</em> уже ждёт</h2><p>${free ? `Свободно ${free} из ${p.rooms.length}. Бронь занимает минуту, подтверждение приходит в Discord.` : 'Сейчас все номера заняты. Оставьте заявку, и управляющие предложат ближайшую дату.'}</p><div class="row"><a class="btn lg" href="${free ? '#stay' : '#contact'}">${free ? 'Выбрать номер' : 'Оставить заявку'}</a><a class="btn ghost lg" href="#contact">Написать управляющим</a></div></section></div>
-  <div class="wrap" style="padding-bottom:4rem"><div class="dc reveal">
-    <div class="stack"><span class="eyebrow">Discord</span><h3 style="font-size:clamp(1.4rem,3vw,2.2rem)">Всё главное на сайте. В Discord общаемся.</h3><p class="mut">Бронь, заявки, меню и журнал живут здесь. На сервере — анонсы, события и бот, который показывает свободные номера.</p>
-      <div class="row">${s.discordInvite ? `<a class="btn discord" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} Зайти на сервер</a>` : ''}<a class="btn ghost" href="#contact">Оставить заявку</a></div></div>
-  </div></div>`;
-  const key = m + '|' + (m === 'day' ? s.heroDay : s.heroNight) + '|' + s.tagline;
+  </div></section>` : ''}
+  <section class="mx-band mx-black"><div class="wrap">${shaftHtml(p, latest)}</div></section>
+  <section class="mx-cta" aria-label="Бронь номера">
+    <div class="mx-giant mx-giant-sm" aria-hidden="true"><span>Забронируй</span><span>ночь</span></div>
+    ${coin('mx-coin-sm spin')}
+    <div class="mx-cta-in"><p>${free ? `Свободно ${free} из ${p.rooms.length}. Бронь занимает минуту, подтверждение приходит в Discord.` : 'Сейчас все номера заняты. Оставьте заявку — управляющие предложат ближайшую дату.'}</p>
+      <div class="row"><a class="btn mx-dark lg" href="${free ? '#stay' : '#contact'}">${free ? 'Выбрать номер' : 'Оставить заявку'}</a><a class="btn mx-line lg" href="#contact">Написать управляющим</a></div></div>
+  </section>
+  <section class="mx-news" aria-label="Discord">
+    <div class="mx-news-l"><h2 class="mx-h2">Новости отеля<br>первыми</h2><p>Анонсы, события и бот со свободными номерами — на сервере Discord. Бронь, заявки и меню живут здесь, на сайте.</p>
+      <div class="row">${s.discordInvite ? `<a class="btn mx-dark" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} Зайти на сервер</a>` : ''}<a class="btn mx-line" href="#contact">Оставить заявку</a></div></div>
+    <div class="mx-news-r"><img src="img/logo.webp?v=3" alt="" width="700" height="420" loading="lazy"></div>
+  </section>`;
+  const key = m + '|' + atrium + '|' + s.tagline + '|' + p.rooms.length + '|' + free + '|' + pub.length;
   const v = view('home');
-  if (v.dataset.key === key && $('#homeRest')) { $('#homeRest').innerHTML = restHtml; wireHome(); reveal(v); applyWeather(); return; }
-  // старый атриум и его погода отдают GPU и обработчики до того, как появится новый
+  if (v.dataset.key === key && $('#homeRest')) { $('#homeRest').innerHTML = restHtml; wireHome(); reveal(v); applyWeather(); mxScroll(); return; }
   mods.hero?.destroy?.(); mods.hero = null; mods.heroWx?.destroy?.(); mods.heroWx = null;
   v.dataset.key = key; v.innerHTML = heroHtml + '<div id="homeRest">' + restHtml + '</div>'; wireHome();
-  mods.heroWx = mountWeather($('#heroWx'), { strength: 1.5 }); if (wxNow) mods.heroWx.set(wxNow.kind, m === 'day');
-  const logo = $('#heroLogo'), hero = $('#dive');
-  hero.onpointermove = e => { const r = hero.getBoundingClientRect(); logo.style.setProperty('--ry', ((e.clientX - r.left) / r.width - .5) * 16 + 'deg'); logo.style.setProperty('--rx', -((e.clientY - r.top) / innerHeight - .5) * 12 + 'deg'); };
-  hero.onpointerleave = () => { logo.style.setProperty('--ry', '0deg'); logo.style.setProperty('--rx', '0deg'); };
-  const dv1 = $('#dv1'), dv2 = $('#dv2'), hint = $('#dvHint');
-  const setP = p => { dv1.style.opacity = Math.max(0, 1 - p * 2.6); dv1.style.transform = `translateY(${-p * 80}px)`; dv1.style.pointerEvents = p > .3 ? 'none' : ''; const q = Math.min(1, Math.max(0, (p - .55) / .3)); dv2.style.opacity = q; dv2.style.transform = `translateY(${(1 - q) * 30}px)`; dv2.style.pointerEvents = q > .5 ? '' : 'none'; hint.style.opacity = Math.max(0, 1 - p * 5); };
-  setP(0);
-  magnet($('#dv1 .btn:not(.ghost)'));
-  const heroCanvas = $('#heroGl');
-  // Без 3D (меньше анимации, нет WebGL, сцена не создалась) атриум статичен и оба его экрана видны сразу.
-  // Раньше второй экран показывал только 3D-модуль, и без него текст с кнопками оставался невидимым.
-  const goStatic = () => { if (!hero.isConnected) return; hero.classList.add('static'); [dv1, dv2, hint].forEach(d => d.removeAttribute('style')); };
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !hasWebGL()) goStatic();
-  else import('./hero3d.js').then(mod => {
-    if (!heroCanvas.isConnected || mods.hero) return; // пока модуль грузился, главную уже пересобрали
-    const h = mod.mountHero(heroCanvas, hero); if (!h) return goStatic(); mods.hero = h; const url = m === 'day' ? s.heroDay : s.heroNight; h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => { console.warn('hero', e); goStatic(); });
-  applyWeather();
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) $('#mxHero').classList.add('static');
+  mxStart(); applyWeather();
 }
+// Первый экран: прокрутка ведёт монету-медальон. 0–0.3: монета вращается, текст на месте;
+// 0.3–0.7: монета растёт, сквозь неё раскрывается атриум; 0.7–1: атриум и цифры отеля.
+let mxRaf = 0, mxOn = false;
+const mxEase = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const mxLin = (x, a, b) => Math.min(1, Math.max(0, (x - a) / (b - a)));
+function mxScroll() {
+  const h = $('#mxHero'); if (!h || h.classList.contains('static')) return;
+  const r = h.getBoundingClientRect(), p = Math.min(1, Math.max(0, -r.top / Math.max(1, r.height - innerHeight)));
+  const grow = mxEase(mxLin(p, .28, .72)), c1 = 1 - mxLin(p, .08, .3), c2 = mxEase(mxLin(p, .7, .9));
+  const vmin = Math.min(innerWidth, innerHeight), coinR = Math.min(vmin * .23, 260);
+  h.style.setProperty('--p', p.toFixed(4));
+  $('#mxCoin').style.transform = `translate(-50%,-50%) scale(${1 + grow * 5})`;
+  $('#mxCoin').style.opacity = String(1 - mxLin(p, .3, .4));
+  const cr = $('#mxCoin').getBoundingClientRect(); $('#mxReveal').style.clipPath = `circle(${(cr.width / 2).toFixed(1)}px at ${(cr.left + cr.width / 2).toFixed(1)}px ${(cr.top + cr.height / 2).toFixed(1)}px)`;
+  $('#mxReveal').style.opacity = String(mxLin(p, .26, .32));
+  $('#mxCopy1').style.opacity = String(c1); $('#mxCopy1').style.transform = `translateY(${(1 - c1) * -40}px)`; $('#mxCopy1').style.pointerEvents = c1 < .3 ? 'none' : '';
+  $('#mxCopy2').style.opacity = String(c2); $('#mxCopy2').style.transform = `translateY(${(1 - c2) * 40}px)`; $('#mxCopy2').style.pointerEvents = c2 > .5 ? '' : 'none';
+  $('#mxHint').style.opacity = String(1 - mxLin(p, 0, .08));
+  h.querySelector('.mx-giant').style.transform = `translateY(${p * -12}vh) scale(${1 + p * .15})`;
+}
+function mxTick(t) {
+  mxRaf = 0; if (current !== 'home' || !$('#mxHero')) { mxOn = false; return; }
+  const h = $('#mxHero'), p = +(h.style.getPropertyValue('--p') || 0), still = h.classList.contains('static');
+  $$('.mx-coin-in').forEach((c, i) => { c.style.transform = still ? 'rotateY(-18deg) rotateX(8deg)' : `rotateX(${8 + Math.sin(t / 1400 + i) * 6}deg) rotateY(${(t / 22 + p * 900 + i * 90) % 360}deg)`; });
+  if (!still) mxRaf = requestAnimationFrame(mxTick); else mxOn = false;
+}
+function mxStart() { mxScroll(); if (!mxOn) { mxOn = true; mxRaf = requestAnimationFrame(mxTick); } }
+addEventListener('scroll', () => { if (current === 'home') { mxScroll(); if (!mxOn) mxStart(); } }, { passive: true });
+addEventListener('resize', () => { if (current === 'home') mxScroll(); });
 // предзагрузка слоёв главной картинки (те же правила, что в hero3d.layersFor)
 function heroLayers(url) { const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); return m ? Promise.all(['-far.webp', '-mask.webp'].map(x => preload('img/layers/' + m[1] + x))) : null; }
 // слова через дефис («Лос-Сантос») не разрываются переносом; на вход — уже экранированный текст

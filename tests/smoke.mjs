@@ -98,8 +98,8 @@ try {
     const np = await nb.newPage({ viewport: { width: 1280, height: 800 } }); const nerr = watch(np); const reqs = [];
     np.on('request', r => reqs.push(r.url()));
     await np.goto(BASE + '/#home'); await ready(np); await np.waitForTimeout(1200);
-    const home = await np.evaluate(() => ({ gl: !!document.createElement('canvas').getContext('webgl'), dv2: getComputedStyle(document.querySelector('#dv2')).opacity, static: document.querySelector('#dive').classList.contains('static') }));
-    check('без WebGL: атриум статичный, второй экран виден', !home.gl && home.static && home.dv2 === '1', JSON.stringify(home));
+    const home = await np.evaluate(() => ({ gl: !!document.createElement('canvas').getContext('webgl'), hero: !!document.querySelector('#mxHero'), title: getComputedStyle(document.querySelector('#mxCopy1')).opacity, cta: !!document.querySelector('#mxCopy1 a[href="#stay"]') }));
+    check('без WebGL: главная работает, заголовок и бронь видны', !home.gl && home.hero && home.title === '1' && home.cta, JSON.stringify(home));
     await np.evaluate(() => { location.hash = '#stay'; }); await np.waitForSelector('.facade .ff', { timeout: 8000 });
     const target = await np.$$eval('.facade .ff', bs => bs.at(-1).dataset.f);
     await np.click(`.facade .ff[data-f="${target}"]`); await np.waitForTimeout(1200);
