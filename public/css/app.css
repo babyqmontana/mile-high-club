@@ -1096,3 +1096,7 @@ footer .credits .ooc b{font:700 .6rem var(--body);letter-spacing:.12em;padding:.
 .mechat{margin-top:.6rem}.mechat .msgs{max-height:22rem}
 #navUser{position:relative}
 #navUser.unread::after{content:"";position:absolute;top:.1rem;right:.1rem;width:.6rem;height:.6rem;border-radius:50%;background:var(--pink);box-shadow:0 0 0 2px var(--bg);pointer-events:none}
+
+/* профиль LifeX в кабинете */
+.lx-card{display:grid;gap:.6rem;padding:.8rem .9rem;border:1px solid var(--line2);border-radius:var(--r2,.9rem);background:var(--bg2)}
+.lx-ava{width:3rem;height:3rem;border-radius:50%;object-fit:cover;flex:none;display:grid;place-items:center;background:var(--card2);font-weight:700;border:2px solid color-mix(in srgb,var(--pink) 55%,transparent)}

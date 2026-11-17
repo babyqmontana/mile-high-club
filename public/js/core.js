@@ -134,7 +134,7 @@ export function createCore(store, hooks = {}) {
     const from = ownerOf(null, guestKey), to = ownerOf(user); let moved = 0;
     for (const c of ['bookings', 'orders', 'tickets']) store.all(c).filter(d => d.owner === from).forEach(d => { store.put(c, d.id, { ...d, owner: to, discordId: d.discordId || user.id }); moved++; });
     const gp = profileOf(from);
-    if (gp) { const up = profileOf(to) || { id: to }; store.put('profiles', to, { ...gp, ...Object.fromEntries(Object.entries(up).filter(([, v]) => v !== '' && v != null)), id: to, achievements: [...new Set([...(gp.achievements || []), ...(up.achievements || [])])].slice(0, 40), updatedAt: Date.now() }); store.del('profiles', from); }
+    if (gp) { const up = profileOf(to) || { id: to }; store.put('profiles', to, { ...gp, ...Object.fromEntries(Object.entries(up).filter(([, v]) => v !== '' && v != null)), lifex: up.lifex || gp.lifex, id: to, achievements: [...new Set([...(gp.achievements || []), ...(up.achievements || [])])].slice(0, 40), updatedAt: Date.now() }); store.del('profiles', from); }
     if (moved) emit(['bookings', 'orders', 'tickets']);
     return { moved };
   });
@@ -152,6 +152,19 @@ export function createCore(store, hooks = {}) {
     const achievements = [...new Set([...(prev.achievements || []), ...ids])].slice(0, 40);
     if (achievements.length !== (prev.achievements || []).length) store.put('profiles', o, { ...prev, achievements, updatedAt: Date.now() });
     return { achievements };
+  });
+  // LifeX: привязанный профиль игровой соцсети. Имя и телефон заполняют пустые поля профиля гостя, аватар заменяет фото
+  function linkLifex(owner, lx) {
+    if (!owner) return;
+    const prev = profileOf(owner) || { id: owner, dm: true, achievements: [] }, old = prev.lifex?.avatar;
+    const lifex = { id: str(lx.id, 64), username: str(lx.username, 40), name: str(lx.name, 60), bio: str(lx.bio, 300), url: /^https:\/\//.test(lx.url || '') ? str(lx.url, 300) : '', avatar: /^\/uploads\/lx-/.test(lx.avatar || '') ? lx.avatar : '', linkedAt: Date.now() };
+    store.put('profiles', owner, { ...prev, id: owner, name: prev.name || lifex.name, phone: prev.phone || str(lx.phone, 20), lifex, updatedAt: Date.now() });
+    if (old && old !== lifex.avatar) call('removeUpload', old);
+  }
+  on('DELETE', '/me/lifex', ({ user, guestKey }) => {
+    const o = ownerOf(user, guestKey), prev = profileOf(o); if (!prev?.lifex) return { profile: prev };
+    const { lifex, ...rest } = prev; store.put('profiles', o, { ...rest, updatedAt: Date.now() }); call('removeUpload', lifex.avatar);
+    return { profile: profileOf(o) };
   });
   const myBooking = (id, user, guestKey) => { const b = store.get('bookings', id); if (!b || !isOwner(b, user, guestKey)) throw new HttpError(404, 'Бронь не найдена'); return b; };
   const freeRoomOf = b => { const r = b.room && store.get('rooms', b.room); if (r && (!r.bookingId || r.bookingId === b.id) && r.status === 'booked') { store.put('rooms', r.id, { ...r, status: 'free', guest: null, discord: null, bookingId: null, updatedAt: Date.now() }); return true; } return false; };
@@ -189,7 +202,7 @@ export function createCore(store, hooks = {}) {
     for (const d of [...bookings.map(b => 'b:' + b.id), ...orders.map(o => 'o:' + o.id), ...tickets.map(t => 't:' + t.id)]) call('dropCard', d);
     const marks = [...bookings.map(b => b.code), ...tickets.map(t => `от ${t.discord}`), ...tickets.map(t => `обращение ${t.discord}`)].filter(x => x && x.length > 3);
     store.all('log').filter(l => marks.some(m => String(l.text).includes(m))).forEach(l => store.del('log', l.id));
-    owners.forEach(o => store.del('profiles', o));
+    owners.forEach(o => { const pr = profileOf(o); if (pr?.lifex?.avatar) call('removeUpload', pr.lifex.avatar); store.del('profiles', o); });
     emit(['bookings', 'orders', 'tickets', 'log']); if (rooms) roomsChanged();
     return { deleted: { bookings: bookings.length, orders: orders.length, tickets: tickets.length } };
   });
@@ -447,7 +460,7 @@ export function createCore(store, hooks = {}) {
   function ticketMessage(id, m) { const t = store.get('tickets', id); if (!t) return; t.messages.push(m); if (t.messages.length > 300) t.messages = t.messages.slice(-300); t.lastAt = m.at; t.lastFrom = m.from; store.put('tickets', t.id, t); emit(['tickets']); call('notify', 'ticket_update', t); }
   function removeEvent(id) { if (!store.get('events', id)) return; store.del('events', id); emit(['events']); }
 
-  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store };
+  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store, linkLifex };
 }
 
 /* ---------- стартовые данные ---------- */
