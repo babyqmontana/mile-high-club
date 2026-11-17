@@ -1,5 +1,5 @@
 import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, confirmBox, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL, magnet } from './ui.js';
-import { api, subscribe, authConfig, login, logout, DEMO, pref, guestKey } from './api.js';
+import { api, subscribe, authConfig, login, logout, DEMO, pref, guestKey, demoLifex } from './api.js';
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
 import { unlock, burst, openCabinet, count as achCount, LIST as ACH, onChange as onAch, ids as achIds, merge as achMerge } from './achievements.js';
@@ -862,14 +862,15 @@ function meChat(t) {
 let lxOn = null, lxN = 0;
 const lxMark = () => { const id = 'lxg' + (++lxN); return `<svg class="lx-mark" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2=".55" y2="1"><stop offset="0" stop-color="#9b06f4"/><stop offset=".42" stop-color="#ef05b1"/><stop offset=".76" stop-color="#fb5831"/><stop offset="1" stop-color="#fc9201"/></linearGradient></defs><rect width="24" height="24" rx="6.5" fill="url(#${id})"/><path d="M7.6 6.6l8.8 10.8M16.4 6.6l-8.8 10.8" stroke="#fff" stroke-width="3.1" stroke-linecap="round"/></svg>`; };
 function lifexBlock(p) {
-  const lx = p.lifex, link = `/auth/lifex?gk=${encodeURIComponent(guestKey)}`;
+  const lx = p.lifex, link = DEMO ? '#me' : `/auth/lifex?gk=${encodeURIComponent(guestKey)}`, demo = DEMO ? ' data-lxdemo' : '';
   if (lx) return `<div class="lx-card"><div class="row" style="gap:.8rem;flex-wrap:nowrap;align-items:center">${lx.avatar ? `<img class="lx-ava" src="${esc(lx.avatar)}" alt="">` : `<span class="lx-ava">${esc((lx.name || '?')[0])}</span>`}<div style="min-width:0"><b>${esc(lx.name || lx.username)}</b>${lx.username ? `<div class="note">@${esc(lx.username)}</div>` : ''}</div><span class="lx-tag">${lxMark()}LifeX</span></div>
-    ${lx.bio ? `<p class="note" style="margin:0">${esc(lx.bio)}</p>` : ''}<div class="row" style="gap:.4rem">${lx.url ? `<a class="btn sm lifex" href="${esc(lx.url)}" target="_blank" rel="noopener">${lxMark()}Открыть в LifeX</a>` : ''}<a class="btn sm ghost" href="${link}">Обновить из LifeX</a><button type="button" class="btn sm ghost danger-t" id="lxOff">Отвязать</button></div></div>`;
-  return lxOn ? `<div class="lx-card"><div class="row" style="gap:.6rem;flex-wrap:nowrap;align-items:center">${lxMark()}<b>Профиль LifeX</b></div><p class="note" style="margin:0">Привяжите профиль из игровой соцсети: фото станет вашим аватаром на сайте, имя персонажа и телефон подставятся в профиль.</p><div><a class="btn sm lifex" href="${link}">${lxMark()}Привязать LifeX</a></div></div>` : '';
+    ${lx.bio ? `<p class="note" style="margin:0">${esc(lx.bio)}</p>` : ''}<div class="row" style="gap:.4rem">${lx.url ? `<a class="btn sm lifex" href="${esc(lx.url)}" target="_blank" rel="noopener">${lxMark()}Открыть в LifeX</a>` : ''}<a class="btn sm ghost" href="${link}"${demo}>Обновить из LifeX</a><button type="button" class="btn sm ghost danger-t" id="lxOff">Отвязать</button></div></div>`;
+  return lxOn ? `<div class="lx-card"><div class="row" style="gap:.6rem;flex-wrap:nowrap;align-items:center">${lxMark()}<b>Профиль LifeX</b></div><p class="note" style="margin:0">Привяжите профиль из игровой соцсети: фото станет вашим аватаром на сайте, имя персонажа и телефон подставятся в профиль.</p>${DEMO ? '<p class="note" style="margin:0">Демо-версия: привяжется пример профиля, без входа в настоящий LifeX.</p>' : ''}<div><a class="btn sm lifex" href="${link}"${demo}>${lxMark()}Привязать LifeX</a></div></div>` : '';
 }
 let meTicket = null;
 function renderMe() {
-  if (lxOn === null && !DEMO) { lxOn = false; authConfig().then(c => { lxOn = !!c.lifex; if (lxOn && current === 'me') renderMe(); }); }
+  if (DEMO) lxOn = true;
+  if (lxOn === null) { lxOn = false; authConfig().then(c => { lxOn = !!c.lifex; if (lxOn && current === 'me') renderMe(); }); }
   const it = S.items, u = S.me, p = it.profile || {}, st = it.stats || { nights: 0, stays: 0 };
   const chatT = it.tickets.find(t => t.id === meTicket && t.mode === 'site') || null;
   const draft = $('#meChatIn')?.value || '', focused = $('#meChatIn') === document.activeElement;
@@ -920,6 +921,7 @@ function renderMe() {
   $('#meProf').onsubmit = async e => { e.preventDefault();
     try { await api('PUT', '/me/profile', { name: $('#pfName').value, phone: $('#pfPhone').value, note: $('#pfNote').value, dm: $('#pfDm').checked }); play('soft'); reload('Профиль сохранён'); } catch (err) { fail(err); } };
   $('#meAch').onclick = () => openCabinet();
+  $$('#main [data-lxdemo]').forEach(a => a.onclick = async e => { e.preventDefault(); await demoLifex(); await loadItems(); toast('Демо: привязан пример профиля LifeX'); });
   $('#lxOff') && ($('#lxOff').onclick = async () => { if (!await confirmBox('Отвязать LifeX?', 'Фото из LifeX уберём, имя и телефон в профиле останутся.', 'Отвязать')) return; try { await api('DELETE', '/me/lifex'); reload('Профиль LifeX отвязан'); } catch (e) { fail(e); } });
   $('#meDel').onclick = async () => {
     const ok = await modal(`<h3>Удалить мои данные?</h3><p class="mut">Удалятся брони, заказы в номер, заявки с перепиской и профиль. Действующие брони будут отменены, тикет-каналы в Discord закроются без сохранения. Вернуть данные нельзя.</p><label class="field"><span>Для подтверждения введите УДАЛИТЬ</span><input id="delIn" autocomplete="off" placeholder="УДАЛИТЬ"></label><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Отмена</button><button class="btn danger" id="delGo" disabled>Удалить</button></div>`, { onMount: (box, close) => { const inp = box.querySelector('#delIn'), go = box.querySelector('#delGo'); inp.oninput = () => go.disabled = inp.value.trim() !== 'УДАЛИТЬ'; go.onclick = () => close(inp.value.trim()); } });
