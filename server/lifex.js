@@ -61,7 +61,7 @@ export function mountLifex(app, { env, core, setCookie, encode, decode, cookies,
   app.get('/auth/lifex', async (req, res) => {
     if (!on) return back(res, 'off');
     const user = await currentUser(req, res).catch(() => null), gk = str(req.query.gk, 64);
-    const owner = user ? 'd:' + user.id : /^[a-z0-9]{8,64}$/i.test(gk) ? 'g:' + gk : null;
+    const owner = user ? 'd:' + user.id : /^[\w.-]{8,64}$/.test(gk) ? 'g:' + gk : null;
     if (!owner) return back(res, 'owner');
     const state = b64url(crypto.randomBytes(16)), verifier = b64url(crypto.randomBytes(48));
     const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
