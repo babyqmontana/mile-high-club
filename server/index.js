@@ -138,10 +138,11 @@ app.post('/auth/logout', (req, res) => { setCookie(res, 'mhc_s', '', 0); res.jso
 
 /* ---- загрузка картинок ---- */
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 40, fields: 10, parts: 60 } });
-const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'model/gltf-binary': 'glb', 'application/octet-stream': 'glb' };
+const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'model/gltf-binary': 'glb', 'application/octet-stream': 'glb', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'm4a' };
 // тип файла проверяется по содержимому, а не по тому, что прислал браузер
 const MAGIC = { jpg: b => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff, png: b => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
-  webp: b => b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP', gif: b => /^GIF8[79]a$/.test(b.toString('latin1', 0, 6)), glb: b => b.toString('latin1', 0, 4) === 'glTF' };
+  webp: b => b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP', gif: b => /^GIF8[79]a$/.test(b.toString('latin1', 0, 6)), glb: b => b.toString('latin1', 0, 4) === 'glTF',
+  mp3: b => b.toString('latin1', 0, 3) === 'ID3' || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0), ogg: b => b.toString('latin1', 0, 4) === 'OggS', m4a: b => b.toString('latin1', 4, 8) === 'ftyp' };
 // права проверяются ДО приёма файлов: иначе любой мог бы прислать сотни мегабайт в память сервера
 const staffOnly = async (req, res, next) => { try { const user = await currentUser(req, res); if (!user || !['admin', 'mod'].includes(user.role)) return res.status(403).json({ error: 'Нужен вход персонала' }); req.user = user; next(); } catch (e) { next(e); } };
 let uploading = 0;
@@ -150,9 +151,9 @@ app.post('/api/admin/upload', staffOnly, uploadSlot, (req, res, next) => upload.
   const user = req.user;
   const out = [];
   for (const f of req.files || []) {
-    const isGlb = /\.glb$/i.test(f.originalname);
-    const ext = isGlb ? 'glb' : EXT[f.mimetype]; if (!ext || (ext === 'glb' && !isGlb) || !MAGIC[ext]?.(f.buffer)) continue;
-    if (isGlb && user.role !== 'admin') continue;
+    const isGlb = /\.glb$/i.test(f.originalname), am = /\.(mp3|ogg|m4a)$/i.exec(f.originalname);
+    const ext = isGlb ? 'glb' : am ? am[1].toLowerCase() : EXT[f.mimetype]; if (!ext || (ext === 'glb' && !isGlb) || !MAGIC[ext]?.(f.buffer)) continue;
+    if ((isGlb || am) && user.role !== 'admin') continue;
     const id = crypto.randomBytes(8).toString('hex'), name = `${id}.${ext}`;
     fs.writeFileSync(path.join(UPLOADS, name), f.buffer);
     const doc = { id, url: '/uploads/' + name, name: String(f.originalname).slice(0, 80), size: f.size, at: Date.now() };
@@ -179,6 +180,11 @@ setInterval(() => { for (const r of clients) r.write(': ping\n\n'); }, 25000).un
 const hits = new Map();
 const limited = (ip) => { const now = Date.now(), h = (hits.get(ip) || []).filter(t => t > now - 60e3); h.push(now); hits.set(ip, h); return h.length > 40; };
 setInterval(() => { const old = Date.now() - 60e3; for (const [ip, h] of hits) if (!h.length || h[h.length - 1] < old) hits.delete(ip); }, 60e3).unref();
+// создание броней, заказов, заявок и отзывов — отдельный, более строгий лимит с одного адреса
+const slow = new Map();
+const limitedBy = (key, max, ms) => { const now = Date.now(), h = (slow.get(key) || []).filter(t => t > now - ms); if (h.length >= max) { slow.set(key, h); return true; } h.push(now); slow.set(key, h); return false; };
+setInterval(() => { const old = Date.now() - 3600e3; for (const [k, h] of slow) if (!h.length || h[h.length - 1] < old) slow.delete(k); }, 600e3).unref();
+const CREATE = [[/^\/api\/(bookings|orders|tickets|me\/reviews)$/, 'create', 8, 10 * 60e3], [/^\/api\/check-discord$/, 'check', 12, 60e3]];
 // Публичные данные одинаковы для всех гостей: собираем их один раз на версию данных (и раз в минуту — из-за
 // времени событий), сжимаем один раз и отдаём с ETag. Повторный запрос браузера получает 304 без тела.
 const PUBLIC_COLS = ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'team', 'offers', 'faq', 'issues', 'events', 'media', 'jobs', 'reviews', 'rsvp'];
@@ -200,6 +206,7 @@ mountLifex(app, { env, core, setCookie, encode, decode, cookies, currentUser, li
 app.all('/api/*', async (req, res) => {
   try {
     if (req.method !== 'GET' && !req.path.startsWith('/api/admin') && limited(req.ip)) return res.status(429).json({ error: 'Слишком много запросов, подождите минуту' });
+    if (req.method === 'POST') for (const [re, k, max, ms] of CREATE) if (re.test(req.path) && limitedBy(k + ':' + req.ip, max, ms)) return res.status(429).json({ error: k === 'check' ? 'Слишком много проверок, подождите минуту' : 'Слишком много заявок подряд. Подождите несколько минут или напишите управляющим' });
     const user = await currentUser(req, res);
     const out = await core.handle(req.method, req.path.slice(4), { body: req.body, user, guestKey: req.get('x-guest-key') });
     res.set('Cache-Control', 'no-store').json(out);

@@ -254,3 +254,55 @@ test('вакансии: на сайте только открытые, реда�
   await assert.rejects(core.handle('PUT', '/admin/jobs/new', { body: { title: 'x' }, user: { id: 'm', username: 'M', role: 'mod' } }));
   s.close();
 });
+
+test('защита от спама: не больше 3 активных броней и 2 заказов в работе на гостя', async () => {
+  const { s, core } = cab(), me = { guestKey: 'spam' };
+  for (let i = 0; i < 3; i++) await mkBooking(core, me);
+  await assert.rejects(mkBooking(core, me), /активные брони/);
+  const b = (await core.handle('GET', '/me/items', me)).bookings[0];
+  await core.handle('POST', `/me/bookings/${b.id}/cancel`, me); await mkBooking(core, me);   // после отмены снова можно
+  const menu = core.publicData().menu[0].id, order = () => core.handle('POST', '/orders', { body: { room: '2201', items: [{ id: menu, qty: 1 }] }, ...me });
+  await order(); await order(); await assert.rejects(order(), /в работе/);
+  s.close();
+});
+
+test('уведомления на сайте: подтверждение брони, отметка «прочитано», только свои', async () => {
+  const { s, core } = cab(), me = { guestKey: 'n1' }, other = { guestKey: 'n2' };
+  const b = await mkBooking(core, me);
+  await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act: 'confirm', room: '2201' }, user: ADMIN });
+  const n = (await core.handle('GET', '/me/items', me)).notices;
+  assert.equal(n.length, 1); assert.match(n[0].text, /подтверждена/); assert.equal(n[0].read, false); assert.equal(n[0].owner, undefined);
+  assert.equal((await core.handle('GET', '/me/items', other)).notices.length, 0, 'чужие не видны');
+  assert.equal((await core.handle('POST', '/me/notices/read', me)).read, 1);
+  assert.equal((await core.handle('GET', '/me/items', me)).notices[0].read, true);
+  s.close();
+});
+
+test('шаблоны ответов: чистятся при сохранении и видны только панели', async () => {
+  const { s, core } = cab();
+  await core.handle('PUT', '/admin/settings/main', { body: { replyTemplates: [{ title: 'Привет', text: 'Здравствуйте, {имя}!' }, { title: '', text: 'без названия' }, 'мусор'] }, user: ADMIN });
+  assert.deepEqual(core.settings().replyTemplates, [{ title: 'Привет', text: 'Здравствуйте, {имя}!' }]);
+  assert.equal(core.publicData().settings.replyTemplates, undefined, 'на публичный сайт не уходят');
+  assert.equal((await core.handle('GET', '/admin/all', { user: { id: 'm', username: 'M', role: 'mod' } })).replyTemplates.length, 1, 'персонал видит шаблоны');
+  s.close();
+});
+
+test('проверка ника Discord: без бота ответ «неизвестно», свой ник у вошедшего — найден', async () => {
+  const { s, core } = cab();
+  assert.deepEqual(await core.handle('POST', '/check-discord', { body: { discord: '@someone' } }), { member: null });
+  assert.deepEqual(await core.handle('POST', '/check-discord', { body: { discord: 'G' }, user: GUEST }), { member: true });
+  const c2 = createCore(s, { checkMember: async n => n === 'tony' });
+  assert.deepEqual(await c2.handle('POST', '/check-discord', { body: { discord: 'tony' } }), { member: true });
+  assert.deepEqual(await c2.handle('POST', '/check-discord', { body: { discord: 'nobody' } }), { member: false });
+  s.close();
+});
+
+test('новый отзыв уходит персоналу через notify', async () => {
+  const s = openStore(path.join(dir, 'rv-' + Date.now() + '.sqlite')); seed(s);
+  const got = [], core = createCore(s, { notify: async (k, d) => { got.push([k, d.stars]); } }), me = { guestKey: 'r1' };
+  const b = await mkBooking(core, me);
+  for (const act of ['confirm', 'checkin', 'checkout']) await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act, room: '2201' }, user: ADMIN });
+  await core.handle('POST', '/me/reviews', { body: { bookingId: b.id, stars: 4, text: 'Хорошо отдохнули, спасибо' }, ...me });
+  assert.deepEqual(got.find(x => x[0] === 'review'), ['review', 4]);
+  s.close();
+});

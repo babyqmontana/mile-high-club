@@ -137,10 +137,18 @@ export async function startBot({ core, store, env, hooks }) {
   };
   // ...и тикет-канал удаляется без транскрипта в архив
   hooks.dropTicketChannel = async t => { const c = t.channel && await guild.channels.fetch(t.channel).catch(() => null); if (c) await c.delete('Гость удалил свои данные на сайте'); };
+  async function staffPing(role, text) {
+    const c = await channel(FEED); if (!c) return;
+    const r = /^\d+$/.test(role || '') ? role : null;
+    await c.send({ content: (r ? `<@&${r}> ` : '') + text.slice(0, 1900), components: links([['Открыть в панели', panel]]), allowedMentions: { parse: [], roles: r ? [r] : [] } });
+  }
   hooks.notify = async (kind, d) => {
     if (kind === 'booking' || kind === 'booking_status') card('b:' + d.id, 'booking', d);
     if (kind === 'order' || kind === 'order_status') card('o:' + d.id, 'order', d);
     if (kind.startsWith('ticket')) card('t:' + d.id, 'ticket', d);
+    // новый отзыв и отклик на вакансию: отдельное сообщение в ленту с отметкой выбранной роли
+    if (kind === 'review') staffPing(S().reviewRole, `⭐ Новый отзыв ${'★'.repeat(d.stars)}${'☆'.repeat(5 - d.stars)} от **${d.name}** (бронь ${d.code}). Ждёт проверки в панели.\n> ${String(d.text || '').slice(0, 300).replace(/\n/g, '\n> ')}`).catch(e => console.error('Discord ping:', e.message));
+    if ((kind === 'ticket_site' || kind === 'ticket_discord') && /^(Работа в отеле|Трудоустройство)/.test(d.topic || '')) staffPing(S().jobRole, `🧾 Новый отклик на работу: **${d.name || d.discord}** (${d.discord}) — ${d.topic}.${d.channel ? ` Тикет: <#${d.channel}>` : ' Чат на сайте.'}\n> ${String(d.text || '').slice(0, 300).replace(/\n/g, '\n> ')}`).catch(e => console.error('Discord ping:', e.message));
     // гость отключил личные сообщения в кабинете — карточка персоналу обновляется, гостю не пишем
     if (d.quiet) return;
     const cabinet = site ? ` Кабинет: ${site}/#me` : '';
