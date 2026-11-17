@@ -8,7 +8,7 @@
   --r:1.25rem;--r2:0.875rem;--gl:max(1rem,env(safe-area-inset-left,0px));--gr:max(1rem,env(safe-area-inset-right,0px));--nav:4rem;
   --sunset:linear-gradient(100deg,#f0177a 0%,#ef5617 30%,#f7b50a 50%,#ef5617 70%,#f0177a 100%);
   color-scheme:dark;
-  /* ---- Vertical Noir (DESIGN_SYSTEM.md). Новые токены поверх старых, старые не удаляются ---- */
+  /* ---- Vertical Noir. Новые токены поверх старых, старые не удаляются ---- */
   --surface-0:var(--bg);--surface-1:var(--bg2);--surface-2:var(--card);--surface-3:var(--card2);--edge:var(--line);--edge-strong:var(--line2);
   --edge-brass:linear-gradient(90deg,#8a6228,#f9edc7 50%,#8a6228);--hi:inset 0 1px 0 rgba(249,237,199,.06);
   --st-free:var(--gold);--st-booked:var(--pink);--st-occupied:var(--violet);--st-idle:var(--mut);--st-live:var(--pink);
