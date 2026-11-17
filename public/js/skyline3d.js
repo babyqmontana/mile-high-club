@@ -94,8 +94,17 @@ function ledTex() { const c = document.createElement('canvas'); c.width = 4; c.h
 // --- запечённое в Blender (Cycles): панорамы города для отражений, фасад офисов, интерьер номера, тень от комплекса.
 // ~85 КБ webp, грузятся после первого кадра; пока не пришли или не загрузились — башня рисуется как раньше.
 const BAKE = {}, BAKE_URL = 'img/tower/';
+// кровельный набор из Blender (баки, вентиляция, мачты, карнизы, короны, градирни, техэтаж, гондола мойки фасада)
+let KIT = null;
+function loadKit() {
+  return import('three/addons/loaders/GLTFLoader.js').then(m => new m.GLTFLoader().loadAsync(BAKE_URL + 'kit.glb')).then(g => {
+    const out = {}; g.scene.updateMatrixWorld(true);
+    g.scene.traverse(o => { if (o.isMesh) { const geo = o.geometry.clone(); geo.applyMatrix4(o.matrixWorld); geo.computeBoundingSphere(); out[o.name] = geo; } });
+    out.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, metalness: .15 }); KIT = out; return out;
+  }).catch(() => null);
+}
 function loadBake() {
-  return Promise.all(['env-night', 'fac-glass', 'fac-lit', 'room', 'shadow'].concat(document.documentElement.dataset.mode === 'day' ? ['env-day'] : []).map(n => new Promise(ok => {
+  return Promise.all(['env-night', 'fac-glass', 'fac-lit', 'room', 'shadow', 'city-fac'].concat(document.documentElement.dataset.mode === 'day' ? ['env-day'] : []).map(n => new Promise(ok => {
     const i = new Image(); i.decoding = 'async'; i.onload = () => { BAKE[n] = i; ok(); }; i.onerror = () => ok(); i.src = BAKE_URL + n + '.webp';
   })));
 }
@@ -146,17 +155,25 @@ function cloudTex() {
 // --- городские здания: окна считаются в шейдере по мировым координатам, поэтому чёткие на любом размере ---
 function cityMaterial() {
   const m = new THREE.MeshStandardMaterial({ color: 0x1f1517, roughness: 0.55, metalness: 0.35 });
-  m.userData.uniforms = { uLit: { value: 0.35 }, uDay: { value: 0 }, uSnow: { value: 0 } };
+  m.userData.uniforms = { uLit: { value: 0.35 }, uDay: { value: 0 }, uSnow: { value: 0 }, uFac: { value: null }, uHasFac: { value: 0 } };
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, m.userData.uniforms);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;varying vec3 vN;varying float vId;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvec4 wp4=instanceMatrix*vec4(position,1.);vWp=wp4.xyz;vN=normalize(mat3(instanceMatrix)*normal);vId=float(gl_InstanceID);');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLit,uDay,uSnow;varying vec3 vWp;varying vec3 vN;varying float vId;\nfloat h21(vec2 p){p=fract(p*vec2(233.34,851.73));p+=dot(p,p+23.45);return fract(p.x*p.y);}')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLit,uDay,uSnow,uHasFac;uniform sampler2D uFac;varying vec3 vWp;varying vec3 vN;varying float vId;\nfloat h21(vec2 p){p=fract(p*vec2(233.34,851.73));p+=dot(p,p+23.45);return fract(p.x*p.y);}')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       if(abs(vN.y)<.5){
         float u=abs(vN.x)>abs(vN.z)?vWp.z:vWp.x; vec2 g=vec2(u/.34,vWp.y/.42); vec2 id=floor(g), f=fract(g);
         float aa=clamp(1.6-max(fwidth(g.x),fwidth(g.y))*2.2,0.,1.); // вдали окна сливаются в ровный тон без ряби
         float win=step(.18,f.x)*step(f.x,.82)*step(.2,f.y)*step(f.y,.78)*aa;
+        // фасады из Blender: у каждого дома свой стиль (кирпич, ленточные окна, стеклянная стена, ар-деко),
+        // кусок 4 окна × 3 этажа; альфа — стекло, по нему и горят окна
+        if(uHasFac>.5&&aa>.02){ // дальние дома — без выборки из текстуры, там окна всё равно сливаются в тон
+          float st=floor(h21(vec2(vId*.37,3.1))*4.); vec2 cell=vec2(mod(st,2.),1.-floor(st/2.)), q=g/vec2(4.,3.);
+          vec4 fa=textureGrad(uFac,(cell+fract(q)*.992+.004)*.5,dFdx(q)*.5,dFdy(q)*.5);
+          diffuseColor.rgb=mix(fa.rgb,fa.rgb*diffuseColor.rgb*2.4,.45);
+          win=smoothstep(.15,.85,fa.a)*aa; // без порога: на среднем плане стекло мягко сливается, без ряби
+        }
         float r=h21(id+vId*7.13);
         float on=step(1.-uLit,r)*win;
         totalEmissiveRadiance+=vec3(.91,.76,.49)*uLit*.22*(1.-aa)*(1.-uDay*.75);
@@ -462,7 +479,14 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; M.compose(V.set(-.3 + Math.cos(a) * .9, crownTop + .42, .1 + Math.sin(a) * .9), Q.identity(), Sc.set(1, 1, 1)); struts.setMatrixAt(k, M); } root.add(struts);
     const mech = new THREE.Mesh(new THREE.BoxGeometry(1.3, .55, 1.1), roofM); mech.position.set(1.3, crownTop + .52, -.7); root.add(mech);
     const mastA = new THREE.Mesh(new THREE.CylinderGeometry(.03, .07, 2.6, 6), steel); mastA.position.set(1.6, crownTop + 1.6, -.9); root.add(mastA);
-    const mechC = new THREE.Mesh(new THREE.BoxGeometry(1.2, .45, 1), roofM); mechC.position.set(VOL.C.x - .3, topC + .47, VOL.C.z - .4); root.add(mechC);
+    const mechC = new THREE.Mesh(new THREE.BoxGeometry(1.2, .45, 1), roofM); mechC.position.set(VOL.C.x - .3, topC + .47, VOL.C.z - .4);
+    if (KIT) { // детали отеля из Blender: техэтаж с жалюзи, градирни и гондола мойки фасада, вентиляция и бак на пристройках
+      const add = (k, x, y, z, s = 1, ry = 0) => { const m = new THREE.Mesh(KIT[k], KIT.mat); m.position.set(x, y, z); m.scale.setScalar(s); m.rotation.y = ry; root.add(m); };
+      add('louver', VOL.C.x - .3, topC + .25, VOL.C.z - .4);
+      add('coolers', VOL.B.x + .2, topB + .25, VOL.B.z - .7); add('bmu', VOL.B.x, topB + .25, VOL.B.z + .55, 1, 0);
+      add('hvac', E1[0][0] + 2.4, nE * FH + .25, E1[0][1] - 1.2, 1, Math.PI / 2); add('hvac', E1[0][0] + 1.2, nE * FH + .25, E1[0][1] - 2.4);
+      add('tank', SB[0][0] + 2.6, stoneH * FH * 1.3, SB[0][1] - 2.2, 1.3); add('hvac', SB[0][0] + 1, stoneH * FH * 1.3, SB[0][1] - 2.4);
+    } else root.add(mechC);
     const mast = new THREE.Mesh(new THREE.CylinderGeometry(.02, .05, 1.5, 6), steel); mast.position.set(VOL.C.x + .9, topC + 1, VOL.C.z - .9); root.add(mast);
     beacon = new THREE.Mesh(new THREE.SphereGeometry(.07, 12, 8), neon(0xef5617)); beacon.position.set(VOL.C.x + .9, topC + 1.78, VOL.C.z - .9); root.add(beacon);
     // светодиодные ленты по рёбрам: пунктир, как в игре. Все ленты — одна сетка
@@ -602,11 +626,16 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
   function size() { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); kick(); }
   new ResizeObserver(size).observe(host);
   function kick() { if (!raf && active && visible) { last = performance.now(); raf = requestAnimationFrame(loop); } }
-  let odd = 0, prevT = 0, ftSum = 0, ftN = 0;
+  let odd = 0, prevT = 0, ftSum = 0, ftN = 0, lite = false;
+  function liteCity() { lite = true; cityM.userData.uniforms.uHasFac.value = 0; roofKit.forEach(m => { m.visible = false; }); roofs.visible = true; }
   function loop(t) {
     raf = 0;
     const ft = t - prevT; prevT = t;
-    if (ft > 0 && ft < 200) { ftSum += ft; if (++ftN === 120) { if (ftSum / ftN > 26 && dpr > 1) { dpr = Math.max(1, dpr - .25); renderer.setPixelRatio(dpr); size(); } ftSum = ftN = 0; } }
+    // каждые ~2 с смотрим среднее время кадра: сначала снижаем чёткость, а если и на минимальной медленно —
+    // облегчённый город (простые фасады, без кровельных деталей). Только вниз, без скачков туда-обратно
+    if (ft > 0 && ft < 1500) { ftSum += ft; ftN++; if (ftSum > 2000 && ftN >= 8) { const avg = ftSum / ftN;
+      if (avg > 26 && dpr > 1) { dpr = Math.max(1, dpr - .25); renderer.setPixelRatio(dpr); size(); } else if (avg > 40 && !lite) liteCity();
+      ftSum = ftN = 0; } }
     // в покое рисуем 30 кадров в секунду: машины и огни плывут так же плавно, а нагрузка на видеокарту вдвое ниже
     const calm = !drag && rotTarget == null && Math.abs(vel) < 1e-3 && Math.abs(camTargetY - camY) < .01 && !rain.visible && !snow.visible;
     if (calm && (odd ^= 1)) { if (active && visible) raf = requestAnimationFrame(loop); return; }
@@ -645,9 +674,36 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     m.rotation.x = -Math.PI / 2; m.position.set(3, .012, 0); m.renderOrder = -1; return m;
   }
   // когда запечённое пришло: отражения города, фасады, комнаты и тень
-  loadBake().then(() => {
+  // крыши города из набора: карниз по контуру каждого дома, на верхних ярусах — вентиляция, выходы, баки на старых
+  // невысоких домах, короны ар-деко и мачты на высоких, градирни на складах. По одному InstancedMesh на деталь.
+  const roofKit = [];
+  function cityRoofs(K) {
+    let s = 97; const r = () => (s = s * 16807 % 2147483647) / 2147483647, P = {}, put = (k, x, y, z, sx = 1, sy = 1, sz = 1, ry = 0) => (P[k] ??= []).push([x, y, z, sx, sy, sz, ry]);
+    tiers.forEach((t, i) => {
+      // дальше ~45 ед. всё тонет в дымке — там детали не ставим, это сотни тысяч вершин впустую
+      const y = GROUND + t.h, dist = Math.hypot(t.x, t.z), top = !tiers.some((u, j) => j > i && u.x === t.x && u.z === t.z && u.h > t.h);
+      if (dist > (t.h > 8 ? 58 : 44)) return;
+      put('cornice', t.x, y, t.z, t.w, t.h > 8 ? 1.4 : 1, t.d);
+      if (!top) return;
+      const ox = () => (r() - .5) * t.w * .55, oz = () => (r() - .5) * t.d * .55, ry = () => (r() * 4 | 0) * Math.PI / 2;
+      if (t.x > 12) { put('coolers', t.x + ox() * .5, y, t.z + oz() * .5, 1, 1, 1, ry()); return; }
+      if (t.h > 10 && r() < .55) put('crown', t.x, y, t.z, Math.min(t.w, t.d) * .95, Math.min(t.w, t.d) * 1.1, Math.min(t.w, t.d) * .95);
+      else if (t.h > 7 && r() < .5) put('mast', t.x + ox() * .4, y, t.z + oz() * .4);
+      if (t.h < 4.5 && dist < 34 && r() < .45) put('tank', t.x + ox(), y, t.z + oz(), 1.2, 1.2, 1.2);
+      const nH = dist < 30 ? 1 + (r() < .5) : r() < .6 ? 1 : 0; for (let k = 0; k < nH; k++) put('hvac', t.x + ox(), y, t.z + oz(), 1, 1, 1, ry());
+      if (dist < 34 && r() < .5) put('bulkhead', t.x + ox(), y, t.z + oz(), 1, 1, 1, ry());
+    });
+    const M4 = new THREE.Matrix4(), Q4 = new THREE.Quaternion(), V4 = new THREE.Vector3(), S4 = new THREE.Vector3(), E4 = new THREE.Euler();
+    Object.entries(P).forEach(([k, list]) => { if (!K[k]) return; const im = new THREE.InstancedMesh(K[k], K.mat, list.length);
+      list.forEach(([x, y, z, sx, sy, sz, ry], i) => { M4.compose(V4.set(x, y, z), Q4.setFromEuler(E4.set(0, ry, 0)), S4.set(sx, sy, sz)); im.setMatrixAt(i, M4); });
+      im.computeBoundingSphere(); world.add(im); roofKit.push(im); });
+    roofs.visible = false; if (lite) liteCity();
+  }
+  Promise.all([loadBake(), loadKit()]).then(([, K]) => { // текстуры и модели параллельно — башня пересобирается один раз
+    if (K) cityRoofs(K);
     const eq = img => { const t = new THREE.Texture(img); t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; const r = pm.fromEquirectangular(t).texture; t.dispose(); return r; };
     if (BAKE['env-night']) { const night = eq(BAKE['env-night']); envBake = { night, day: BAKE['env-day'] ? eq(BAKE['env-day']) : envRoom }; }
+    if (BAKE['city-fac']) { const t = new THREE.Texture(BAKE['city-fac']); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 4; t.needsUpdate = true; cityM.userData.uniforms.uFac.value = t; cityM.userData.uniforms.uHasFac.value = lite ? 0 : 1; }
     // стеклянные ориентиры города получают тот же фасад
     const gi = cityAtlas.glass.image, li = cityAtlas.lit.image; paintBake(gi.getContext('2d'), li.getContext('2d'));
     world.traverse(o => [].concat(o.material || []).forEach(m => [m.map, m.emissiveMap].forEach(t => { if (t && (t.image === gi || t.image === li)) t.needsUpdate = true; })));
@@ -665,7 +721,7 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     hemi.intensity = day ? 1.6 : .42; hemi.color.set(day ? 0xf2e2c8 : 0x6a58b0); hemi.groundColor.set(day ? 0x1a120a : 0x120a10); key.intensity = day ? 2.8 : .75; cityM.roughness = day ? .55 : .9; cityM.metalness = day ? .35 : .1; stone.roughness = day ? .6 : .9; key.color.set(day ? 0xfff0d8 : 0xaab6ff); if (!day) key.position.copy(MOON).multiplyScalar(30);
     cityM.color.set(day ? 0x6a5f5c : 0x1f1517); hills.material.color.set(day ? 0x6a5a52 : 0x0c0814);
     cloudMats.forEach(m => m.color.set(day ? 0xfff3dc : 0x4a3460)); lamps.visible = carPts.visible = true; lamps.material.opacity = day ? .25 : 1; carPts.material.opacity = day ? .4 : 1;
-    rim.intensity = day ? 6 : 34; officeK = day ? .16 : .6; ledM?.color.set(day ? 0x39c6e6 : 0xb766ff); if (crownLit) crownLit.material.emissiveIntensity = day ? 0 : 1.1; landmarkMats.forEach(m => { m.emissiveIntensity = day ? .04 : .85; m.color.set(day ? 0xffffff : 0x353b4a); }); if (shadowM) shadowM.material.opacity = day ? .62 : .38; officeMats.forEach(m => { m.emissiveIntensity = day ? .04 : .9; m.color.set(day ? 0xffffff : 0x4a5562); m.metalness = day ? .45 : .85; m.envMapIntensity = day ? 1.6 : cityEnv ? 1.2 : .5; if (m.envMap !== cityEnv) { m.envMap = cityEnv; m.needsUpdate = true; } }); hotel.forEach(f => { if (f.material.envMap !== cityEnv) { f.material.envMap = cityEnv; f.material.needsUpdate = true; } }); if (bannerM) bannerM.emissiveIntensity = day ? .1 : .42; if (shopM) shopM.opacity = day ? .12 : .55; if (screenM) screenM.emissiveIntensity = day ? .12 : .45; kick();
+    rim.intensity = day ? 6 : 34; officeK = day ? .16 : .6; ledM?.color.set(day ? 0x39c6e6 : 0xb766ff); if (crownLit) crownLit.material.emissiveIntensity = day ? 0 : 1.1; landmarkMats.forEach(m => { m.emissiveIntensity = day ? .04 : .85; m.color.set(day ? 0xffffff : 0x353b4a); }); if (shadowM) shadowM.material.opacity = day ? .62 : .38; KIT?.mat.color.set(day ? 0xffffff : 0x5a5560); officeMats.forEach(m => { m.emissiveIntensity = day ? .04 : .9; m.color.set(day ? 0xffffff : 0x4a5562); m.metalness = day ? .45 : .85; m.envMapIntensity = day ? 1.6 : cityEnv ? 1.2 : .5; if (m.envMap !== cityEnv) { m.envMap = cityEnv; m.needsUpdate = true; } }); hotel.forEach(f => { if (f.material.envMap !== cityEnv) { f.material.envMap = cityEnv; f.material.needsUpdate = true; } }); if (bannerM) bannerM.emissiveIntensity = day ? .1 : .42; if (shopM) shopM.opacity = day ? .12 : .55; if (screenM) screenM.emissiveIntensity = day ? .12 : .45; kick();
   }
   relight(); size();
   function setVenues(list) { const before = venueKey(); venues = list || []; if (venueKey() !== before && curRooms.length) { build(curRooms); update(curRooms, sel); } else venueMeshes.forEach(m => { const nv = venues.find(x => x.id === m.userData.venue.id); if (nv) m.userData.venue = nv; }); kick(); }
