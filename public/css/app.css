@@ -1111,3 +1111,11 @@ footer .credits .ooc b{font:700 .6rem var(--body);letter-spacing:.12em;padding:.
 .lx-tag{margin-left:auto;display:inline-flex;align-items:center;gap:.35rem;font:700 .7rem var(--body);letter-spacing:.06em;color:var(--fg);padding:.2rem .55rem .2rem .25rem;border-radius:62rem;background:var(--card2);box-shadow:inset 0 0 0 1px var(--line2)}
 .lx-tag .lx-mark{width:1rem;height:1rem}
 .lx-ava{width:3rem;height:3rem;border-radius:50%;object-fit:cover;flex:none;display:grid;place-items:center;font-weight:700;border:2px solid transparent;background:linear-gradient(var(--card2),var(--card2)) padding-box,var(--lx-grad) border-box}
+
+/* секреты отеля: редкость */
+.ci .rar{display:block;font-style:normal;font-size:.62rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin:.1rem 0 .15rem}
+.ci.on[data-r="2"] .rar{color:var(--pink)}
+.ci.on[data-r="3"] .rar{color:var(--gold)}
+.ci.on[data-r="3"] .ai{box-shadow:0 0 0 1px var(--gold),0 0 1rem -2px color-mix(in srgb,var(--gold) 60%,transparent)}
+.ach[data-r="3"]{box-shadow:0 0 0 1px var(--gold),0 1.2rem 2.6rem -1rem rgba(0,0,0,.7)}
+footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webkit-tap-highlight-color:transparent}
