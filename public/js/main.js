@@ -2,7 +2,7 @@ import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, co
 import { api, subscribe, authConfig, login, logout, DEMO, pref, guestKey, demoLifex } from './api.js';
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
-import { unlock, burst, openCabinet, count as achCount, LIST as ACH, onChange as onAch, ids as achIds, merge as achMerge, feed as achFeed } from './achievements.js';
+import { unlock, burst, openCabinet, count as achCount, LIST as ACH, onChange as onAch, ids as achIds, merge as achMerge, feed as achFeed, bar as achBar, grow as achGrow, seenCount as achSeen, rarityChips } from './achievements.js';
 import { venueState, mskMinutes, weatherNow, ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, minutesOf, inSpan, roomGameFloor } from './core.js';
 
 document.documentElement.classList.add('js');
@@ -980,7 +980,7 @@ function renderMe() {
           <label class="field"><span>Пожелания к номеру</span><textarea id="pfNote" maxlength="300">${esc(p.note || '')}</textarea></label>
           <label class="check"><input type="checkbox" id="pfDm" ${p.dm === false ? '' : 'checked'}><span>Присылать статусы брони, заказов и ответы в личные сообщения Discord</span></label>
           <div><button class="btn sm">Сохранить профиль</button></div></form>
-        <div class="card pad stack"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.05rem">Секреты отеля</h3><b class="num" style="color:var(--gold)">${achCount()}/${ACH.length}</b></div><p class="note">${u ? 'Найденные секреты сохраняются в аккаунте и видны на любом устройстве.' : 'Секреты хранятся в этом браузере. Войдите, чтобы не потерять их.'}</p><div><button class="btn sm ghost" id="meAch">Открыть коллекцию</button></div></div>
+        <div class="card pad stack"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.05rem">Секреты отеля</h3><b class="num" style="color:var(--gold)"><span data-count="${achCount()}" data-from="${Math.min(achSeen(), achCount())}">${achCount()}</span>/${ACH.length}</b></div>${achBar(achCount(), ACH.length, Math.min(achSeen(), achCount()))}${rarityChips()}${achCount() > achSeen() ? `<p class="note" style="color:var(--gold)">Новых секретов: ${achCount() - achSeen()}. Загляните в коллекцию.</p>` : ''}<p class="note">${u ? 'Найденные секреты сохраняются в аккаунте и видны на любом устройстве.' : 'Секреты хранятся в этом браузере. Войдите, чтобы не потерять их.'}</p><div><button class="btn sm ghost" id="meAch">Открыть коллекцию</button></div></div>
         <div class="card pad stack"><h3 style="font-size:1.05rem">Мои данные</h3><p class="note">Удалить брони, заказы, заявки и профиль${u ? ' из аккаунта и с этого устройства' : ' с этого устройства'}. Действующие брони отменятся. Подробнее — в <a href="#privacy">политике конфиденциальности</a>.</p><div><button class="btn sm ghost danger-t" id="meDel">Удалить мои данные</button></div></div>
       </aside></div></div>`;
   $('#meOut') && ($('#meOut').onclick = () => logout()); $('#meIn') && ($('#meIn').onclick = () => openLogin('me'));
@@ -1026,7 +1026,7 @@ function renderMe() {
   }
   $('#meProf').onsubmit = async e => { e.preventDefault();
     try { await api('PUT', '/me/profile', { name: $('#pfName').value, phone: $('#pfPhone').value, note: $('#pfNote').value, dm: $('#pfDm').checked }); play('soft'); reload('Профиль сохранён'); } catch (err) { fail(err); } };
-  $('#meAch').onclick = () => openCabinet();
+  $('#meAch').onclick = () => openCabinet(); achGrow($('#meAch').closest('.card'));
   $$('#main [data-lxdemo]').forEach(a => a.onclick = async e => { e.preventDefault(); await demoLifex(); await loadItems(); toast('Демо: привязан пример профиля LifeX'); });
   $('#lxOff') && ($('#lxOff').onclick = async () => { if (!await confirmBox('Отвязать LifeX?', 'Фото из LifeX уберём, имя и телефон в профиле останутся.', 'Отвязать')) return; try { await api('DELETE', '/me/lifex'); reload('Профиль LifeX отвязан'); } catch (e) { fail(e); } });
   $('#meDel').onclick = async () => {
