@@ -25,7 +25,7 @@ function shell() {
       <a class="pill" href="#stay" title="Свободные номера сейчас"><span class="d"></span><span class="t">Свободно</span><b class="num" id="navFree">—</b></a>
       <a class="pill gst" href="#home" id="navGuests" hidden title="Гостей в отеле прямо сейчас"><span class="d"></span><b class="num" id="navG">—</b><span class="t">в отеле</span></a>
       <button class="ibtn" id="sndBtn" aria-label="Звук" data-sfx=""></button>
-      <span id="navUser"></span>
+      <span id="navBell" hidden></span><span id="navUser"></span>
       <button class="ibtn burger" id="burger" aria-label="Меню" data-sfx="open">${I.menu}</button>
     </div>
   </div></header>
@@ -459,7 +459,7 @@ function openBooking(type, room) {
     <form id="bForm" class="stack" novalidate>
       <label class="field"><span>Тип номера</span><select id="bType">${T.map(x => `<option value="${esc(x.id)}" ${x.id === t.id ? 'selected' : ''}>${esc(x.name)} · ${money(x.price)}</option>`).join('')}</select></label>
       <label class="field"><span>Номер</span><select id="bRoom"></select></label>
-      <div class="g2"><label class="field"><span>Имя персонажа</span><input id="bName" required autocomplete="off" placeholder="Как вас записать"></label><label class="field"><span>Discord</span><input id="bDiscord" required autocomplete="off" placeholder="nickname" value="${esc(S.me?.username || '')}"></label></div>
+      <div class="g2"><label class="field"><span>Имя персонажа</span><input id="bName" required autocomplete="off" placeholder="Как вас записать"></label><label class="field"><span>Discord</span><input id="bDiscord" required autocomplete="off" placeholder="nickname" value="${esc(S.me?.username || '')}"><small class="dc-hint" id="bDcHint" aria-live="polite"></small></label></div>
       <div class="g3"><label class="field"><span>Заезд</span><input id="bDate" type="date" required value="${today.toISOString().slice(0, 10)}"></label><label class="field"><span>Ночей</span><input id="bNights" type="number" min="1" max="30" value="1"></label><label class="field"><span>Гостей</span><input id="bGuests" type="number" min="1" max="12" value="2"></label></div>
       <label class="field"><span>Телефон в игре</span><input id="bPhone" autocomplete="off" placeholder="Необязательно"></label>
       <label class="field"><span>Пожелания</span><textarea id="bNote" placeholder="Вид на Вайнвуд, шампанское к заезду, поздний выезд"></textarea></label>
@@ -469,7 +469,23 @@ function openBooking(type, room) {
   const upd = () => { t = T.find(x => x.id === $('#bType').value); const free = p.rooms.filter(r => r.type === t.id && r.status === 'free'); $('#bRoom').innerHTML = `<option value="">Любой свободный (${free.length})</option>` + free.map(r => `<option ${r.id === room ? 'selected' : ''}>${esc(r.id)}</option>`).join(''); $('#bTot').textContent = money(t.price * Math.max(1, +$('#bNights').value || 1)); };
   $('#bType').onchange = () => { room = null; upd(); }; $('#bNights').oninput = upd; upd();
   prefill();
+  // ник Discord: есть ли гость на сервере (иначе бот не сможет написать о брони)
+  let dcState = null, dcT = 0;
+  const dcCheck = async () => {
+    const v = $('#bDiscord')?.value.trim(), h = $('#bDcHint'); if (!h) return; if (!v) { dcState = null; h.className = 'dc-hint'; h.textContent = ''; return; }
+    h.className = 'dc-hint wait'; h.textContent = 'Проверяем ник на сервере…';
+    try { const r = await api('POST', '/check-discord', { discord: v }); if ($('#bDiscord')?.value.trim() !== v) return; dcState = r.member;
+      const inv = S.pub.settings.discordInvite;
+      if (r.member === true) { h.className = 'dc-hint ok'; h.textContent = '✓ Нашли на сервере — бот напишет вам о брони'; }
+      else if (r.member === false) { h.className = 'dc-hint bad'; h.innerHTML = `Не нашли <b>${esc(v)}</b> на сервере отеля. Проверьте ник${inv ? ` или <a href="${esc(inv)}" target="_blank" rel="noopener">зайдите на сервер</a>` : ''} — иначе бот не сможет написать.`; }
+      else { h.className = 'dc-hint'; h.textContent = ''; }
+    } catch { h.className = 'dc-hint'; h.textContent = ''; }
+  };
+  $('#bDiscord').addEventListener('input', () => { clearTimeout(dcT); dcT = setTimeout(dcCheck, 800); });
+  $('#bDiscord').addEventListener('blur', () => { clearTimeout(dcT); dcCheck(); });
+  if ($('#bDiscord').value && !S.me) dcCheck();
   $('#bForm').onsubmit = async e => {
+    if (dcState === false && !e.dcOk) { e.preventDefault(); if (await confirmBox('Ник не найден на сервере', 'Бот не сможет написать вам о брони. Отправить всё равно?', 'Отправить')) { dcState = 'ok'; $('#bForm').requestSubmit(); } return; }
     e.preventDefault(); const btn = e.submitter || $('#bForm button[type=submit]'); btn.disabled = true;
     try {
       const { booking: b } = await api('POST', '/bookings', { type: $('#bType').value, room: $('#bRoom').value, name: $('#bName').value, discord: $('#bDiscord').value, date: $('#bDate').value, nights: $('#bNights').value, guests: $('#bGuests').value, phone: $('#bPhone').value, note: $('#bNote').value });
@@ -532,9 +548,9 @@ function renderLeisure() {
   if (!lv.querySelector('#venuesList')) {
     lv.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Отдых</span><h2>Что сейчас открыто</h2><p>Статусы обновляются по расписанию и по событиям из Discord. Днём работает Sky Pool, ночью Night Pool и The Hot Times.</p></div>
       <div id="deckHost" class="reveal"></div><section class="hday reveal" id="hday" aria-label="Сутки отеля"></section><div class="venues" id="venuesList"></div></div>`;
-    import('./deck.js').then(d => { mods.deck = d.mountDeck($('#deckHost'), S.pub.settings.deckUrl); mods.deck.active(current === 'leisure'); });
+    import('./deck.js').then(d => { mods.deck = d.mountDeck($('#deckHost'), S.pub.settings.deckUrl, S.pub.settings.deckTracks || []); mods.deck.active(current === 'leisure'); });
   }
-  mods.deck?.url(p.settings.deckUrl);
+  mods.deck?.tracks?.(p.settings.deckTracks || []); mods.deck?.url(p.settings.deckUrl);
   const cards = p.venues.map(v => { const st = venueState(v, p.events), evs = p.events.filter(e => e.venueId === v.id && (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 3);
     const visual = v.image ? `<div class="img cover" style="background-image:url('${esc(v.image)}')">` : v.kind === 'pool' ? `<div class="img"><div class="water ${v.id === 'night' || /night|ноч/i.test(v.name) ? 'n' : ''} ${st.state === 'live' || st.state === 'event' ? 'live' : ''}"><div class="sky"></div><div class="pl"></div></div>` : `<div ${bg('', v.name, v.accent || '#F0177A', '#F7B50A', 'img')}>`;
     return `<article class="venue reveal" data-venue="${esc(v.id)}">${visual}${stateChip(st)}</div><div class="body"><div class="row" style="justify-content:space-between"><h3>${esc(v.name)}</h3><span class="note">${esc(KIND_LABEL[v.kind] || '')}${v.floor ? ' · ' + esc(v.floor) : ''}</span></div>
@@ -1050,11 +1066,31 @@ async function syncAccount() {
 let achT = 0;
 onAch(() => { if (!S.me || DEMO) return; clearTimeout(achT); achT = setTimeout(() => api('POST', '/me/achievements', { ids: achIds() }).catch(() => {}), 1500); });
 let itemsDirty = true;
-async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } paintNav(); paintUnread(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
+async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); } catch { } paintNav(); paintUnread(); paintBell(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
 // прочитанные ответы персонала помним в браузере: id обращения → время последнего просмотра
 const seenT = () => { try { return JSON.parse(pref.get('mhc-read') || '{}') || {}; } catch { return {}; } };
 const unreadOf = t => t.mode === 'site' && t.lastFrom === 'staff' && t.lastAt > (seenT()[t.id] || 0);
 function markRead(t) { if (!t || !unreadOf(t)) return; unlock('concierge'); const s = seenT(); s[t.id] = t.lastAt; pref.set('mhc-read', JSON.stringify(s)); paintUnread(); }
+// колокольчик: уведомления о брони, заказах, ответах и отзывах; новое — всплывает подсказкой
+const BELL = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>';
+let bellSeen = +(pref.get('mhc-bell-at') || 0);
+function paintBell() {
+  const list = S.items?.notices || [], el = $('#navBell'); if (!el) return;
+  el.hidden = !list.length; if (!list.length) return;
+  const unread = list.filter(n => !n.read).length;
+  el.innerHTML = `<button class="ibtn bell" id="bellBtn" aria-label="Уведомления${unread ? ': новых ' + unread : ''}" aria-haspopup="dialog">${BELL}${unread ? `<b class="bell-n num">${unread > 9 ? '9+' : unread}</b>` : ''}</button>`;
+  $('#bellBtn').onclick = openBell;
+  const fresh = list.find(n => !n.read && n.at > bellSeen);
+  if (fresh) { bellSeen = list[0].at; pref.set('mhc-bell-at', String(bellSeen)); if (booted) toast(fresh.text); }
+}
+const ICON_N = { booking: '🛏️', order: '🍽️', ticket: '💬', review: '⭐' };
+function openBell() {
+  const list = S.items?.notices || [];
+  modal(`<div class="stack"><div class="row" style="justify-content:space-between"><h3>Уведомления</h3><a class="btn sm ghost" href="#me" data-close="">Кабинет</a></div>
+    <div class="nlist">${list.map(n => `<a class="nitem ${n.read ? '' : 'new'}" href="${esc(n.link || '#me')}" data-close=""><span class="ni" aria-hidden="true">${ICON_N[n.kind] || '🔔'}</span><span><span class="nt">${esc(n.text)}</span><small class="note">${when(n.at)}</small></span></a>`).join('')}</div>
+    <p class="note" style="margin:0">${S.me ? 'Эти же уведомления бот присылает в Discord, если это не выключено в профиле.' : 'Войдите через Discord, чтобы получать уведомления на любом устройстве.'}</p></div>`);
+  if (list.some(n => !n.read)) api('POST', '/me/notices/read').then(() => { list.forEach(n => n.read = true); paintBell(); }).catch(() => {});
+}
 function paintUnread() { const n = (S.items?.tickets || []).filter(unreadOf).length; $('#navUser')?.classList.toggle('unread', n > 0); $('#navUser')?.setAttribute('title', n ? `Новые ответы управляющих: ${n}` : ''); }
 // профиль гостя подставляется в пустые поля форм брони, заказа и заявки
 function prefill() {
@@ -1073,7 +1109,7 @@ function onChange(cols) {
       if (c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq', 'jobs', 'reviews', 'rsvp'].includes(x))) { await loadPublic(); applyWeather(); if (!['contact', 'admin', 'me'].includes(current)) render(); updFab(); }
       if (c.includes('guests') && !c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq'].includes(x))) { await loadPublic(); paintGuests(); }
       // свои брони и заявки нужны только на страницах «Заявка» и «Мои брони»: на остальных просто помечаем устаревшими
-      if (c.some(x => ['bookings', 'tickets', 'orders'].includes(x))) { const it = S.items, live = it && (it.tickets.some(t => t.status !== 'closed') || it.bookings.some(b => ['new', 'confirmed', 'checkedin'].includes(b.status)) || it.orders.some(o => !['done', 'cancelled'].includes(o.status))); if (['contact', 'me'].includes(current) || live) await loadItems(); else itemsDirty = true; }
+      if (c.some(x => ['bookings', 'tickets', 'orders', 'reviews'].includes(x))) { const it = S.items, live = it && (it.tickets.some(t => t.status !== 'closed') || it.bookings.some(b => ['new', 'confirmed', 'checkedin'].includes(b.status)) || it.orders.some(o => !['done', 'cancelled'].includes(o.status))); if (['contact', 'me'].includes(current) || live) await loadItems(); else itemsDirty = true; }
       if (current === 'admin') mods.admin?.refresh?.(c);
     } catch (e) { console.error(e); }
   }, DEMO ? 250 : 250 + Math.random() * 1500);

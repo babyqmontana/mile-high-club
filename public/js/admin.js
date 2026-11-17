@@ -37,17 +37,83 @@ export async function refresh(cols) {
 function badges() { if (!A) return {}; return { bookings: A.bookings.filter(b => b.status === 'new').length, tickets: A.tickets.filter(t => t.status === 'open' && t.mode === 'site' && t.lastFrom === 'guest').length, orders: A.orders.filter(o => ['new', 'cooking'].includes(o.status)).length, reviews: (A.reviews || []).filter(r => r.status === 'pending').length }; }
 function paintAside() {
   const b = badges(), u = S.me;
-  $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div>` +
-    SECTIONS.map(([g, items]) => { const vis = items.filter(([, , r]) => can(r)); return vis.length ? (g ? `<span class="grp">${g}</span>` : '') + vis.map(([k, n]) => `<button data-s="${k}" aria-pressed="${k === sec}" data-sfx="soft"><span>${n}</span>${b[k] ? `<span class="badge">${b[k]}</span>` : ''}</button>`).join('') : ''; }).join('');
-  if (innerWidth <= 900) { const on = $('#aside [aria-pressed="true"]'), as = $('#aside'); if (on && as) as.scrollTo({ left: on.offsetLeft - as.clientWidth / 2 + on.offsetWidth / 2, behavior: 'smooth' }); }
+  $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div><div class="asearch"><input class="inp" id="aSq" type="search" placeholder="Поиск: код, ник, имя, номер" autocomplete="off" aria-label="Поиск по броням, заказам, обращениям и отзывам"><div class="ares" id="aRes" hidden></div></div><div class="anav" id="anav">` +
+    SECTIONS.map(([g, items]) => { const vis = items.filter(([, , r]) => can(r)); return vis.length ? (g ? `<span class="grp">${g}</span>` : '') + vis.map(([k, n]) => `<button data-s="${k}" aria-pressed="${k === sec}" data-sfx="soft"><span>${n}</span>${b[k] ? `<span class="badge">${b[k]}</span>` : ''}</button>`).join('') : ''; }).join('') + '</div>';
+  if (innerWidth <= 900) { const on = $('#anav [aria-pressed="true"]'), as = $('#anav'); if (on && as) as.scrollTo({ left: on.offsetLeft - as.clientWidth / 2 + on.offsetWidth / 2, behavior: 'smooth' }); }
   $$('#aside [data-s]').forEach(x => x.onclick = () => { sec = x.dataset.s; try { sessionStorage.setItem('mhc-sec', sec); } catch { } paintAside(); paint(); scrollTo({ top: 0 }); });
   $('#aOut').onclick = () => ctx.logout();
+  wireSearch();
+}
+// Общий поиск: брони, заказы, обращения и отзывы — по коду, нику Discord, имени, номеру комнаты
+let flashId = null;
+function wireSearch() {
+  const inp = $('#aSq'), box = $('#aRes'); if (!inp) return;
+  const norm = v => String(v || '').toLowerCase();
+  const find = q => {
+    q = norm(q).trim().replace(/^@/, ''); if (q.length < 2) return [];
+    const hit = (...f) => f.some(x => norm(x).includes(q)), out = [];
+    for (const b of A.bookings) if (hit(b.code, b.name, b.discord, b.room, b.phone)) out.push({ k: 'Бронь', t: `${b.code} · ${b.name}`, d: `${b.discord} · ${b.typeName}${b.room ? ' · ' + b.room : ''} · ${BOOKING_STATUS[b.status]}`, go: () => { sec = 'bookings'; bFilter = 'all'; bq = b.code; flashId = b.id; } });
+    for (const o of A.orders) if (hit(o.name, o.discord, o.room, o.id)) out.push({ k: 'Заказ', t: `Номер ${o.room} · ${money(o.total)}`, d: `${o.name || o.discord || '—'} · ${ORDER_STATUS[o.status]} · ${when(o.createdAt)}`, go: () => { sec = 'orders'; flashId = o.id; } });
+    for (const t of A.tickets) if (hit(t.discord, t.name, t.topic, t.text)) out.push({ k: 'Обращение', t: `${t.discord} · ${t.topic}`, d: `${TICKET_STATUS[t.status]} · ${when(t.lastAt || t.createdAt)}`, go: () => { sec = 'tickets'; aTicket = t.id; } });
+    for (const r of A.reviews || []) if (hit(r.name, r.code, r.text)) out.push({ k: 'Отзыв', t: `${'★'.repeat(r.stars)} ${r.name}`, d: `${r.code || ''} · ${r.text.slice(0, 60)}`, go: () => { sec = 'reviews'; rvFilter = r.status; flashId = r.id; } });
+    return out.slice(0, 14);
+  };
+  let res = [];
+  const show = () => { res = find(inp.value); box.hidden = !inp.value.trim();
+    box.innerHTML = res.length ? res.map((r, i) => `<button type="button" data-ri="${i}"><span class="chip m">${r.k}</span><b>${esc(r.t)}</b><small class="note">${esc(r.d)}</small></button>`).join('') : `<div class="note" style="padding:.6rem">${inp.value.trim().length < 2 ? 'Введите хотя бы 2 символа' : 'Ничего не нашли'}</div>`;
+    $$('#aRes [data-ri]').forEach(b => b.onclick = () => { res[+b.dataset.ri].go(); box.hidden = true; inp.value = ''; try { sessionStorage.setItem('mhc-sec', sec); } catch { } paintAside(); paint(); scrollTo({ top: 0 }); }); };
+  inp.oninput = show; inp.onfocus = () => inp.value && show();
+  inp.onkeydown = e => { if (e.key === 'Enter' && res[0]) { e.preventDefault(); box.querySelector('[data-ri="0"]').click(); } if (e.key === 'Escape') { box.hidden = true; inp.blur(); } };
+  document.addEventListener('click', e => { if (!e.target.closest('.asearch')) box.hidden = true; });
+}
+// Шаблоны ответов: настраиваются в «Настройках», {имя} подставляется
+export const DEFAULT_REPLIES = [
+  { title: 'Номер готов', text: 'Здравствуйте, {имя}! Ваш номер готов, ключ-карта ждёт на ресепшене. Хорошего отдыха в Mile High Club!' },
+  { title: 'Заезд и выезд', text: '{имя}, заезд с 14:00, выезд до 12:00. Поздний выезд — по запросу, напишите нам.' },
+  { title: 'Бронь подтверждена', text: '{имя}, ваша бронь подтверждена. Ждём вас в Mile High Club!' },
+  { title: 'Уточним и вернёмся', text: '{имя}, спасибо за вопрос! Уточним детали и ответим в ближайшее время.' },
+  { title: 'Спасибо за отзыв', text: 'Спасибо за тёплые слова, {имя}! Будем рады видеть вас снова.' }];
+const replies = () => (A?.replyTemplates?.length ? A.replyTemplates : DEFAULT_REPLIES);
+function tplSelect(id) { return `<select class="inp tpl" id="${id}" aria-label="Шаблон ответа"><option value="">Шаблоны…</option>${replies().map((t, i) => `<option value="${i}">${esc(t.title)}</option>`).join('')}</select>`; }
+function wireTpl(selId, target, name) {
+  const sel = $('#' + selId); if (!sel) return;
+  sel.onchange = () => { const t = replies()[+sel.value]; sel.value = ''; if (!t) return; const el = typeof target === 'string' ? $(target) : target; if (!el) return;
+    const txt = t.text.replace(/\{имя\}/g, name || 'гость'); el.value = el.value ? el.value.trimEnd() + ' ' + txt : txt; el.focus(); el.dispatchEvent(new Event('input')); };
+}
+// Выгрузка в таблицу: CSV для Excel и Google Таблиц (точка с запятой, BOM — кириллица открывается без настроек)
+const day = t => { const d = new Date(t); return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`; };
+const EXPORTS = {
+  bookings: { name: 'брони', rows: () => A.bookings, cols: [['Код', b => b.code], ['Статус', b => BOOKING_STATUS[b.status]], ['Имя', b => b.name], ['Discord', b => b.discord], ['Телефон', b => b.phone], ['Тип', b => b.typeName], ['Номер', b => b.room], ['Заезд', b => b.date], ['Ночей', b => b.nights], ['Гостей', b => b.guests], ['Сумма', b => b.total], ['Скидка, %', b => b.discount || ''], ['Пожелания', b => b.notes || b.note], ['Создана', b => day(b.createdAt)]] },
+  orders: { name: 'заказы', rows: () => A.orders, cols: [['Номер', o => o.room], ['Статус', o => ORDER_STATUS[o.status]], ['Гость', o => o.name], ['Discord', o => o.discord], ['Состав', o => (o.items || []).map(i => `${i.name} × ${i.qty}`).join(', ')], ['Сумма', o => o.total], ['Комментарий', o => o.note || o.comment], ['Создан', o => day(o.createdAt)]] },
+  reviews: { name: 'отзывы', rows: () => A.reviews || [], cols: [['Оценка', r => r.stars], ['Статус', r => ({ pending: 'На проверке', approved: 'Опубликован', hidden: 'Скрыт' })[r.status]], ['Имя', r => r.name], ['Бронь', r => r.code], ['Тип', r => r.typeName], ['Отзыв', r => r.text], ['Ответ отеля', r => r.reply], ['Создан', r => day(r.createdAt)]] }
+};
+const exportBtn = kind => `<button class="btn sm ghost" data-export="${kind}" title="Скачать таблицу для Excel">${I.down} В таблицу</button>`;
+function wireExport(m) {
+  m.querySelectorAll('[data-export]').forEach(b => b.onclick = () => {
+    const X = EXPORTS[b.dataset.export], today = new Date().toISOString().slice(0, 10);
+    modal(`<form class="stack" id="xF"><h3>Выгрузка: ${X.name}</h3><div class="seg" role="group" aria-label="Период"><button type="button" data-p="7">7 дней</button><button type="button" data-p="30" aria-pressed="true">30 дней</button><button type="button" data-p="0">Всё время</button></div>
+      <div class="row" style="gap:.5rem"><label class="field grow"><span>С</span><input class="inp" type="date" name="from"></label><label class="field grow"><span>По</span><input class="inp" type="date" name="to" value="${today}"></label></div>
+      <p class="note" id="xN"></p><div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-close="">Отмена</button><button class="btn">Скачать CSV</button></div></form>`, {
+      onMount(box, close) {
+        const F = box.querySelector('#xF'), pick = () => { const a = F.from.value ? new Date(F.from.value + 'T00:00').getTime() : 0, z = F.to.value ? new Date(F.to.value + 'T23:59:59').getTime() : Infinity; return X.rows().filter(r => r.createdAt >= a && r.createdAt <= z); };
+        const count = () => { box.querySelector('#xN').textContent = `Строк в выгрузке: ${pick().length}`; };
+        const set = d => { F.from.value = d ? new Date(Date.now() - d * 864e5).toISOString().slice(0, 10) : ''; F.to.value = today; box.querySelectorAll('[data-p]').forEach(x => x.setAttribute('aria-pressed', String(+x.dataset.p === d))); count(); };
+        box.querySelectorAll('[data-p]').forEach(x => x.onclick = () => set(+x.dataset.p)); F.from.oninput = F.to.oninput = () => { box.querySelectorAll('[data-p]').forEach(x => x.setAttribute('aria-pressed', 'false')); count(); }; set(30);
+        F.onsubmit = e => { e.preventDefault(); const rows = pick(); if (!rows.length) return toast('За этот период записей нет', 'err');
+          const cell = v => { v = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[";\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+          const csv = '\ufeff' + [X.cols.map(c => c[0]), ...rows.map(r => X.cols.map(c => c[1](r)))].map(l => l.map(cell).join(';')).join('\r\n');
+          const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `mhc-${b.dataset.export}-${F.from.value || 'all'}_${F.to.value || today}.csv`; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+          toast(`Скачано строк: ${rows.length}`); close(null); };
+      } });
+  });
 }
 function head(title, actions = '', sub = '') { return `<div class="atop"><div class="stack" style="gap:.3rem"><h2>${title}</h2>${sub ? `<p class="note">${sub}</p>` : ''}</div><div class="row">${actions}</div></div>`; }
 function paint() {
   const m = $('#amain'); if (!m || !A) return;
   try { ({ overview, bookings, board, tickets, orders, reviews, jobs, events, journal, media, structure, types, venues, menu, cigars, depts, team, offers, faq, discord, senders, settings, danger }[sec] || overview)(m); }
   catch (e) { console.error(e); m.innerHTML = `<div class="empty">Ошибка раздела: ${esc(e.message)}</div>`; }
+  wireExport(m);
+  if (flashId) { const el = m.querySelector(`[data-flash="${CSS.escape(flashId)}"]`); flashId = null; if (el) { el.classList.add('flash'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => el.classList.remove('flash'), 2400); } }
 }
 const run = async (fn, ok) => { try { const r = await fn(); if (ok) { toast(ok); play('success'); } return r; } catch (e) { fail(e); return null; } };
 
@@ -67,9 +133,9 @@ function overview(m) {
 /* ---------- брони ---------- */
 function bookings(m) {
   const list = A.bookings.filter(b => (bFilter === 'new' ? b.status === 'new' : bFilter === 'active' ? ['new', 'confirmed', 'checkedin'].includes(b.status) : true) && (!bq || [b.code, b.name, b.discord, b.room].join(' ').toLowerCase().includes(bq.toLowerCase())));
-  m.innerHTML = head('Брони', `<div class="seg"><button data-f="new" aria-pressed="${bFilter === 'new'}">Новые</button><button data-f="active" aria-pressed="${bFilter === 'active'}">Активные</button><button data-f="all" aria-pressed="${bFilter === 'all'}">Все</button></div><input class="inp" id="bq" placeholder="Код, имя, Discord, номер" value="${esc(bq)}" style="width:220px">`) +
+  m.innerHTML = head('Брони', `${exportBtn('bookings')}<div class="seg"><button data-f="new" aria-pressed="${bFilter === 'new'}">Новые</button><button data-f="active" aria-pressed="${bFilter === 'active'}">Активные</button><button data-f="all" aria-pressed="${bFilter === 'all'}">Все</button></div><input class="inp" id="bq" placeholder="Код, имя, Discord, номер" value="${esc(bq)}" style="width:220px">`) +
     (list.length ? `<div class="list">${list.map(b => { const free = A.rooms.filter(r => r.type === b.type && r.status === 'free');
-      return `<div class="item"><div class="top"><span class="row"><b class="num">${esc(b.code)}</b><span>${esc(b.typeName)}${b.room ? ' · <b>номер ' + esc(b.room) + '</b>' : b.preferredRoom ? ` · просит ${esc(b.preferredRoom)}` : ''}</span></span><span class="chip ${BCHIP[b.status]}">${BOOKING_STATUS[b.status]}</span></div>
+      return `<div class="item" data-flash="${esc(b.id)}"><div class="top"><span class="row"><b class="num">${esc(b.code)}</b><span>${esc(b.typeName)}${b.room ? ' · <b>номер ' + esc(b.room) + '</b>' : b.preferredRoom ? ` · просит ${esc(b.preferredRoom)}` : ''}</span></span><span class="chip ${BCHIP[b.status]}">${BOOKING_STATUS[b.status]}</span></div>
       <span class="note">${esc(b.name)} · Discord <b>${esc(b.discord)}</b>${b.phone ? ' · тел. ' + esc(b.phone) : ''} · заезд ${esc(b.date)}, ${b.nights} ноч., ${b.guests} гост. · ${money(b.total)}${b.discount ? ` (скидка ${b.discount}%${b.tier ? ', ' + esc(b.tier) : ''})` : ''}${b.cancelledBy === 'guest' ? ' · отменил гость' : ''} · ${when(b.createdAt)}${b.handledBy ? ' · ' + esc(b.handledBy) : ''}</span>${b.note ? `<span>${esc(b.note)}</span>` : ''}
       <div class="acts" data-id="${esc(b.id)}">${b.status === 'new' ? `<select aria-label="Номер"><option value="">Назначить номер…</option>${free.map(r => `<option ${r.id === b.preferredRoom ? 'selected' : ''}>${esc(r.id)}</option>`).join('')}</select><button class="btn sm" data-a="confirm">Подтвердить</button><button class="btn sm ghost" data-a="cancel">Отклонить</button>` : ''}${b.status === 'confirmed' ? '<button class="btn sm" data-a="checkin">Заселить</button><button class="btn sm ghost" data-a="cancel">Отменить</button>' : ''}${b.status === 'checkedin' ? '<button class="btn sm" data-a="checkout">Выселить</button>' : ''}</div></div>`; }).join('')}</div>` : '<div class="empty">Броней нет.</div>');
   $$('#amain [data-f]').forEach(x => x.onclick = () => { bFilter = x.dataset.f; paint(); });
@@ -144,17 +210,18 @@ function wireTicketPurge() { $('#tPurge') && ($('#tPurge').onclick = async () =>
 function paintTicketList() {
   const el = $('#tl'); if (!el) return;
   el.innerHTML = A.tickets.length ? A.tickets.map(t => `<button data-id="${esc(t.id)}" aria-pressed="${t.id === aTicket}"><span class="row" style="justify-content:space-between"><b>${esc(t.discord)}</b><span class="chip ${t.status === 'open' ? 'ok' : t.status === 'checking' ? 'warn' : 'm'}">${TICKET_STATUS[t.status]}</span></span><span>${esc(t.topic)}</span><span class="note">${t.mode === 'discord' ? 'Тикет в Discord' : t.mode === 'site' ? 'Чат на сайте' : 'Не выбрал канал'} · ${when(t.lastAt)}${t.lastFrom === 'guest' && t.mode === 'site' && t.status === 'open' ? ' · <b style="color:var(--pink)">ждёт ответа</b>' : ''}</span></button>`).join('') : '<div class="empty">Обращений пока нет.</div>';
-  $$('#tl button').forEach(b => b.onclick = () => { aTicket = b.dataset.id; paintTicketList(); paintChat(true); });
+  $$('#tl button').forEach(b => b.onclick = () => { aTicket = b.dataset.id; paintTicketList(); paintChat(innerWidth > 900); if (innerWidth <= 900) $('#tc')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); });
 }
 function paintChat(force) {
   const el = $('#tc'); if (!el) return; const t = A.tickets.find(x => x.id === aTicket);
-  if (!t) { el.innerHTML = '<div class="empty">Выберите обращение слева.</div>'; return; }
+  if (!t) { el.innerHTML = `<div class="empty">Выберите обращение ${innerWidth <= 900 ? 'в списке выше' : 'слева'}.</div>`; return; }
   const draft = $('#acIn')?.value || '', focused = el.contains(document.activeElement);
   const msgs = t.mode === 'site' ? t.messages : t.status === 'closed' && t.messages[0]?.text === t.text ? t.messages : [{ from: 'guest', text: t.text, at: t.createdAt }, ...t.messages];
   el.innerHTML = `<div class="chat"><header><div><b>${esc(t.discord)} · ${esc(t.topic)}</b><div class="note">${esc(t.name || 'Без имени')} · ${t.mode === 'discord' ? (t.channel ? 'тикет-канал создан в Discord' : 'тикет в Discord') : 'чат на сайте'}</div></div>${t.status !== 'closed' ? `<button class="btn sm ghost" id="acClose">Закрыть</button>` : `<div class="row"><span class="chip m">Закрыто</span>${isAdmin() ? `<button class="btn sm ghost" id="acDel">${I.trash} Удалить</button>` : ''}</div>`}</header>
     <div class="msgs" id="acMsgs">${msgs.map(x => `<div class="msg ${x.from === 'staff' ? 'me' : ''}">${esc(x.text)}<small>${x.from === 'staff' ? esc(x.by || 'Персонал') : esc(x.by || 'Гость')} · ${when(x.at)}</small></div>`).join('')}</div>
-    ${(t.mode === 'site' || t.channel) && t.status !== 'closed' ? `<form class="compose" id="acF"><input id="acIn" placeholder="Ответ гостю" autocomplete="off" aria-label="Ответ гостю"><button class="btn sm" data-sfx="">Ответить</button></form>` : `<div class="compose note">${t.status === 'closed' ? `Обращение закрыто${t.closedBy ? ': ' + esc(t.closedBy) : ''}. Выше сохранённая история.` : 'Гостя нет на сервере, ответить здесь нельзя.'}</div>`}</div>`;
+    ${(t.mode === 'site' || t.channel) && t.status !== 'closed' ? `<form class="compose" id="acF">${tplSelect('acTpl')}<input id="acIn" placeholder="Ответ гостю" autocomplete="off" aria-label="Ответ гостю"><button class="btn sm" data-sfx="">Ответить</button></form>` : `<div class="compose note">${t.status === 'closed' ? `Обращение закрыто${t.closedBy ? ': ' + esc(t.closedBy) : ''}. Выше сохранённая история.` : 'Гостя нет на сервере, ответить здесь нельзя.'}</div>`}</div>`;
   if ($('#acIn')) { $('#acIn').value = draft; if (focused || force) $('#acIn').focus(); }
+  wireTpl('acTpl', '#acIn', t.name || t.discord);
   $('#acMsgs').scrollTop = 1e6;
   $('#acF') && ($('#acF').onsubmit = async e => { e.preventDefault(); const inp = $('#acIn'), text = inp.value.trim(); if (!text) return; inp.value = ''; const r = await run(() => api('POST', `/tickets/${t.id}/messages`, { text })); if (r) { play('soft'); await load(); paintTicketList(); paintChat(true); } else inp.value = text; });
   $('#acDel') && ($('#acDel').onclick = async () => { if (!await confirmBox('Удалить обращение?', 'Переписка исчезнет с сайта. Транскрипт в Discord останется.', 'Удалить', true)) return; if (await run(() => api('DELETE', `/admin/tickets/${t.id}`), 'Обращение удалено')) { aTicket = null; await load(); paintTicketList(); paintChat(); } });
@@ -163,7 +230,7 @@ function paintChat(force) {
 
 /* ---------- заказы ---------- */
 function orders(m) {
-  m.innerHTML = head('Заказы в номер') + (A.orders.length ? `<div class="list">${A.orders.map(o => `<div class="item"><div class="top"><b>Номер ${esc(o.room)} · ${money(o.total)}</b><span class="chip ${o.status === 'done' ? 'ok' : o.status === 'cancelled' ? 'bad' : o.status === 'new' ? 'p' : 'warn'}">${ORDER_STATUS[o.status]}</span></div><span>${o.items.map(i => esc(i.name) + ' × ' + i.qty).join(', ')}</span><span class="note">${esc(o.name || 'Без имени')}${o.discord ? ' · Discord ' + esc(o.discord) : ''} · ${when(o.createdAt)}</span><div class="acts">${Object.entries(ORDER_STATUS).map(([k, v]) => `<button class="btn sm ${k === o.status ? '' : 'ghost'}" data-o="${esc(o.id)}" data-s="${k}">${v}</button>`).join('')}</div></div>`).join('')}</div>` : '<div class="empty">Заказов пока нет.</div>');
+  m.innerHTML = head('Заказы в номер', A.orders.length ? exportBtn('orders') : '') + (A.orders.length ? `<div class="list">${A.orders.map(o => `<div class="item" data-flash="${esc(o.id)}"><div class="top"><b>Номер ${esc(o.room)} · ${money(o.total)}</b><span class="chip ${o.status === 'done' ? 'ok' : o.status === 'cancelled' ? 'bad' : o.status === 'new' ? 'p' : 'warn'}">${ORDER_STATUS[o.status]}</span></div><span>${o.items.map(i => esc(i.name) + ' × ' + i.qty).join(', ')}</span><span class="note">${esc(o.name || 'Без имени')}${o.discord ? ' · Discord ' + esc(o.discord) : ''} · ${when(o.createdAt)}</span><div class="acts">${Object.entries(ORDER_STATUS).map(([k, v]) => `<button class="btn sm ${k === o.status ? '' : 'ghost'}" data-o="${esc(o.id)}" data-s="${k}">${v}</button>`).join('')}</div></div>`).join('')}</div>` : '<div class="empty">Заказов пока нет.</div>');
   $$('#amain [data-o]').forEach(b => b.onclick = () => run(() => api('POST', `/admin/orders/${b.dataset.o}/status`, { status: b.dataset.s }), 'Статус обновлён'));
 }
 
@@ -246,7 +313,7 @@ async function textPage(p) {
 }
 export async function pickImage() {
   let chosen = null;
-  const media = (A?.media || []).filter(x => !/\.glb$/i.test(x.url));
+  const media = (A?.media || []).filter(x => !/\.(glb|mp3|ogg|m4a)$/i.test(x.url));
   await modal(`<div class="row" style="justify-content:space-between"><h3>Картинки</h3><label class="btn sm">${I.plus} Загрузить<input type="file" accept="image/*" multiple hidden id="miUp"></label></div>
     <span class="lbl">Загруженные</span><div class="mgrid" id="miGrid">${media.map(x => `<button type="button" data-u="${esc(x.url)}" style="background-image:url('${esc(x.url)}')" aria-label="Выбрать"></button>`).join('') || '<p class="note">Пока ничего не загружено.</p>'}</div>
     <span class="lbl">Встроенные</span><div class="mgrid">${BUILTIN_IMG.map(u => `<button type="button" data-u="${u}" style="background-image:url('${u}')" aria-label="Выбрать"></button>`).join('')}</div><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Отмена</button></div>`,
@@ -257,7 +324,7 @@ export async function pickImage() {
   return chosen;
 }
 function media(m) {
-  const list = (A.media || []);
+  const list = (A.media || []).filter(x => !/\.(mp3|ogg|m4a)$/i.test(x.url));
   m.innerHTML = head('Картинки', `<label class="btn sm">${I.plus} Загрузить<input type="file" accept="image/*" multiple hidden id="mUp"></label>`, 'Сюда загружаются обложки, фото номеров и страницы журнала. Заглушки на сайте меняются на эти картинки в нужных разделах.') +
     `<div class="drop" id="mDrop" style="margin-bottom:1rem">Перетащите картинки сюда</div><div class="mgrid">${list.map(x => `<div style="position:relative"><button type="button" style="background-image:url('${esc(x.url)}');width:100%" data-copy="${esc(x.url)}" aria-label="Скопировать ссылку"></button><button class="ibtn" style="position:absolute;top:6px;right:6px;background:var(--bg)" data-del="${esc(x.id)}" aria-label="Удалить">${I.trash}</button></div>`).join('') || '<p class="note">Пока пусто.</p>'}</div>`;
   const add = async files => { const r = await run(() => upload(files)); if (r?.length) { toast(`Загружено: ${r.length}`); await load(); paint(); } };
@@ -365,14 +432,15 @@ let rvFilter = 'pending';
 function reviews(m) {
   const all = A.reviews || [], by = st => all.filter(r => r.status === st), list = by(rvFilter);
   const RS = { pending: 'На проверке', approved: 'Опубликованы', hidden: 'Скрытые' };
-  m.innerHTML = head('Отзывы гостей', '', 'Гость может оставить отзыв после выезда, один на бронь. На главной показываются только опубликованные.') +
+  m.innerHTML = head('Отзывы гостей', all.length ? exportBtn('reviews') : '', 'Гость может оставить отзыв после выезда, один на бронь. На главной показываются только опубликованные.') +
     `<div class="row" style="gap:.4rem;margin-bottom:1rem">${Object.entries(RS).map(([k, n]) => `<button class="btn sm ${k === rvFilter ? '' : 'ghost'}" data-rf="${k}">${n} · ${by(k).length}</button>`).join('')}</div>` +
-    (list.length ? `<div class="list">${list.map(r => `<div class="item"><div class="top"><span class="row" style="gap:.5rem"><b style="color:var(--gold)">${'★'.repeat(r.stars)}<span style="color:var(--line2)">${'★'.repeat(5 - r.stars)}</span></b><b>${esc(r.name)}</b><span class="note">${esc(r.typeName || '')} · бронь ${esc(r.code || '')} · ${when(r.createdAt)}</span></span><span class="chip ${r.status === 'approved' ? 'ok' : r.status === 'hidden' ? 'bad' : 'p'}">${{ pending: 'На проверке', approved: 'Опубликован', hidden: 'Скрыт' }[r.status]}</span></div>
+    (list.length ? `<div class="list">${list.map(r => `<div class="item" data-flash="${esc(r.id)}"><div class="top"><span class="row" style="gap:.5rem"><b style="color:var(--gold)">${'★'.repeat(r.stars)}<span style="color:var(--line2)">${'★'.repeat(5 - r.stars)}</span></b><b>${esc(r.name)}</b><span class="note">${esc(r.typeName || '')} · бронь ${esc(r.code || '')} · ${when(r.createdAt)}</span></span><span class="chip ${r.status === 'approved' ? 'ok' : r.status === 'hidden' ? 'bad' : 'p'}">${{ pending: 'На проверке', approved: 'Опубликован', hidden: 'Скрыт' }[r.status]}</span></div>
       <span style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(r.text)}</span>
-      <label class="field"><span>Ответ отеля (виден под отзывом)</span><textarea data-reply="${esc(r.id)}" maxlength="600" placeholder="Спасибо, что выбрали Mile High Club…">${esc(r.reply || '')}</textarea></label>
+      <label class="field"><span>Ответ отеля (виден под отзывом)</span><textarea data-reply="${esc(r.id)}" maxlength="600" placeholder="Спасибо, что выбрали Mile High Club…">${esc(r.reply || '')}</textarea></label><div>${tplSelect('rt-' + r.id)}</div>
       <div class="row" style="gap:.4rem">${r.status !== 'approved' ? `<button class="btn sm" data-rs="${esc(r.id)}|approved">Опубликовать</button>` : ''}${r.status !== 'hidden' ? `<button class="btn sm ghost" data-rs="${esc(r.id)}|hidden">Скрыть</button>` : ''}<button class="btn sm ghost" data-rsave="${esc(r.id)}">Сохранить ответ</button><button class="btn sm ghost" data-rdel="${esc(r.id)}" style="color:var(--bad)">Удалить</button></div></div>`).join('')}</div>`
       : `<div class="empty">${rvFilter === 'pending' ? 'Новых отзывов нет.' : 'Пусто.'}</div>`);
   $$('[data-rf]').forEach(b => b.onclick = () => { rvFilter = b.dataset.rf; paint(); });
+  list.forEach(r => wireTpl('rt-' + r.id, $(`[data-reply="${CSS.escape(r.id)}"]`), r.name));
   const reply = id => $(`[data-reply="${CSS.escape(id)}"]`)?.value;
   $$('[data-rs]').forEach(b => b.onclick = async () => { const [id, status] = b.dataset.rs.split('|'); if (await run(() => api('POST', `/admin/reviews/${id}`, { status, reply: reply(id) }), status === 'approved' ? 'Отзыв опубликован' : 'Отзыв скрыт')) { await load(); paintAside(); paint(); } });
   $$('[data-rsave]').forEach(b => b.onclick = async () => { const id = b.dataset.rsave; if (await run(() => api('POST', `/admin/reviews/${id}`, { reply: reply(id) }), 'Ответ сохранён')) { await load(); paint(); } });
@@ -414,6 +482,7 @@ function discord(m) {
   const postable = dMeta.channels.filter(c => c.canPost !== false).length;
   const chNote = !dc.connected ? '' : dMeta.loading ? '<p class="note">Загружаем каналы сервера…</p>' : dMeta.error ? `<p class="note">Каналы не загрузились: ${esc(dMeta.error)}. <button type="button" class="btn ghost sm" data-meta>Повторить</button></p>`
     : !postable ? `<p class="note">${dMeta.channels.length ? 'Бот видит каналы, но ни в одном не может создать вебхук: выдайте его роли право «Управлять вебхуками».' : 'Бот не видит ни одного текстового канала: проверьте его права на сервере.'} <button type="button" class="btn ghost sm" data-meta>Обновить список</button></p>` : '';
+  const roleOpts = sel => dMeta.roles.map(r => `<option value="${esc(r.id)}" ${r.id === sel ? 'selected' : ''}>@${esc(r.name)}</option>`).join('');
   const roleBox = (id, on) => `<div class="stack" id="${id}" style="gap:.35rem;max-height:13rem;overflow:auto">${dMeta.roles.map(r => `<label class="check"><input type="checkbox" value="${esc(r.id)}" ${on?.includes(r.id) ? 'checked' : ''}><span style="color:${esc(r.color || 'inherit')}">${esc(r.name)}</span></label>`).join('') || '<span class="note">Роли появятся, когда бот будет онлайн.</span>'}</div>`;
   m.innerHTML = head('Discord', '', 'Сайт главный: посты, вебхуки и доступ настраиваются здесь. Сервер получает посты, уведомления персоналу и тикеты, а события с сервера появляются в афише на сайте.') + `
     <div class="g2" style="align-items:start">
@@ -431,6 +500,7 @@ function discord(m) {
         <div class="card pad stack"><h3 style="font-size:1rem">Состояние</h3><div class="row"><span class="chip ${dc.connected ? 'ok' : 'm'}"><span class="d"></span>${dc.connected ? 'Бот онлайн' : 'Бот не подключён'}</span>${dc.connected ? `<span class="note">${esc(dc.bot || '')} · ${esc(dc.guild || '')}</span>` : ''}</div>
           ${admin ? `<div class="row"><button type="button" class="btn ghost sm" id="dSetup" ${dc.connected ? '' : 'disabled'}>Обновить структуру</button><button type="button" class="btn ghost sm" id="dProf" ${dc.connected ? '' : 'disabled'}>Профиль сервера</button><button type="button" class="btn ghost sm" id="dClean" ${dc.connected ? '' : 'disabled'}>Убрать лишнее</button></div><p class="note">Перед каждым действием бот покажет список изменений.</p>` : ''}</div></div></div>
     ${admin ? `<form class="card pad stack" id="dAcc" style="margin-top:1rem"><h3 style="font-size:1rem">Доступ и анонсы</h3><div class="g2"><div class="field"><span>Администраторы</span>${roleBox('dAdm', s.adminRoles)}</div><div class="field"><span>Директора</span>${roleBox('dDir', s.directorRoles)}</div><div class="field"><span>Персонал отеля</span>${roleBox('dMod', s.modRoles)}</div><div class="field"><span>Разработка (тестовый канал)</span>${roleBox('dDev', s.devRoles)}</div></div>
+      <div class="g2"><label class="field"><span>Кого отмечать при новом отзыве</span><select id="dRvR"><option value="">Никого, только сообщение</option>${roleOpts(s.reviewRole)}</select></label><label class="field"><span>Кого отмечать при отклике на вакансию</span><select id="dJbR"><option value="">Никого, только сообщение</option>${roleOpts(s.jobRole)}</select></label></div>
       <label class="field"><span>Канал для анонсов событий с сервера</span><select id="dAnn"><option value="">Первый канал объявлений</option>${chOpts(s.announceChannel)}</select></label>
       <p class="note">Права дают только отмеченные роли. Администраторы видят всё и управляют сайтом. Директора видят дирекцию и персонал. Персонал видит только свой раздел. Директора и персонал работают в панели как модераторы. Владелец сервера всегда администратор.</p><div><button class="btn" ${dc.connected ? '' : 'disabled'}>Сохранить</button></div></form>` : ''}`;
   wirePickers($('#dForm'));
@@ -454,7 +524,7 @@ function discord(m) {
   $$('[data-edit]').forEach(b => b.onclick = () => { dEdit = A.posts.find(p => p.id === b.dataset.edit); dPost = { ...POST0(), ...structuredClone(dEdit.post) }; paint(); });
   $('#dForm').onsubmit = async e => { e.preventDefault(); read(); const r = await run(() => api('POST', '/admin/discord/send', { id: dEdit?.id, channel: dChannel, sender: dSender || A.senders?.[0]?.id, post: dPost }), dEdit ? 'Пост изменён' : 'Отправлено'); if (r) { dEdit = null; dPost = POST0(); await load(); paint(); } };
   const checked = id => $$(`#${id} input:checked`).map(i => i.value);
-  $('#dAcc') && ($('#dAcc').onsubmit = async e => { e.preventDefault(); if (await run(() => api('POST', '/admin/discord/access', { admin: checked('dAdm'), director: checked('dDir'), mod: checked('dMod'), dev: checked('dDev'), announceChannel: $('#dAnn').value }), 'Доступ сохранён')) { await load(); paint(); } });
+  $('#dAcc') && ($('#dAcc').onsubmit = async e => { e.preventDefault(); if (await run(() => api('POST', '/admin/discord/access', { admin: checked('dAdm'), director: checked('dDir'), mod: checked('dMod'), dev: checked('dDev'), announceChannel: $('#dAnn').value, reviewRole: $('#dRvR').value, jobRole: $('#dJbR').value }), 'Доступ сохранён')) { await load(); paint(); } });
   $('#dSetup') && ($('#dSetup').onclick = async () => { const p = await run(() => api('POST', '/admin/discord/plan')); if (!p) return; if (!p.lines.length) return toast('Структура уже на месте'); if (!await confirmBox('Обновить структуру?', p.lines.join('; ') + '.', 'Обновить')) return; const r = await run(() => api('POST', '/admin/discord/setup')); if (r) { toast(r.skipped.length ? `Готово. Пропущено: ${r.skipped.join(', ')}` : 'Структура обновлена'); play('success'); await load(); paint(); } });
   $('#dProf') && ($('#dProf').onclick = async () => { const r = await run(() => api('POST', '/admin/discord/profile')); if (r) { const bad = Object.entries(r).filter(([, v]) => v !== 'ok'); toast(bad.length ? `Не вышло: ${bad.map(([k, v]) => `${k} (${v})`).join('; ')}` : 'Профиль сервера обновлён', bad.length ? 'err' : ''); } });
   $('#dClean') && ($('#dClean').onclick = async () => { const p = await run(() => api('POST', '/admin/discord/cleanup-plan')); if (!p) return; const n = p.channels.length + p.categories.length + p.roles.length; if (!n) return toast(p.kept.length ? `Удалять нечего. Оставлены каналы с сообщениями: ${p.kept.join(', ')}` : 'Лишнего нет'); const list = [p.channels.length && `Каналы (${p.channels.length}): ${p.channels.join(', ')}`, p.categories.length && `Категории (${p.categories.length}): ${p.categories.join(', ')}`, p.roles.length && `Роли (${p.roles.length}): ${p.roles.join(', ')}`, p.kept.length && `Останутся, там писали люди: ${p.kept.join(', ')}`].filter(Boolean).join('. '); if (!await confirmBox('Удалить с сервера?', `Удаляется только то, что создал бот. Вернуть нельзя. ${list}.`, 'Удалить', true)) return; const r = await run(() => api('POST', '/admin/discord/cleanup')); if (r) { toast(`Удалено каналов: ${r.channels}, категорий: ${r.categories}, ролей: ${r.roles}`); play('success'); dMeta = null; await load(); paint(); } });
@@ -470,9 +540,25 @@ function settings(m) {
   m.innerHTML = head('Настройки') + `<form class="card pad stack" id="sF"><div class="g2">${F.map(f => field(f, s[f.k])).join('')}</div>
     <div class="stack" style="gap:.5rem"><span class="lbl">Статусы гостей</span><p class="note">Статус даётся за прожитые ночи (завершённые брони). Скидка применяется к новым броням гостя автоматически, привилегия видна в кабинете. Пустое название — статус удаляется.</p>
       <div class="row note" aria-hidden="true" style="flex-wrap:wrap;gap:.5rem"><span style="flex:1 1 8rem">Название</span><span style="flex:0 1 6rem">С ночей</span><span style="flex:0 1 6rem">Скидка, %</span><span style="flex:2 1 12rem">Привилегия</span></div><div class="stack" id="tiersBox" style="gap:.4rem">${(A.settingsFull?.tiers?.length ? A.settingsFull.tiers : (S.pub?.settings?.tiers || [])).concat([{ name: '', nights: '', discount: '', perk: '' }]).map(t => `<div class="row tier-row" style="flex-wrap:wrap"><input class="inp" data-t="name" placeholder="Название" value="${esc(t.name)}" style="flex:1 1 8rem"><input class="inp" type="number" data-t="nights" min="1" placeholder="Ночей" value="${esc(t.nights)}" style="flex:0 1 6rem" aria-label="С какого числа ночей"><input class="inp" type="number" data-t="discount" min="0" max="50" placeholder="Скидка %" value="${esc(t.discount)}" style="flex:0 1 6rem" aria-label="Скидка, %"><input class="inp" data-t="perk" placeholder="Привилегия" value="${esc(t.perk)}" style="flex:2 1 12rem"></div>`).join('')}</div></div>
+    <div class="stack" style="gap:.5rem"><span class="lbl">Шаблоны ответов</span><p class="note">Вставляются одной кнопкой в чате обращения и в ответе на отзыв. {имя} заменяется именем гостя.</p><div class="stack" id="tplBox" style="gap:.5rem"></div><div><button type="button" class="btn sm ghost" id="tplAdd">${I.plus} Добавить шаблон</button></div></div>
+    <div class="stack" style="gap:.5rem"><span class="lbl">Музыка на вертушке («Отдых»)</span><p class="note">Свои треки (mp3, ogg, m4a до 10 МБ) играют вместо YouTube: случайный трек с случайного места. Пока треков нет, играет ссылка YouTube выше.</p>
+      <div class="stack" id="trkBox" style="gap:.4rem"></div><div class="row"><label class="btn sm ghost" style="cursor:pointer">${I.plus} Загрузить треки<input type="file" id="trkUp" accept="audio/mpeg,audio/ogg,audio/mp4,.mp3,.ogg,.m4a" multiple hidden></label></div></div>
     <p class="note">Роли, которые дают доступ к панели, выбираются в разделе Discord.</p><div><button class="btn">Сохранить</button></div></form>`;
   wirePickers($('#sF'));
-  $('#sF').onsubmit = async e => { e.preventDefault(); const body = { ...readFields(F), tiers: $$('#tiersBox .tier-row').map(r => Object.fromEntries([...r.querySelectorAll('[data-t]')].map(i => [i.dataset.t, i.value]))).filter(t => t.name.trim()) }; if (await run(() => api('PUT', '/admin/settings/main', body), 'Настройки сохранены')) { await load(); ctx.reloadPublic?.(); } };
+  let tpls = (A.replyTemplates?.length ? A.replyTemplates : DEFAULT_REPLIES).map(t => ({ ...t }));
+  const paintTpl = () => { $('#tplBox').innerHTML = tpls.map((t, i) => `<div class="tplrow"><input class="inp" data-tt="${i}" value="${esc(t.title)}" placeholder="Название"><textarea class="inp" data-tx="${i}" rows="2" placeholder="Текст ответа">${esc(t.text)}</textarea><button type="button" class="btn sm ghost" data-tdel="${i}" aria-label="Удалить шаблон">${I.trash}</button></div>`).join('');
+    $$('#tplBox [data-tt]').forEach(x => x.oninput = () => { tpls[+x.dataset.tt].title = x.value; }); $$('#tplBox [data-tx]').forEach(x => x.oninput = () => { tpls[+x.dataset.tx].text = x.value; });
+    $$('#tplBox [data-tdel]').forEach(x => x.onclick = () => { tpls.splice(+x.dataset.tdel, 1); paintTpl(); }); };
+  paintTpl(); $('#tplAdd').onclick = () => { tpls.push({ title: '', text: '' }); paintTpl(); $(`#tplBox [data-tt="${tpls.length - 1}"]`).focus(); };
+  let tracks = (s.deckTracks || []).map(t => ({ ...t }));
+  const paintTracks = () => { $('#trkBox').innerHTML = tracks.length ? tracks.map((t, i) => `<div class="row trk" style="flex-wrap:nowrap"><span class="note num" style="width:1.5rem">${i + 1}</span><input class="inp grow" data-ti="${i}" value="${esc(t.title)}" placeholder="Название трека"><audio src="${esc(t.url)}" controls preload="none" style="height:2rem;max-width:12rem"></audio><button type="button" class="btn sm ghost" data-td="${i}" aria-label="Убрать трек">${I.trash}</button></div>`).join('') : '<span class="note">Треков нет — играет YouTube.</span>';
+    $$('#trkBox [data-ti]').forEach(x => x.oninput = () => { tracks[+x.dataset.ti].title = x.value; });
+    $$('#trkBox [data-td]').forEach(x => x.onclick = () => { tracks.splice(+x.dataset.td, 1); paintTracks(); }); };
+  paintTracks();
+  $('#trkUp').onchange = async e => { const files = [...e.target.files]; if (!files.length) return; const r = await run(() => upload(files)); e.target.value = '';
+    const got = (r || []).filter(x => /\.(mp3|ogg|m4a)$/i.test(x.url)); if (!got.length) return toast('Не получилось загрузить. Нужны mp3, ogg или m4a до 10 МБ', 'err');
+    got.forEach(x => tracks.push({ url: x.url, title: String(x.name || '').replace(/\.[^.]+$/, '') })); paintTracks(); toast(`Загружено треков: ${got.length}. Не забудьте сохранить настройки`); };
+  $('#sF').onsubmit = async e => { e.preventDefault(); const body = { ...readFields(F), replyTemplates: tpls.filter(t => t.title.trim() && t.text.trim()), deckTracks: tracks, tiers: $$('#tiersBox .tier-row').map(r => Object.fromEntries([...r.querySelectorAll('[data-t]')].map(i => [i.dataset.t, i.value]))).filter(t => t.name.trim()) }; if (await run(() => api('PUT', '/admin/settings/main', body), 'Настройки сохранены')) { await load(); ctx.reloadPublic?.(); } };
 }
 function danger(m) {
   m.innerHTML = head('Сброс данных', '', 'Используйте, чтобы начать с чистого листа: например, после тестов.') + `<div class="danger"><h3 style="font-size:1.05rem;color:var(--bad)">Сбросить статистику</h3>

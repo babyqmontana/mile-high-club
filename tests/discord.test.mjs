@@ -432,3 +432,16 @@ test('бот, не подключившийся к серверу, гаситс�
     assert.equal(destroyed, 1, 'клиент закрыт, кнопки в Discord не обрабатываются «полуживым» ботом');
   } finally { Client.prototype.login = login; Client.prototype.destroy = destroy; }
 });
+
+test('роли для отметки при отзыве и отклике сохраняются, мусор отбрасывается', async () => {
+  const { core } = makeCore({ setupGuild: async () => ({}) });
+  await core.handle('POST', '/admin/discord/access', { user: admin, body: { reviewRole: '444', jobRole: '<@&1>' } });
+  assert.equal(core.settings().reviewRole, '444');
+  assert.equal(core.settings().jobRole, '');
+});
+
+test('отклик на вакансию из Discord уходит персоналу с темой «Трудоустройство»', async () => {
+  const got = [], { core } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan3', notify: async (k, d) => { got.push([k, d.topic]); } });
+  await createInteractions({ core, resolveRole: async () => 'guest' })(fakeModal('mhc:job:send', { name: 'Джон', topic: 'Повар', text: 'Опыт три года' }));
+  assert.ok(got.some(([k, t]) => k === 'ticket_discord' && /^Трудоустройство: Повар/.test(t)));
+});
