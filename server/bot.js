@@ -127,15 +127,30 @@ export async function startBot({ core, store, env, hooks }) {
   // серия сообщений подряд даёт одну правку
   const cardQueue = new Map();
   const card = (key, kind, d) => { clearTimeout(cardQueue.get(key)); cardQueue.set(key, setTimeout(() => { cardQueue.delete(key); writeCard(key, kind, d).catch(e => console.error('Discord feed:', e.message)); }, 1500)); };
+  // гость удалил свои данные: карточку из ленты убираем
+  hooks.dropCard = async key => {
+    clearTimeout(cardQueue.get(key)); cardQueue.delete(key);
+    const rec = store.get('feedcards', key); if (!rec) return;
+    const c = await channel(FEED); const m = c && await c.messages.fetch(rec.message).catch(() => null);
+    if (m) await m.delete().catch(() => {});
+    store.del('feedcards', key);
+  };
+  // ...и тикет-канал удаляется без транскрипта в архив
+  hooks.dropTicketChannel = async t => { const c = t.channel && await guild.channels.fetch(t.channel).catch(() => null); if (c) await c.delete('Гость удалил свои данные на сайте'); };
   hooks.notify = async (kind, d) => {
     if (kind === 'booking' || kind === 'booking_status') card('b:' + d.id, 'booking', d);
     if (kind === 'order' || kind === 'order_status') card('o:' + d.id, 'order', d);
     if (kind.startsWith('ticket')) card('t:' + d.id, 'ticket', d);
+    // гость отключил личные сообщения в кабинете — карточка персоналу обновляется, гостю не пишем
+    if (d.quiet) return;
+    const cabinet = site ? ` Кабинет: ${site}/#me` : '';
+    if (kind === 'ticket_reply') { const m = await findMember(d.discord, d.discordId); if (m) m.send(`Управляющий ответил на обращение «${d.topic}»: ${String(d.replyText || '').slice(0, 1500)}${cabinet}`).catch(() => {}); }
+    if (kind === 'ticket_closed' && d.mode === 'site') { const m = await findMember(d.discord, d.discordId); if (m) m.send(`Ваше обращение «${d.topic}» закрыто. Если вопрос остался, откройте новое.${cabinet}`).catch(() => {}); }
     if (kind === 'booking_status') {
       const text = { confirmed: `Бронь ${d.code} подтверждена. Ваш номер ${d.room}, заезд ${d.date}.`, cancelled: `Бронь ${d.code} отменена. Если это ошибка, напишите управляющим.`, checkedin: `Добро пожаловать в Mile High Club! Номер ${d.room}.`, done: `Спасибо, что остановились у нас. Ждём снова.` }[d.status];
       const m = await findMember(d.discord, d.discordId); if (m && text) m.send(text).catch(() => {});
     }
-    if (kind === 'order_status' && d.status === 'delivering') { const m = await findMember(d.discord); if (m) m.send(`Ваш заказ уже несут в номер ${d.room}.`).catch(() => {}); }
+    if (kind === 'order_status' && ['delivering', 'cancelled'].includes(d.status)) { const m = await findMember(d.discord, d.discordId); if (m) m.send(d.status === 'delivering' ? `Ваш заказ уже несут в номер ${d.room}.` : `Заказ в номер ${d.room} отменён. Если это ошибка, напишите управляющим.`).catch(() => {}); }
   };
 
   // посты с сайта: вебхук канала с именем и аватаркой отправителя из панели

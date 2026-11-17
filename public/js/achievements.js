@@ -32,6 +32,9 @@ const listeners = new Set();
 export const has = id => !!got[id];
 export const count = () => LIST.filter(a => got[a.id]).length;
 export const onChange = fn => listeners.add(fn);
+export const ids = () => Object.keys(got).filter(id => LIST.some(a => a.id === id));
+// найденные на другом устройстве секреты приходят из аккаунта: добавляем без всплывашек
+export function merge(list) { let n = 0; for (const id of list || []) if (!got[id] && LIST.some(a => a.id === id)) { got[id] = Date.now(); n++; } if (n) { save(); listeners.forEach(f => f()); } return n; }
 
 let queue = [], showing = false;
 export function unlock(id) {
