@@ -31,7 +31,7 @@ export const CIGAR_SHAPES = { robusto: 'Робусто', corona: 'Корона',
 
 // Что может редактировать каждая роль через общий редактор
 const EDITABLE = {
-  types: 'admin', venues: 'admin', menu: 'admin', cigars: 'admin', depts: 'admin', team: 'admin', offers: 'admin', faq: 'admin', settings: 'admin', media: 'mod',
+  jobs: 'admin', types: 'admin', venues: 'admin', menu: 'admin', cigars: 'admin', depts: 'admin', team: 'admin', offers: 'admin', faq: 'admin', settings: 'admin', media: 'mod',
   issues: 'mod', events: 'mod', senders: 'admin'
 };
 // Отправители постов в Discord: имя и аватарка вебхука
@@ -77,6 +77,13 @@ export function createCore(store, hooks = {}) {
   const ownerOf = (user, guestKey) => user ? 'd:' + user.id : guestKey ? 'g:' + str(guestKey, 64) : null;
   const isOwner = (doc, user, guestKey) => doc.owner && (doc.owner === ownerOf(user, guestKey) || (user && doc.owner === 'd:' + user.id));
   const sort = (arr, f = 'order') => arr.sort((a, b) => (a[f] ?? 0) - (b[f] ?? 0));
+  // «Пойду» на событиях: отметка гостя хранится по владельцу, событию приходит только число
+  const goingCount = id => store.all('rsvp').filter(r => r.eventId === id).length;
+  // отзывы: на сайте только одобренные персоналом; рейтинг — по ним же
+  function reviewsPublic() {
+    const ok = store.all('reviews').filter(r => r.status === 'approved').sort((a, b) => b.createdAt - a.createdAt);
+    return { avg: ok.length ? Math.round(ok.reduce((n, r) => n + r.stars, 0) / ok.length * 10) / 10 : 0, count: ok.length, list: ok.slice(0, 12).map(r => ({ id: r.id, name: r.name, typeName: r.typeName, stars: r.stars, text: r.text, reply: r.reply || '', createdAt: r.createdAt })) };
+  }
   // кабинет гостя: профиль хранится по владельцу (Discord-аккаунт или ключ устройства)
   const profileOf = owner => (owner && store.get('profiles', owner)) || null;
   const tiers = () => { const t = settings().tiers; return (Array.isArray(t) && t.length ? t : DEFAULT_TIERS).slice().sort((a, b) => a.nights - b.nights); };
@@ -110,7 +117,9 @@ export function createCore(store, hooks = {}) {
       offers: sort(store.all('offers')).filter(o => o.active !== false),
       faq: sort(store.all('faq')),
       issues: store.all('issues').filter(i => i.published).sort((a, b) => (b.date || 0) - (a.date || 0)),
-      events: store.all('events').filter(e => !['cancelled', 'completed'].includes(e.status) && (e.end || e.start + 3 * 3600e3) > now - 3600e3).sort((a, b) => a.start - b.start).slice(0, 30),
+      events: store.all('events').filter(e => !['cancelled', 'completed'].includes(e.status) && (e.end || e.start + 3 * 3600e3) > now - 3600e3).sort((a, b) => a.start - b.start).slice(0, 30).map(e => ({ ...e, going: goingCount(e.id) })),
+      jobs: sort(store.all('jobs')).filter(j => j.open !== false),
+      reviews: reviewsPublic(),
       media: store.all('media').map(m => ({ id: m.id, url: m.url })),
       guests: hooks.guests?.() || null, // гостей в отеле сейчас (онлайн сервера) и в гостевой книге (участники)
       now
@@ -124,15 +133,17 @@ export function createCore(store, hooks = {}) {
   on('GET', '/public', () => publicData());
   on('GET', '/me', ({ user }) => ({ user: user || null }));
   on('GET', '/me/items', ({ user, guestKey }) => {
-    const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [], profile: null, stats: guestStats(null) };
+    const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [], profile: null, stats: guestStats(null), reviews: [], going: [] };
     const mine = c => store.all(c).filter(d => d.owner === o).sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
-    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: profileOf(o), stats: guestStats(o) };
+    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: profileOf(o), stats: guestStats(o), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r), going: store.all('rsvp').filter(r => r.owner === o).map(r => r.eventId) };
   });
   // после входа брони, заказы, обращения и профиль с этого устройства переходят в аккаунт
   on('POST', '/me/claim', ({ user, guestKey }) => {
     if (!user || !guestKey) return { moved: 0 };
     const from = ownerOf(null, guestKey), to = ownerOf(user); let moved = 0;
     for (const c of ['bookings', 'orders', 'tickets']) store.all(c).filter(d => d.owner === from).forEach(d => { store.put(c, d.id, { ...d, owner: to, discordId: d.discordId || user.id }); moved++; });
+    store.all('reviews').filter(r => r.owner === from).forEach(r => store.put('reviews', r.id, { ...r, owner: to }));
+    store.all('rsvp').filter(r => r.owner === from).forEach(r => { store.del('rsvp', r.id); const id = r.eventId + '|' + to; if (!store.get('rsvp', id)) store.put('rsvp', id, { ...r, id, owner: to, discordId: user.id }); });
     const gp = profileOf(from);
     if (gp) { const up = profileOf(to) || { id: to }; store.put('profiles', to, { ...gp, ...Object.fromEntries(Object.entries(up).filter(([, v]) => v !== '' && v != null)), lifex: up.lifex || gp.lifex, id: to, achievements: [...new Set([...(gp.achievements || []), ...(up.achievements || [])])].slice(0, 40), updatedAt: Date.now() }); store.del('profiles', from); }
     if (moved) emit(['bookings', 'orders', 'tickets']);
@@ -166,6 +177,26 @@ export function createCore(store, hooks = {}) {
     const { lifex, ...rest } = prev; store.put('profiles', o, { ...rest, updatedAt: Date.now() }); call('removeUpload', lifex.avatar);
     return { profile: profileOf(o) };
   });
+  // отзыв — только после завершённого проживания, один на бронь; на сайт попадает после одобрения персоналом
+  on('POST', '/me/reviews', ({ body, user, guestKey }) => {
+    const b = myBooking(str(body.bookingId, 40), user, guestKey);
+    if (b.status !== 'done') bad('Отзыв можно оставить после выезда');
+    if (store.all('reviews').some(r => r.bookingId === b.id)) bad('Отзыв на эту бронь уже есть');
+    const stars = Math.round(num(body.stars, 0)), text = str(body.text, 1000);
+    if (stars < 1 || stars > 5) bad('Поставьте оценку от 1 до 5 звёзд');
+    if (text.length < 10) bad('Напишите хотя бы пару слов о проживании');
+    const r = { id: uid('rv'), bookingId: b.id, code: b.code, owner: b.owner, name: b.name, typeName: b.typeName, stars, text, status: 'pending', createdAt: Date.now() };
+    store.put('reviews', r.id, r); log(`Новый отзыв (${stars}★) на бронь ${b.code}`, 'review'); emit(['reviews', 'log']);
+    const { owner, ...out } = r; return { review: out };
+  });
+  // «Пойду»: повторное нажатие снимает отметку
+  on('POST', '/events/:id/going', ({ params, user, guestKey }) => {
+    const o = ownerOf(user, guestKey); if (!o) bad('Не удалось отметиться');
+    const e = store.get('events', str(params.id, 80)); if (!e || ['cancelled', 'completed'].includes(e.status) || (e.end || e.start + 3 * 3600e3) < Date.now()) bad('Событие уже прошло');
+    const id = e.id + '|' + o, had = store.get('rsvp', id);
+    if (had) store.del('rsvp', id); else store.put('rsvp', id, { id, eventId: e.id, owner: o, discordId: user?.id || null, at: Date.now(), reminded: false });
+    emit(['rsvp']); return { going: !had, count: goingCount(e.id) };
+  });
   const myBooking = (id, user, guestKey) => { const b = store.get('bookings', id); if (!b || !isOwner(b, user, guestKey)) throw new HttpError(404, 'Бронь не найдена'); return b; };
   const freeRoomOf = b => { const r = b.room && store.get('rooms', b.room); if (r && (!r.bookingId || r.bookingId === b.id) && r.status === 'booked') { store.put('rooms', r.id, { ...r, status: 'free', guest: null, discord: null, bookingId: null, updatedAt: Date.now() }); return true; } return false; };
   // гость сам отменяет бронь до заселения; номер, если уже назначен, освобождается
@@ -197,13 +228,14 @@ export function createCore(store, hooks = {}) {
     let rooms = false;
     for (const b of bookings) { const r = b.room && store.get('rooms', b.room); if (r && r.bookingId === b.id && ['booked', 'occupied'].includes(r.status)) { store.put('rooms', r.id, { ...r, status: r.status === 'occupied' ? 'cleaning' : 'free', guest: null, discord: null, bookingId: null, updatedAt: Date.now() }); rooms = true; } store.del('bookings', b.id); }
     orders.forEach(o => store.del('orders', o.id));
+    mine('reviews').forEach(r => store.del('reviews', r.id)); mine('rsvp').forEach(r => store.del('rsvp', r.id));
     for (const t of tickets) { if (t.channel) await call('dropTicketChannel', t); store.del('tickets', t.id); }
     // карточки в ленте персонала тоже убираем
     for (const d of [...bookings.map(b => 'b:' + b.id), ...orders.map(o => 'o:' + o.id), ...tickets.map(t => 't:' + t.id)]) call('dropCard', d);
     const marks = [...bookings.map(b => b.code), ...tickets.map(t => `от ${t.discord}`), ...tickets.map(t => `обращение ${t.discord}`)].filter(x => x && x.length > 3);
     store.all('log').filter(l => marks.some(m => String(l.text).includes(m))).forEach(l => store.del('log', l.id));
     owners.forEach(o => { const pr = profileOf(o); if (pr?.lifex?.avatar) call('removeUpload', pr.lifex.avatar); store.del('profiles', o); });
-    emit(['bookings', 'orders', 'tickets', 'log']); if (rooms) roomsChanged();
+    emit(['bookings', 'orders', 'tickets', 'log', 'reviews', 'rsvp']); if (rooms) roomsChanged();
     return { deleted: { bookings: bookings.length, orders: orders.length, tickets: tickets.length } };
   });
 
@@ -277,8 +309,18 @@ export function createCore(store, hooks = {}) {
     need(user, 'mod');
     const s = settings();
     return { ...publicData(), venues: sort(store.all('venues')), team: store.all('team').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), offers: store.all('offers').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), settingsFull: user.role === 'admin' ? s : null, rooms: roomsSorted(), issues: store.all('issues').sort((a, b) => (b.date || 0) - (a.date || 0)), events: store.all('events').sort((a, b) => b.start - a.start).slice(0, 100),
-      bookings: store.all('bookings').sort((a, b) => b.createdAt - a.createdAt).slice(0, 500), tickets: store.all('tickets').sort((a, b) => b.lastAt - a.lastAt).slice(0, 300), orders: store.all('orders').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300), log: store.all('log').sort((a, b) => b.at - a.at).slice(0, 120), summary: freeSummary(), discord: hooks.status ? hooks.status() : { connected: false }, senders: senders(), posts: store.all('posts').sort((a, b) => b.at - a.at).slice(0, 30) };
+      bookings: store.all('bookings').sort((a, b) => b.createdAt - a.createdAt).slice(0, 500), reviews: store.all('reviews').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300).map(({ owner, ...r }) => r), jobsAll: sort(store.all('jobs')), tickets: store.all('tickets').sort((a, b) => b.lastAt - a.lastAt).slice(0, 300), orders: store.all('orders').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300), log: store.all('log').sort((a, b) => b.at - a.at).slice(0, 120), summary: freeSummary(), discord: hooks.status ? hooks.status() : { connected: false }, senders: senders(), posts: store.all('posts').sort((a, b) => b.at - a.at).slice(0, 30) };
   });
+  // отзывы: опубликовать, скрыть, ответить от имени отеля, удалить
+  on('POST', '/admin/reviews/:id', ({ params, body, user }) => {
+    need(user, 'mod'); const r = store.get('reviews', params.id); if (!r) throw new HttpError(404, 'Отзыв не найден');
+    if ('status' in body) { if (!['pending', 'approved', 'hidden'].includes(body.status)) bad('Неверный статус'); r.status = body.status; }
+    if ('reply' in body) { r.reply = str(body.reply, 600); r.replyBy = user.username; }
+    r.updatedAt = Date.now(); store.put('reviews', r.id, r);
+    log(`${user.username}: отзыв на ${r.code} — ${{ approved: 'опубликован', hidden: 'скрыт', pending: 'на модерации' }[r.status]}`, 'review', user.username); emit(['reviews', 'log']);
+    return { review: r };
+  });
+  on('DELETE', '/admin/reviews/:id', ({ params, user }) => { need(user, 'mod'); const r = store.get('reviews', params.id); if (!r) throw new HttpError(404, 'Отзыв не найден'); store.del('reviews', r.id); log(`${user.username} удалил отзыв на ${r.code}`, 'review', user.username); emit(['reviews', 'log']); return { ok: true }; });
   // Удаление обращений: только закрытых, чтобы открытый тикет-канал не остался без записи на сайте
   on('POST', '/admin/tickets/purge', ({ user }) => { need(user, 'admin'); const list = store.all('tickets').filter(t => t.status === 'closed'); list.forEach(t => store.del('tickets', t.id)); log(`${user.username} удалил закрытые обращения: ${list.length}`, 'danger', user.username); emit(['tickets', 'log']); return { deleted: list.length }; });
   on('DELETE', '/admin/tickets/:id', ({ params, user }) => { need(user, 'admin'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения'); if (t.status !== 'closed') bad('Сначала закройте обращение'); store.del('tickets', t.id); log(`${user.username} удалил обращение ${t.discord}: ${t.topic}`, 'danger', user.username); emit(['tickets', 'log']); return { ok: true }; });
@@ -426,6 +468,7 @@ export function createCore(store, hooks = {}) {
     if (col === 'team') { pick('name', S(60)); pick('position', S(60)); pick('dept', S(40)); pick('photo', U(400)); pick('bio', S(600)); pick('since', S(40)); pick('discord', S(40)); pick('quote', S(160)); pick('order', N); pick('hidden', B); pick('example', B); }
     if (col === 'offers') { pick('title', S(80)); pick('tag', S(30)); pick('desc', S(400)); pick('price', S(40)); pick('image', U(400)); pick('order', N); pick('active', B); pick('cta', S(30)); pick('link', U(120)); }
     if (col === 'faq') { pick('q', S(160)); pick('a', S(800)); pick('order', N); }
+    if (col === 'jobs') { pick('title', S(80)); pick('dept', S(40)); pick('desc', S(800)); pick('duties', S(800)); pick('reqs', S(800)); pick('schedule', S(120)); pick('pay', S(60)); pick('open', B); pick('order', N); }
     if (col === 'depts') { pick('name', S(40)); pick('color', H); pick('accent', H); pick('desc', S(400)); pick('order', N); pick('gender', v => v === 'female' ? 'female' : 'male'); pick('duties', S(400)); pick('model', U(400)); pick('shirt', H); if ('items' in b) o.items = (Array.isArray(b.items) ? b.items : []).slice(0, 8).map(it => ({ name: str(it.name, 40), kind: ['jacket', 'shirt', 'pants', 'tie', 'apron', 'vest', 'hat', 'shoes'].includes(it.kind) ? it.kind : 'jacket', color: H(it.color), accent: H(it.accent), frames: (Array.isArray(it.frames) ? it.frames : []).slice(0, 72).map(u => U(400)(u)).filter(Boolean) })); }
     if (col === 'media') { pick('url', U(2_000_000)); pick('name', S(80)); }
     if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', U(400)); pick('date', N); pick('published', B); pick('accent', H); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: U(400)(p.image), cat: str(p.cat, 30) })); }
@@ -434,7 +477,7 @@ export function createCore(store, hooks = {}) {
     if (col === 'settings') { if ('tiers' in b) o.tiers = (Array.isArray(b.tiers) ? b.tiers : []).slice(0, 6).map(t => ({ name: str(t.name, 30), nights: Math.max(1, Math.round(num(t.nights, 1))), discount: Math.min(50, Math.max(0, Math.round(num(t.discount, 0)))), perk: str(t.perk, 120) })).filter(t => t.name); for (const k of ['hotelName', 'tagline', 'address', 'footer']) pick(k, S(400)); for (const k of ['heroDay', 'heroNight', 'discordInvite', 'deckUrl']) pick(k, U(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
     return o;
   }
-  const label = c => ({ types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие', senders: 'отправителя' }[c] || c);
+  const label = c => ({ jobs: 'вакансию', types: 'тип номера', venues: 'площадку', menu: 'блюдо', cigars: 'сигару', depts: 'отдел', team: 'анкету', offers: 'предложение', faq: 'вопрос', settings: 'настройки', media: 'медиа', issues: 'выпуск журнала', events: 'событие', senders: 'отправителя' }[c] || c);
 
   // Сначала точные маршруты (/admin/rooms/:id), потом общий редактор (/admin/:col/:id) — иначе общий перехватывал
   // удаление и правку номеров и этажей и отвечал «Нельзя удалить»
@@ -460,7 +503,18 @@ export function createCore(store, hooks = {}) {
   function ticketMessage(id, m) { const t = store.get('tickets', id); if (!t) return; t.messages.push(m); if (t.messages.length > 300) t.messages = t.messages.slice(-300); t.lastAt = m.at; t.lastFrom = m.from; store.put('tickets', t.id, t); emit(['tickets']); call('notify', 'ticket_update', t); }
   function removeEvent(id) { if (!store.get('events', id)) return; store.del('events', id); emit(['events']); }
 
-  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store, linkLifex };
+  function dueReminders(now = Date.now()) {
+    const out = [];
+    for (const r of store.all('rsvp')) {
+      if (r.reminded || !r.discordId) continue;
+      const e = store.get('events', r.eventId); if (!e || ['cancelled', 'completed'].includes(e.status)) continue;
+      const left = e.start - now; if (left > 65 * 60e3 || left < 0) continue;
+      store.put('rsvp', r.id, { ...r, reminded: true });
+      if (profileOf(r.owner)?.dm !== false) out.push({ discordId: r.discordId, event: e, minutes: Math.max(1, Math.round(left / 60e3)) });
+    }
+    return out;
+  }
+  return { dueReminders, handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store, linkLifex };
 }
 
 /* ---------- стартовые данные ---------- */

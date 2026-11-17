@@ -1,0 +1,30 @@
+<!doctype html><meta charset="utf-8">
+<!-- Картинка превью ссылки (Open Graph) 1200×630. Пересобрать: node docs/og/render.cjs -->
+<style>
+@font-face{font-family:Unbounded;font-weight:800;src:url(../../promo/fonts/unbounded-cyrillic-800-normal.woff2) format("woff2");unicode-range:U+0400-045F,U+2116}
+@font-face{font-family:Unbounded;font-weight:800;src:url(../../promo/fonts/unbounded-latin-800-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F}
+@font-face{font-family:Onest;font-weight:400;src:url(../../promo/fonts/onest-cyrillic-400-normal.woff2) format("woff2");unicode-range:U+0400-045F}
+@font-face{font-family:Onest;font-weight:400;src:url(../../promo/fonts/onest-latin-400-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F}
+@font-face{font-family:Onest;font-weight:700;src:url(../../promo/fonts/onest-cyrillic-700-normal.woff2) format("woff2");unicode-range:U+0400-045F}
+@font-face{font-family:Onest;font-weight:700;src:url(../../promo/fonts/onest-latin-700-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F}
+@font-face{font-family:Cormorant;font-style:italic;font-weight:600;src:url(../../promo/fonts/cormorant-garamond-cyrillic-600-italic.woff2) format("woff2");unicode-range:U+0400-045F}
+@font-face{font-family:Cormorant;font-style:italic;font-weight:600;src:url(../../promo/fonts/cormorant-garamond-latin-600-italic.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F}
+*{box-sizing:border-box}
+body{margin:0;width:1200px;height:630px;overflow:hidden;background:#0d0809;color:#F9EDC7;font-family:Onest,sans-serif;position:relative}
+.bg{position:absolute;inset:0;background:url(../../public/img/atrium-night.webp) 62% 40%/cover}
+.shade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(13,8,9,.96) 0,rgba(13,8,9,.86) 42%,rgba(13,8,9,.25) 78%,rgba(13,8,9,.1)),linear-gradient(0deg,rgba(13,8,9,.8),transparent 40%)}
+.glow{position:absolute;left:-120px;top:-160px;width:700px;height:520px;background:radial-gradient(closest-side,rgba(240,23,122,.35),transparent)}
+.in{position:absolute;left:72px;top:64px;bottom:58px;width:640px;display:flex;flex-direction:column}
+.logo{width:290px;height:auto;filter:drop-shadow(0 10px 30px rgba(0,0,0,.6))}
+h1{margin:26px 0 0;font:800 58px/1.02 Unbounded;letter-spacing:-.02em}
+.tag{margin-top:12px;font:italic 600 36px Cormorant;color:#F7B50A}
+.list{margin-top:auto;display:flex;gap:10px;flex-wrap:wrap}
+.list span{font:700 17px Onest;padding:9px 16px;border-radius:999px;background:rgba(26,16,18,.8);box-shadow:inset 0 0 0 1px rgba(249,237,199,.18)}
+.url{position:absolute;right:56px;bottom:52px;font:700 18px Onest;letter-spacing:.08em;color:#F9EDC7;padding:10px 18px;border-radius:999px;background:#F0177A}
+.bar{position:absolute;left:0;right:0;top:0;height:6px;background:linear-gradient(90deg,#F0177A,#F7B50A)}
+</style>
+<div class="bg"></div><div class="shade"></div><div class="glow"></div><div class="bar"></div>
+<div class="in"><img class="logo" src="../../public/img/logo.webp" alt="">
+<h1>Отель над<br>Лос-Сантосом</h1><div class="tag">Ночь только начинается.</div>
+<div class="list"><span>Номера на 3D-башне</span><span>Le Ciel</span><span>Бассейны</span><span>Сигарный клуб</span></div></div>
+<div class="url">mhc-ls-project.ru</div>
