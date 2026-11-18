@@ -1304,3 +1304,17 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
 @keyframes achFall{0%{transform:translate(0,0) rotate(0)}100%{transform:translate(var(--x),105vh) rotate(var(--r));opacity:.2}}
 @media(prefers-reduced-motion:reduce){.ach .rays,.ach .burst,.achfx{display:none}.xbar>i::after,.xbar.go>i{animation:none}}
 .xbar[aria-valuenow="0"]>i{visibility:hidden}
+
+/* --- v5.6 полировка: единый фокус, живые строки меню и карточки-списки (без изменения структуры) --- */
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;box-shadow:0 0 0 4px rgba(11,7,8,.55),0 0 0 6px color-mix(in srgb,var(--gold) 40%,transparent)}
+.btn:focus-visible,.ibtn:focus-visible{outline-offset:3px}
+.dish{transition:background var(--d-hover,.2s) ease,padding-left var(--d-hover,.2s) ease;border-radius:.6rem}
+.dish:hover{background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 7%,transparent),transparent 70%);padding-left:.7rem}
+.dish:hover h4{color:var(--gold)}
+.dish h4{transition:color var(--d-hover,.2s) ease}
+.dish .add{transition:transform var(--d-hover,.2s) cubic-bezier(.2,.9,.3,1.4),border-color var(--d-hover,.2s)}
+.dish:hover .add{transform:scale(1.08);border-color:color-mix(in srgb,var(--gold) 55%,var(--line2))}
+.item{transition:border-color var(--d-hover,.2s) ease,transform var(--d-hover,.2s) ease,box-shadow var(--d-hover,.2s) ease}
+.item:hover{border-color:var(--line2);transform:translateY(-1px);box-shadow:0 .7rem 1.4rem -1rem rgba(0,0,0,.6)}
+.offer:hover,.tcard:hover{box-shadow:0 1.4rem 2.4rem -1.2rem rgba(0,0,0,.7),0 0 0 1px color-mix(in srgb,var(--ac,var(--gold)) 30%,transparent)}
+@media(prefers-reduced-motion:reduce){.dish,.dish .add,.item{transition:none}.dish:hover{padding-left:0}.item:hover{transform:none}}
