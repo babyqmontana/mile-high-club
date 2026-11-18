@@ -6,6 +6,21 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import dns from 'node:dns/promises';
+import net from 'node:net';
+
+// адрес из частного/локального диапазона (loopback, LAN, link-local, облачные метаданные) — цель SSRF, не публичный хост
+export function privateIp(ip) {
+  if (net.isIPv4(ip)) { const [a, b] = ip.split('.').map(Number);
+    return a === 10 || a === 127 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127); }
+  const x = ip.toLowerCase().replace(/^\[|\]$/g, '');
+  return x === '::1' || x === '::' || x.startsWith('fe80') || x.startsWith('fc') || x.startsWith('fd') || x.startsWith('::ffff:') && privateIp(x.slice(7));
+}
+// хост публичный только если ВСЕ его A/AAAA-записи вне частных диапазонов (защита и от DNS-rebinding на момент проверки)
+async function publicHost(host) {
+  if (net.isIP(host)) return !privateIp(host);
+  try { const ips = await dns.lookup(host, { all: true }); return ips.length > 0 && ips.every(a => !privateIp(a.address)); } catch { return false; }
+}
 
 const b64url = buf => Buffer.from(buf).toString('base64url');
 const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : typeof v === 'number' ? String(v).slice(0, n) : '');
@@ -45,6 +60,9 @@ export function mountLifex(app, { env, core, setCookie, encode, decode, cookies,
   async function saveAvatar(url, id) {
     if (!url || !(/^https:\/\//.test(url) || sameHost(url))) return '';
     try {
+      // аватар качаем только с публичного хоста: внутренние адреса и облачные метаданные закрыты (SSRF)
+      let host; try { host = new URL(url).hostname; } catch { return ''; }
+      if (!(await publicHost(host))) return '';
       const r = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10000) }); if (!r.ok) return '';
       if (+(r.headers.get('content-length') || 0) > 3 * 1024 * 1024) return '';
       const buf = Buffer.from(await r.arrayBuffer()); if (buf.length > 3 * 1024 * 1024) return '';

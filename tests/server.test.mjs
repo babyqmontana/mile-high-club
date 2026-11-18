@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from '../server/store.js';
 import { createCore, seed } from '../public/js/core.js';
-import { readProfile } from '../server/lifex.js';
+import { readProfile, privateIp } from '../server/lifex.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'); // fileURLToPath: на Windows pathname даёт /C:/…
 const PORT = 3400 + Math.floor(Math.random() * 500), BASE = `http://127.0.0.1:${PORT}`;
@@ -239,6 +239,13 @@ test('LifeX: профиль читается при разных названи�
   assert.deepEqual([a.id, a.username, a.name, a.avatar, a.url], ['7', 'tony', 'Тони', 'https://cdn.x/a.png', '']);
   const b = readProfile({ data: { sub: 'u1', preferred_username: 'bob', picture: 'ftp://x/a.png', avatar: { url: 'nope' } } });
   assert.deepEqual([b.id, b.name, b.avatar], ['u1', 'bob', '']);
+});
+
+test('LifeX: скачивание аватара отсекает внутренние адреса (SSRF)', () => {
+  for (const ip of ['169.254.169.254', '127.0.0.1', '10.0.0.5', '192.168.1.1', '172.16.0.1', '100.100.100.200', '::1', '::ffff:127.0.0.1'])
+    assert.equal(privateIp(ip), true, ip + ' должен считаться приватным');
+  for (const ip of ['8.8.8.8', '1.2.3.4', '2606:4700:4700::1111'])
+    assert.equal(privateIp(ip), false, ip + ' должен считаться публичным');
 });
 
 test('LifeX: привязка заполняет пустые поля профиля, отвязка и удаление данных убирают копию аватара', async () => {
