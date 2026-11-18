@@ -122,6 +122,32 @@ test('этаж правится целиком: новый номер этажа
   s.close();
 });
 
+test('мост Discord: сообщения брони и заявки-с-сайта дублируются в канал, ответ из Discord приходит гостю', async () => {
+  const s = openStore(path.join(dir, 'br-' + Date.now() + '.sqlite')); seed(s);
+  const bridge = [], notes = [];
+  const core = createCore(s, { bridge: a => bridge.push([a.kind, a.from, a.text]), notify: async (k, d) => notes.push([k, d.guestText || d.replyText || d.status]) });
+  // бронь: сообщение гостя уходит в notify как booking_message (бот дублирует в канал)
+  const b = await mkBooking(core, { guestKey: 'k1' });
+  await core.handle('POST', `/me/bookings/${b.id}/messages`, { body: { text: 'Можно поздний заезд?' }, guestKey: 'k1' });
+  assert.ok(notes.some(x => x[0] === 'booking_message' && /поздний заезд/.test(x[1])), 'сообщение гостя ушло в notify');
+  // ответ персонала, написанный в канале Discord, попадает в переписку и уведомляет гостя
+  core.bookingMessage(b.id, { by: 'Луи', text: 'Да, до 16:00 бесплатно' });
+  const fresh = s.get('bookings', b.id);
+  assert.equal(fresh.messages.at(-1).text, 'Да, до 16:00 бесплатно');
+  assert.equal(fresh.messages.at(-1).from, 'staff');
+  assert.equal(fresh.staffUnread, 0);
+  assert.ok(s.all('notices').some(n => n.owner === 'g:k1' && /Отель ответил по брони/.test(n.text)), 'гостю пришло уведомление');
+  // заявка в режиме «чат на сайте» зеркалится в канал при открытии и на каждое сообщение
+  const t = (await core.handle('POST', '/tickets', { body: { discord: 'tony', topic: 'Вопрос', text: 'Есть ли парковка?' }, guestKey: 'k1' })).ticket;
+  await core.handle('POST', `/tickets/${t.id}/mode`, { body: { mode: 'site' }, guestKey: 'k1' });
+  await core.handle('POST', `/tickets/${t.id}/messages`, { body: { text: 'И где вход?' }, guestKey: 'k1' });
+  await core.handle('POST', `/tickets/${t.id}/messages`, { body: { text: 'Вход со стороны лобби' }, user: ADMIN });
+  const kinds = bridge.filter(x => x[0] === 'ticket');
+  assert.ok(kinds.some(x => x[1] === 'guest' && /парковка|вход/.test(x[2])), 'реплики гостя зеркалятся в канал');
+  assert.ok(kinds.some(x => x[1] === 'staff' && /лобби/.test(x[2])), 'ответ персонала зеркалится в канал');
+  s.close();
+});
+
 test('переписка по брони: гость пишет только в свою, персонал отвечает, статусы попадают в ленту, частые сообщения отсекаются', async () => {
   const s = openStore(path.join(dir, 'bm.sqlite')); seed(s); const core = createCore(s, {});
   const admin = { id: 'a', username: 'A', role: 'admin' }, mod = { id: 'm', username: 'M', role: 'mod' };

@@ -231,13 +231,21 @@ export function createCore(store, hooks = {}) {
     const text = str(body.text, 1000).trim(); if (!text) bad('Напишите ответ');
     pushMsg(b, { from: 'staff', text, by: user.username }); b.staffUnread = 0; store.put('bookings', b.id, b);
     log(`${user.username} ответил по брони ${b.code}`, 'booking', user.username); emit(['bookings', 'log']);
-    notice(b.owner, 'booking', `Отель ответил по брони ${b.code}: ${text.slice(0, 160)}`); notifyGuest('booking_message', { ...b, replyText: text });
+    notice(b.owner, 'booking', `Отель ответил по брони ${b.code}: ${text.slice(0, 160)}`); notifyGuest('booking_message', { ...b, replyText: text, by: user.username });
     return { booking: b };
   });
   on('POST', '/admin/bookings/:id/read', ({ params, user }) => {
     need(user, 'mod'); const b = store.get('bookings', params.id); if (!b) throw new HttpError(404, 'Бронь не найдена');
     if (b.staffUnread) { b.staffUnread = 0; store.put('bookings', b.id, b); emit(['bookings']); } return { ok: true };
   });
+  // ответ персонала, написанный прямо в канале брони в Discord: попадает в переписку на сайте и гостю
+  function bookingMessage(id, m) {
+    const b = store.get('bookings', id); if (!b) return;
+    pushMsg(b, { from: 'staff', text: str(m.text, 1000), by: str(m.by, 40) }); b.staffUnread = 0; store.put('bookings', b.id, b);
+    log(`${m.by || 'Персонал'} ответил по брони ${b.code} из Discord`, 'booking'); emit(['bookings', 'log']);
+    notice(b.owner, 'booking', `Отель ответил по брони ${b.code}: ${str(m.text, 160)}`);
+    notifyGuest('booking_message', { ...b, replyText: m.text, fromDiscord: true }); // fromDiscord: боту в канал дублировать не нужно
+  }
   // перенос даты и срока — пока бронь не подтверждена; сумма пересчитывается по той же цене и скидке
   on('POST', '/me/bookings/:id/reschedule', ({ params, body, user, guestKey }) => {
     const b = myBooking(params.id, user, guestKey);
@@ -325,6 +333,8 @@ export function createCore(store, hooks = {}) {
     if (t.mode === 'site' && !t.messages.length) t.messages.push({ from: 'guest', text: t.text, at: Date.now() });
     store.put('tickets', t.id, t); log(`Обращение от ${t.discord}: ${t.topic} (${t.mode === 'discord' ? 'тикет в Discord' : 'чат на сайте'})`, 'ticket'); emit(['tickets', 'log']);
     call('notify', t.mode === 'discord' ? 'ticket_discord' : 'ticket_site', t);
+    // чат на сайте тоже зеркалим в Discord: персонал отвечает прямо из канала, не открывая сайт
+    if (t.mode === 'site') call('bridge', { kind: 'ticket', doc: t, from: 'guest', text: t.text });
     return { ticket: t, fallback };
   });
   on('POST', '/tickets/:id/messages', ({ params, body, user, guestKey }) => {
@@ -335,6 +345,8 @@ export function createCore(store, hooks = {}) {
     if (t.messages.length > 300) t.messages = t.messages.slice(-300);
     t.lastAt = Date.now(); t.lastFrom = staff ? 'staff' : 'guest'; store.put('tickets', t.id, t); emit(['tickets']);
     if (staff && t.mode === 'discord' && t.channel) call('ticketReply', t, text, user.username);
+    // заявка-чат на сайте: реплики гостя и ответы персонала зеркалим в канал Discord
+    if (t.mode === 'site') call('bridge', { kind: 'ticket', doc: t, from: staff ? 'staff' : 'guest', text, by: staff ? user.username : undefined });
     if (staff) notice(t.owner, 'ticket', `Ответ управляющего по «${t.topic}»: ${text.slice(0, 160)}`);
     if (staff && t.mode === 'site') notifyGuest('ticket_reply', { ...t, replyText: text }); else call('notify', 'ticket_update', t);
     return { ticket: t };
@@ -489,7 +501,7 @@ export function createCore(store, hooks = {}) {
   const roleList = l => (Array.isArray(l) ? l : []).map(x => str(x, 30)).filter(x => /^\d+$/.test(x)).slice(0, 20);
   on('POST', '/admin/discord/access', async ({ body, user }) => {
     need(user, 'admin');
-    store.put('settings', 'main', { ...settings(), adminRoles: roleList(body.admin), directorRoles: roleList(body.director), modRoles: roleList(body.mod), devRoles: roleList(body.dev), announceChannel: /^\d+$/.test(body.announceChannel || '') ? str(body.announceChannel, 30) : '', reviewRole: /^\d+$/.test(body.reviewRole || '') ? str(body.reviewRole, 30) : '', jobRole: /^\d+$/.test(body.jobRole || '') ? str(body.jobRole, 30) : '' });
+    store.put('settings', 'main', { ...settings(), adminRoles: roleList(body.admin), directorRoles: roleList(body.director), modRoles: roleList(body.mod), devRoles: roleList(body.dev), announceChannel: /^\d+$/.test(body.announceChannel || '') ? str(body.announceChannel, 30) : '', reviewRole: /^\d+$/.test(body.reviewRole || '') ? str(body.reviewRole, 30) : '', jobRole: /^\d+$/.test(body.jobRole || '') ? str(body.jobRole, 30) : '', bookingRole: /^\d+$/.test(body.bookingRole || '') ? str(body.bookingRole, 30) : '' });
     log(`${user.username} изменил доступ к панели и канал анонсов`, 'discord', user.username);
     await call('setupGuild'); emit(['settings', 'log']); return { ok: true };
   });
@@ -559,7 +571,7 @@ export function createCore(store, hooks = {}) {
   function ticketMessage(id, m) { const t = store.get('tickets', id); if (!t) return; if (m.from === 'staff') notice(t.owner, 'ticket', `Ответ управляющего по «${t.topic}»: ${String(m.text || '').slice(0, 160)}`); t.messages.push(m); if (t.messages.length > 300) t.messages = t.messages.slice(-300); t.lastAt = m.at; t.lastFrom = m.from; store.put('tickets', t.id, t); emit(['tickets']); call('notify', 'ticket_update', t); }
   function removeEvent(id) { if (!store.get('events', id)) return; store.del('events', id); emit(['events']); }
 
-  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, matchVenue, settings, log, store, linkLifex };
+  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, bookingMessage, matchVenue, settings, log, store, linkLifex };
 }
 
 /* ---------- стартовые данные ---------- */

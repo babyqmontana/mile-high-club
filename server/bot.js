@@ -87,8 +87,11 @@ export async function startBot({ core, store, env, hooks }) {
     return out.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
   }
   const textOf = m => [m.content, ...m.embeds.map(e => [e.title, e.description].filter(Boolean).join(': '))].filter(Boolean).join('\n');
-  const fromSite = m => m.author.id === client.user.id && /^\*\*(.+?)\*\* \(с сайта\): ([\s\S]*)$/.exec(m.content);
-  const authorKind = (t, m) => (fromSite(m) ? 'staff' : m.author.bot ? 'bot' : m.author.id === t.discordId ? 'guest' : 'staff');
+  // сообщения, которые бот продублировал с сайта: ответ персонала и реплика гостя — размечены, чтобы архив не путал авторов
+  const relayStaff = m => m.author.id === client.user.id && /^\*\*(.+?)\*\* \((?:с сайта|из панели)\): ([\s\S]*)$/.exec(m.content);
+  const relayGuest = m => m.author.id === client.user.id && /^💬 \*\*(.+?)\*\* \(с сайта\): ([\s\S]*)$/.exec(m.content);
+  const fromSite = m => relayStaff(m) || relayGuest(m);
+  const authorKind = (t, m) => (relayGuest(m) ? 'guest' : relayStaff(m) ? 'staff' : m.author.bot ? 'bot' : m.author.id === t.discordId ? 'guest' : 'staff');
   // Закрытие: сначала архив, потом удаление канала. Не сохранился транскрипт — канал остаётся.
   hooks.closeTicketChannel = async (t, by) => {
     const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) return [];
@@ -102,13 +105,50 @@ export async function startBot({ core, store, env, hooks }) {
   };
   // ответ из панели сайта уходит в тикет-канал
   hooks.ticketReply = async (t, text, by) => { const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) throw new Error('канал тикета не найден'); await c.send({ content: `**${by}** (с сайта): ${text}`, allowedMentions: { parse: [] } }); };
-  // канал → открытый тикет; пересобирается, только когда тикеты менялись
-  let tIdx = null, tRev = -1;
-  const ticketByChannel = ch => { const r = store.rev ? store.rev(['tickets']) : NaN; if (!tIdx || r !== tRev) { tIdx = new Map(store.all('tickets').filter(x => x.channel && x.status !== 'closed').map(x => [x.channel, x])); tRev = r; } return tIdx.get(ch) || null; };
+  // --- Канал-мост беседы в Discord (бронь или заявка с сайта) ---
+  // Персонал видит и отвечает прямо из Discord — сайт открывать не нужно. Гость пишет на сайте, бот дублирует сюда;
+  // сотрудник пишет в канал — попадает гостю на сайт и в ЛС. Канал только для персонала (гость взаимодействует на сайте).
+  const BR = { booking: { col: 'bookings', emoji: '📋', done: ['done', 'cancelled'] }, ticket: { col: 'tickets', emoji: '🎫', done: ['closed'] } };
+  const bridgeName = (kind, d, m) => `${BR[kind].emoji}・${(m?.user.username || d.name || d.discord || 'гость').slice(0, 18)}-${String(d.code || d.id).slice(-4)}`;
+  const bridgeHead = (kind, d) => kind === 'booking'
+    ? [`**Бронь ${d.code}** · ${d.typeName || ''}`, `Гость: **${d.name || '—'}**${d.discord ? ` · Discord ${d.discord}` : ''}${d.phone ? ` · тел. ${d.phone}` : ''}`,
+      `Заезд ${d.date}, ${d.nights} ноч.${d.room ? ` · номер ${d.room}` : ' · номер не назначен'} · ${money(d.total)}`, d.note ? `Пожелания: ${d.note}` : '', '', '💬 Пишите здесь — гость увидит ответ в кабинете и в личных сообщениях. Статусы брони меняйте в панели.'].filter(x => x !== '').join('\n')
+    : [`**Обращение «${d.topic || 'Вопрос'}»**`, `Гость: **${d.name || d.discord || '—'}**${d.discord ? ` · Discord ${d.discord}` : ''} · чат на сайте`, d.text ? `> ${String(d.text).slice(0, 300).replace(/\n/g, '\n> ')}` : '', '', '💬 Отвечайте прямо здесь — ответ придёт гостю на сайт и в личные сообщения.'].filter(x => x !== '').join('\n');
+  // убедиться, что канал-мост существует; создаёт при первом сообщении, сохраняет channel на документе
+  async function ensureBridge(kind, d) {
+    if (d.channel) { const c = await guild.channels.fetch(d.channel).catch(() => null); if (c) return c; }
+    const cat = await channel('catDesk'), m = await findMember(d.discord, d.discordId);
+    const ch = await guild.channels.create({ name: bridgeName(kind, d, m), type: ChannelType.GuildText, parent: cat?.id, permissionOverwrites: staffOverwrites() });
+    const role = /^\d+$/.test(S().bookingRole || '') ? S().bookingRole : null;
+    await ch.send({ content: (role ? `<@&${role}>\n` : '') + bridgeHead(kind, d), components: links([['Открыть в панели', panel]]), allowedMentions: { parse: [], roles: role ? [role] : [] } });
+    const fresh = store.get(BR[kind].col, d.id); if (fresh) store.put(BR[kind].col, d.id, { ...fresh, channel: ch.id, discordId: m?.id || fresh.discordId });
+    convIdx = null; return ch;
+  }
+  // продублировать строку беседы в канал-мост (сообщение гостя, ответ из панели или системную строку)
+  async function bridgeLine(kind, d, from, text, by) {
+    try { const ch = await ensureBridge(kind, d); if (!ch) return;
+      const line = from === 'system' ? `— ${text}` : from === 'guest' ? `💬 **${d.name || d.discord || 'Гость'}** (с сайта): ${text}` : `**${by || 'Отель'}** (из панели): ${text}`;
+      await ch.send({ content: line.slice(0, 1900), allowedMentions: { parse: [] } });
+    } catch (e) { console.error('Discord bridge:', e.message); }
+  }
+  // core вызывает мост для заявок с сайта (брони бот дублирует сам в notify)
+  hooks.bridge = ({ kind, doc, from, text, by }) => bridgeLine(kind, doc, from, text, by);
+  // канал → открытая бронь или тикет; пересобирается, только когда брони/тикеты менялись
+  let convIdx = null, convRev = -1;
+  const convByChannel = ch => {
+    const r = store.rev ? store.rev(['tickets', 'bookings']) : NaN;
+    if (!convIdx || r !== convRev) { convIdx = new Map();
+      for (const t of store.all('tickets')) if (t.channel && t.status !== 'closed') convIdx.set(t.channel, { kind: 'ticket', doc: t });
+      for (const b of store.all('bookings')) if (b.channel && !BR.booking.done.includes(b.status)) convIdx.set(b.channel, { kind: 'booking', doc: b });
+      convRev = r; }
+    return convIdx.get(ch) || null;
+  };
   client.on(Events.MessageCreate, m => {
     if (m.guildId !== env.GUILD_ID || m.author.bot || m.system) return;
-    const t = ticketByChannel(m.channelId);
-    if (t) core.ticketMessage(t.id, { from: authorKind(t, m), by: m.member?.displayName || m.author.username, text: textOf(m) || 'вложение', at: m.createdTimestamp });
+    const c = convByChannel(m.channelId); if (!c) return;
+    const text = textOf(m) || 'вложение', by = m.member?.displayName || m.author.username;
+    if (c.kind === 'ticket') core.ticketMessage(c.doc.id, { from: authorKind(c.doc, m), by, text, at: m.createdTimestamp });
+    else core.bookingMessage(c.doc.id, { by, text, at: m.createdTimestamp }); // в канале брони пишут только сотрудники
   });
 
   // уведомления персоналу: одна лента. Гость на сервере — кликабельный профиль, иначе только имя
@@ -144,8 +184,10 @@ export async function startBot({ core, store, env, hooks }) {
   }
   hooks.notify = async (kind, d) => {
     if (kind === 'booking' || kind === 'booking_status' || kind === 'booking_message') card('b:' + d.id, 'booking', d);
-    // гость написал по брони — короткое сообщение в ленту, чтобы ответили из панели
-    if (kind === 'booking_message' && d.guestText) staffPing(S().bookingRole, `💬 **${d.name}** пишет по брони ${d.code}${d.room ? ` (номер ${d.room})` : ''}:\n> ${String(d.guestText).slice(0, 400).replace(/\n/g, '\n> ')}`);
+    // гость написал по брони — дублируем в канал-мост, где персонал ответит прямо из Discord
+    if (kind === 'booking_message' && d.guestText) await bridgeLine('booking', d, 'guest', d.guestText);
+    // ответ из панели сайта — тоже в канал (кроме ответа, который сам пришёл из этого канала)
+    if (kind === 'booking_message' && d.replyText && !d.fromDiscord) await bridgeLine('booking', d, 'staff', d.replyText, d.by);
     if (kind === 'order' || kind === 'order_status') card('o:' + d.id, 'order', d);
     if (kind.startsWith('ticket')) card('t:' + d.id, 'ticket', d);
     // новый отзыв и отклик на вакансию: отдельное сообщение в ленту с отметкой выбранной роли
@@ -160,6 +202,12 @@ export async function startBot({ core, store, env, hooks }) {
     if (kind === 'booking_status') {
       const text = { confirmed: `Бронь ${d.code} подтверждена. Ваш номер ${d.room}, заезд ${d.date}.`, cancelled: `Бронь ${d.code} отменена. Если это ошибка, напишите управляющим.`, checkedin: `Добро пожаловать в Mile High Club! Номер ${d.room}.`, done: `Спасибо, что остановились у нас. Ждём снова.` }[d.status];
       const m = await findMember(d.discord, d.discordId); if (m && text) m.send(text).catch(() => {});
+    }
+    // смена статуса брони — системная строка в канал-мост; при завершении или отмене канал закрываем
+    if (kind === 'booking_status' && d.channel) {
+      const sys = { confirmed: `Бронь подтверждена, номер ${d.room}.`, checkedin: `Гость заселён в номер ${d.room}.`, done: 'Выезд оформлен — бронь завершена.', cancelled: 'Бронь отменена.' }[d.status];
+      if (sys) await bridgeLine('booking', d, 'system', sys);
+      if (BR.booking.done.includes(d.status)) { const ch = await guild.channels.fetch(d.channel).catch(() => null); if (ch) { await ch.send('Канал закрыт — бронь в архиве. Переписка сохранена в кабинете гостя.').catch(() => {}); setTimeout(() => ch.delete('Бронь завершена').catch(() => {}), 60e3); } }
     }
     if (kind === 'order_status' && ['delivering', 'cancelled'].includes(d.status)) { const m = await findMember(d.discord, d.discordId); if (m) m.send(d.status === 'delivering' ? `Ваш заказ уже несут в номер ${d.room}.` : `Заказ в номер ${d.room} отменён. Если это ошибка, напишите управляющим.`).catch(() => {}); }
   };
