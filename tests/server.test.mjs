@@ -170,6 +170,18 @@ test('переписка по брони: гость пишет только в 
   s.close();
 });
 
+test('блюдо дня: режимы авто/из меню/своё сохраняются и отдаются на сайт', async () => {
+  const s = openStore(path.join(dir, 'sp-' + Date.now() + '.sqlite')); seed(s); const core = createCore(s, {});
+  const menuId = s.all('menu')[0].id;
+  await core.handle('PUT', '/admin/settings/main', { body: { special: { mode: 'menu', menuId } }, user: ADMIN });
+  assert.deepEqual(core.publicData().settings.special, { mode: 'menu', menuId });
+  await core.handle('PUT', '/admin/settings/main', { body: { special: { mode: 'custom', name: 'Утиная ножка', desc: 'конфи', price: '260' } }, user: ADMIN });
+  assert.deepEqual(core.publicData().settings.special, { mode: 'custom', name: 'Утиная ножка', desc: 'конфи', price: 260 });
+  await core.handle('PUT', '/admin/settings/main', { body: { special: { mode: 'что-то' } }, user: ADMIN });
+  assert.deepEqual(core.publicData().settings.special, { mode: 'auto' });
+  s.close();
+});
+
 test('ссылки и цвета из панели проходят только безопасные', async () => {
   const s = openStore(path.join(dir, 'url.sqlite')); seed(s); const core = createCore(s, {}); const admin = { id: 'a', username: 'A', role: 'admin' };
   const { doc } = await core.handle('PUT', '/admin/offers/new', { body: { title: 'x', link: 'javascript:alert(1)', image: 'https://ok.example/a.webp' }, user: admin });

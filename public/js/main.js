@@ -591,14 +591,21 @@ function renderDining() {
 }
 // блюдо дня под серебряным клошем: меняется каждый день по времени отеля
 let clocheOpen = false;
-function dishOfDay() { const m = S.pub.menu; if (!m.length) return null; const day = Math.floor((Date.now() + 3 * 3600e3) / 864e5); const main = m.filter(i => /основ|горяч|main/i.test(i.cat)); const pool = main.length ? main : m; return pool[day % pool.length]; }
+function dishOfDay() {
+  const m = S.pub.menu, sp = S.pub.settings.special;
+  // блюдо дня назначает панель: выбранное из меню, своё блюдо, иначе — авто-смена по дню отеля
+  if (sp && sp.mode === 'menu' && sp.menuId) { const d = m.find(i => i.id === sp.menuId); if (d) return d; }
+  if (sp && sp.mode === 'custom' && sp.name) return { id: '__special', name: sp.name, desc: sp.desc || '', price: sp.price || 0, special: true };
+  if (!m.length) return null;
+  const day = Math.floor((Date.now() + 3 * 3600e3) / 864e5); const main = m.filter(i => /основ|горяч|main/i.test(i.cat)); const pool = main.length ? main : m; return pool[day % pool.length];
+}
 function clocheHtml() {
   const d = dishOfDay(); if (!d) return '';
   return `<div class="cloche ${clocheOpen ? 'open' : ''}" id="cloche"><button class="cstage" id="clocheBtn" data-sfx="" aria-label="${clocheOpen ? 'Накрыть блюдо' : 'Поднять клош и узнать блюдо дня'}">
     <span class="steam"><i></i><i></i><i></i></span><span class="plate"><span class="dish"><b>${esc(d.name)}</b><small>${esc(d.desc || '')}</small></span></span>
     <svg class="lid" viewBox="0 0 200 110" aria-hidden="true"><defs><linearGradient id="cG" x1="0" x2="1"><stop offset="0" stop-color="#6a6560"/><stop offset=".3" stop-color="#f4efe6"/><stop offset=".55" stop-color="#a8a39b"/><stop offset=".8" stop-color="#e9e4da"/><stop offset="1" stop-color="#5a5550"/></linearGradient></defs><path d="M10 100 Q12 18 100 14 Q188 18 190 100 Z" fill="url(#cG)"/><path d="M30 80 Q40 35 92 26" stroke="#fff" stroke-opacity=".55" stroke-width="5" fill="none" stroke-linecap="round"/><rect x="88" y="2" width="24" height="14" rx="7" fill="url(#cG)"/><rect x="4" y="98" width="192" height="8" rx="4" fill="#8f8a83"/></svg></button>
     <div class="ctext"><span class="eyebrow">Блюдо дня от шефа</span><h3>${clocheOpen ? esc(d.name) : 'Что сегодня под клошем?'}</h3><p class="note">${clocheOpen ? esc(d.desc || '') : 'Каждый день шеф Le Ciel готовит одно блюдо вне меню. Поднимите крышку.'}</p>
-    ${clocheOpen ? `<div class="row"><b class="num">${money(d.price)}</b><button class="btn sm" id="clocheAdd" data-sfx="">В заказ</button></div>` : ''}</div></div>`;
+    ${clocheOpen ? `<div class="row"><b class="num">${money(d.price)}</b>${d.special ? '<span class="note">Фирменное блюдо вне меню — закажите у официанта</span>' : `<button class="btn sm" id="clocheAdd" data-sfx="">В заказ</button>`}</div>` : ''}</div></div>`;
 }
 function wireCloche() {
   const b = $('#clocheBtn'); if (!b) return;
