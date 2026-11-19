@@ -161,7 +161,7 @@ const RANK = { event: 0, live: 1, open: 2, calm: 3, soon: 4, closed: 5 };
 const FLAP_WORD = { live: 'LIVE', open: 'ОТКРЫТО', calm: 'ТИХО', closed: 'ЗАКРЫТО', event: 'СОБЫТИЕ', soon: 'СКОРО' };
 const flapPrev = new Map();
 // «Гостей в отеле»: сколько человек сейчас в отеле и сколько в гостевой книге. Источник — онлайн сервера отеля (IC-подача)
-function guestNote(g) { return `в гостевой книге ${g.total} ${plural(g.total, 'имя', 'имени', 'имён')}`; }
+function guestNote(g) { return `${g.total} ${plural(g.total, 'участник', 'участника', 'участников')} в Discord · ${g.online} онлайн`; }
 function paintGuests() {
   const g = S.pub?.guests, pill = $('#navGuests'); if (pill) pill.hidden = !g; if (!g) return;
   const n = $('#navG'), val = String(g.online); if (n && n.textContent !== val) { const had = n.textContent !== '—'; n.textContent = val; if (had) { n.classList.remove('tick'); void n.offsetWidth; n.classList.add('tick'); } }
@@ -949,7 +949,6 @@ function lifexBlock(p) {
 }
 let meTicket = null;
 function renderMe() {
-  if (DEMO) lxOn = true;
   if (lxOn === null) { lxOn = false; authConfig().then(c => { lxOn = !!c.lifex; if (lxOn && current === 'me') renderMe(); }); }
   const it = S.items, u = S.me, p = it.profile || {}, st = it.stats || { nights: 0, stays: 0 };
   const chatT = it.tickets.find(t => t.id === meTicket && t.mode === 'site') || null;
@@ -1145,7 +1144,8 @@ async function boot() {
     try { await Promise.all([loadPublic(), loadMe()]); } catch (e) { failed = e; return; }
     set(45);
     const s = S.pub.settings, m = mode(), hero = m === 'day' ? s.heroDay : s.heroNight;
-    let done = 0; const jobs = [document.fonts?.ready, preload('img/logo.webp?v=3'), preload(hero), heroLayers(hero)].map(p => Promise.resolve(p).catch(() => {}).then(() => set(45 + (++done / 4) * 50)));
+    // логотип грузит заставка (<img> в index.html), атриум — CSS-фон и hero3d: отдельная предзагрузка только дублировала запросы
+    let done = 0; const jobs = [document.fonts?.ready].map(p => Promise.resolve(p).catch(() => {}).then(() => set(95)));
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов
     if (hasWebGL()) ((location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')).catch(() => {});
     // картинки и шрифты — украшение: если телефон их не отдал быстро, страница всё равно показывается

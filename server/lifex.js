@@ -49,7 +49,8 @@ export function mountLifex(app, { env, core, setCookie, encode, decode, cookies,
     authUrl: env.LIFEX_AUTH_URL || 'https://lifex.ls-project.com/oauth/authorize',
     tokenUrl: env.LIFEX_TOKEN_URL || '', profileUrl: env.LIFEX_PROFILE_URL || '', scope: env.LIFEX_SCOPE || 'profile'
   };
-  const on = !!(conf.clientId && conf.redirect && conf.tokenUrl && conf.profileUrl);
+  // LifeX выключен по умолчанию: включается только явным LIFEX_ENABLED=true и при заданных адресах приложения
+  const on = env.LIFEX_ENABLED === 'true' && !!(conf.clientId && conf.redirect && conf.tokenUrl && conf.profileUrl);
   // короткое сообщение для кабинета: сайт покажет его всплывашкой и сотрёт
   const flash = (res, code) => res.append('Set-Cookie', `mhc_lx_msg=${code}; Path=/; Max-Age=120; SameSite=Lax${secure ? '; Secure' : ''}`);
   const back = (res, code) => { setCookie(res, 'mhc_lx', '', 0); flash(res, code); res.redirect('/#me'); };
