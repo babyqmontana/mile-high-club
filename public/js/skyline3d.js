@@ -104,7 +104,7 @@ function loadKit() {
   }).catch(() => null);
 }
 function loadBake() {
-  return Promise.all(['env-night', 'fac-glass', 'fac-lit', 'room', 'shadow', 'city-fac'].concat(document.documentElement.dataset.mode === 'day' ? ['env-day'] : []).map(n => new Promise(ok => {
+  return Promise.all(['env-night', 'fac-glass', 'fac-lit', 'room', 'shadow', 'city-fac', 'neon-sign'].concat(document.documentElement.dataset.mode === 'day' ? ['env-day'] : []).map(n => new Promise(ok => {
     const i = new Image(); i.decoding = 'async'; i.onload = () => { BAKE[n] = i; ok(); }; i.onerror = () => ok(); i.src = BAKE_URL + n + '.webp' + BAKE_V;
   })));
 }
@@ -506,6 +506,12 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     drawSign(null); { const im = new Image(); im.onload = () => drawSign(im); im.src = 'img/camel-mask.png'; }
     const signM = new THREE.MeshBasicMaterial({ map: st, transparent: true, depthWrite: false, toneMapped: false, color: 0xe9e2d6 });
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(4, .75), signM); sign.position.set(-.1, topY - 1.15, D / 2 + .03); root.add(sign);
+    // неоновая вертикальная вывеска на правой башне (запечена в Blender: эмиссия + bloom). Аддитивная — светится без динамического света, ПК не грузит
+    if (BAKE['neon-sign']) {
+      const nt = new THREE.Texture(BAKE['neon-sign']); nt.colorSpace = THREE.SRGBColorSpace; nt.anisotropy = 4; nt.needsUpdate = true;
+      const nsign = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 3.4), new THREE.MeshBasicMaterial({ map: nt, transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending }));
+      nsign.position.set(VOL.C.x, topC - 2.3, VOL.C.z + VOL.C.d / 2 + .05); root.add(nsign);
+    }
     // ниша между A и C: баннер отеля в тонах сайта, приглушённый, в стальной раме
     const bc = document.createElement('canvas'); bc.width = 256; bc.height = 768; const bx = bc.getContext('2d'), bt = new THREE.CanvasTexture(bc); bt.colorSpace = THREE.SRGBColorSpace;
     const drawBanner = img => { const gr = bx.createLinearGradient(0, 0, 0, 768); gr.addColorStop(0, '#1a0d10'); gr.addColorStop(.55, '#3b1119'); gr.addColorStop(1, '#59161e'); bx.fillStyle = gr; bx.fillRect(0, 0, 256, 768); bx.strokeStyle = 'rgba(247,181,10,.55)'; bx.lineWidth = 3; bx.strokeRect(14, 14, 228, 740);
@@ -564,8 +570,15 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     // площадь перед отелем: плитка в тон камня
     const tile = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); g.fillStyle = '#4a4744'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#56524e'; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) if ((i + j) % 2) g.fillRect(i * 32, j * 32, 32, 32); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(12, 4); t.colorSpace = THREE.SRGBColorSpace; return t; })();
     const plaza = new THREE.Mesh(new THREE.PlaneGeometry(W + VOL.C.w + 8, 6), new THREE.MeshStandardMaterial({ map: tile, roughness: .95 })); plaza.rotation.x = -Math.PI / 2; plaza.position.set(2.2, .01, D / 2 + 3); root.add(plaza);
-    // подсветка выбранного этажа: тонкое неоновое кольцо
-    hl = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(outline(1.07).map(([x, z]) => new THREE.Vector3(x, 0, z))), new THREE.LineBasicMaterial({ color: 0xf7b50a, toneMapped: false, transparent: true, opacity: 0 })); root.add(hl);
+    // подсветка выбранного этажа: наглядная неоновая обойма — светящаяся «клетка» по периметру + две яркие неоновые ПОЛОСЫ по верху и низу этажа (не тонкие линии), с мягким пульсом
+    hl = new THREE.Group();
+    const cageMat = new THREE.MeshBasicMaterial({ color: 0xffbe2e, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    const bandMat = new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    const hlCage = new THREE.Mesh(ringGeo(outline(1.14), FH * .9, 0, true), cageMat); hl.add(hlCage);
+    const hlBandBot = new THREE.Mesh(ringGeo(outline(1.17), .12, -.06, true), bandMat); hl.add(hlBandBot);
+    const hlBandTop = new THREE.Mesh(ringGeo(outline(1.17), .12, FH * .9 - .06, true), bandMat); hl.add(hlBandTop);
+    hl.userData.parts = [{ m: cageMat, on: .42 }, { m: bandMat, on: .9 }];
+    root.add(hl);
     // снег на крышах, подиуме и козырьке
     snowCaps = new THREE.Group(); snowCaps.visible = false; root.add(snowCaps);
     const snowM = new THREE.MeshStandardMaterial({ color: 0xf6f3ee, roughness: .9, metalness: 0 });
@@ -607,7 +620,7 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     if (k !== built) build(rooms); else if (rooms.map(r => r.status).join() !== curRooms.map(r => r.status).join()) retexture(rooms);
     curRooms = rooms; sel = floor;
     const fm = hotel.find(m => m.userData.floor === sel); camTargetY = fm ? fm.position.y + root.position.y : topY * .5;
-    if (fm && hl) { hl.position.y = fm.position.y + FH * .42; hl.scale.setScalar(fm.userData.s); }
+    if (fm && hl) { hl.position.y = fm.position.y - FH * .01; hl.scale.setScalar(fm.userData.s); }
     kick();
   }
 
@@ -663,7 +676,7 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     venueMeshes.forEach(m => { const L = m.userData.light, t2 = hoverV === m.userData.venue ? 1.9 : 1; if (L.emissiveIntensity != null) L.emissiveIntensity += (t2 - L.emissiveIntensity) * Math.min(1, dt * 8); else L.opacity += ((hoverV === m.userData.venue ? .95 : .55) - L.opacity) * Math.min(1, dt * 8); });
     poolWater.forEach(w => { w.emissiveIntensity = .55 + .15 * Math.sin(t / 700); });
     floors.forEach(m => { const on = m.userData.floor === sel, hv = m.userData.floor === hover; const target = on ? 1.6 + pulse : hv && m.userData.hotel ? 1.25 : m.userData.hotel ? (sel !== null ? 0.75 : 1) : officeK; m.material.emissiveIntensity += (target - m.material.emissiveIntensity) * Math.min(1, dt * 8); const sc = on ? 1.035 : 1; m.scale.x += (sc - m.scale.x) * Math.min(1, dt * 8); m.scale.z = m.scale.x; m.userData.slab?.scale.set(m.scale.x, 1, m.scale.x); });
-    if (hl) hl.material.opacity += ((sel !== null ? .9 : 0) - hl.material.opacity) * Math.min(1, dt * 6);
+    if (hl) { const vis = sel !== null ? 1 : 0, pz = .82 + .18 * Math.sin(t / 360); hl.userData.parts.forEach(p => { p.m.opacity += (p.on * vis * pz - p.m.opacity) * Math.min(1, dt * 6); }); }
     if (beacon) beacon.material.color.setHSL(0.05, .9, 0.42 + Math.max(0, Math.sin(t / 420)) * 0.18);
     beacons.material.opacity = .55 + .45 * Math.sin(t / 500);
     const s = t / 1000; cars.forEach((c, i) => { c.p += c.v * c.dir * dt; if (c.p > 63) c.p = -63; if (c.p < -63) c.p = 63; const x = c.axis ? c.line : c.p, z = c.axis ? c.p : c.line; carPos[i * 3] = x; carPos[i * 3 + 1] = GROUND + .12; carPos[i * 3 + 2] = z; }); carG.attributes.position.needsUpdate = true;
