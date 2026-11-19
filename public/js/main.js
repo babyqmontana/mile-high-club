@@ -520,8 +520,8 @@ function paintDay() {
   const p = S.pub, venues = p.venues.filter(v => !v.comingSoon), t = dayTime(), m = mskMinutes(t);
   if (!host.querySelector('.hd-range')) {
     host.innerHTML = `<div class="hd-head"><div class="stack" style="gap:.4rem"><span class="eyebrow">Сутки отеля</span><h3 id="hdH">Что открыто <output id="hdT" for="hdRange"></output></h3></div><button class="btn ghost sm" id="hdNow" type="button">Сейчас</button></div>
-      <div class="hd-grid"><div class="hd-lw"><div id="hdLanes"></div><i class="hd-cursor" aria-hidden="true"></i></div><div class="hd-scale"><span></span><div class="hd-axis"><input type="range" class="hd-range" id="hdRange" min="0" max="1425" step="15" aria-labelledby="hdH"><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div><span></span></div></div>
-      <p class="note">Тяните ползунок или нажимайте ← → — статусы пересчитаются по расписанию и событиям. Нажмите на площадку, чтобы перейти к её карточке.</p>`;
+      <div class="hd-card"><div class="hd-grid"><div class="hd-lw"><div id="hdLanes"></div><i class="hd-cursor" aria-hidden="true"></i></div><div class="hd-scale"><span></span><div class="hd-axis"><input type="range" class="hd-range" id="hdRange" min="0" max="1425" step="15" aria-labelledby="hdH"><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div><span></span></div></div>
+      <p class="note">Тяните ползунок или нажимайте ← → — статусы пересчитаются по расписанию и событиям. Нажмите на площадку, чтобы перейти к её карточке.</p></div>`;
     const r = $('#hdRange');
     r.addEventListener('input', () => { dayAt = +r.value; paintDay(); });
     $('#hdNow').onclick = () => { dayAt = null; paintDay(); };
@@ -554,7 +554,7 @@ function renderLeisure() {
   if (!lv.querySelector('#venuesList')) {
     lv.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Отдых</span><h2>Что сейчас открыто</h2><p>Статусы обновляются по расписанию и по событиям из Discord. Днём работает Sky Pool, ночью Night Pool и The Hot Times.</p></div>
       <div id="deckHost" class="reveal"></div><section class="hday reveal" id="hday" aria-label="Сутки отеля"></section><div class="venues" id="venuesList"></div></div>`;
-    import('./deck.js').then(d => { mods.deck = d.mountDeck($('#deckHost'), S.pub.settings.deckTracks || []); mods.deck.active(current === 'leisure'); });
+    import('./deck.js').then(d => { mods.deck = d.mountDeck($('#deckHost'), S.pub.settings.deckTracks || [], { staff: !!S.me && S.me.role !== 'guest' }); mods.deck.active(current === 'leisure'); });
   }
   mods.deck?.tracks?.(p.settings.deckTracks || []);
   const cards = p.venues.map(v => { const st = venueState(v, p.events), evs = p.events.filter(e => e.venueId === v.id && (e.end || e.start + 3 * 3600e3) > Date.now()).slice(0, 3);

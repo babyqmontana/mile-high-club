@@ -23,7 +23,7 @@ function audioPlayer(tracks, events) {
     setTracks(next) { list = next.slice(); const was = !a.paused; pick(); if (was) a.play().catch(() => {}); events.onTitle?.(list[cur]?.title); }
   };
 }
-export function mountDeck(host, tracks = []) {
+export function mountDeck(host, tracks = [], opts = {}) {
   host.innerHTML = `<div class="deck"><div class="plat"><div class="pltr"><div class="rec" id="dkRec"><svg class="lbl" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="dkG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0177a"/><stop offset=".55" stop-color="#ef5617"/><stop offset="1" stop-color="#f7b50a"/></linearGradient><path id="dkP" d="M50 50m-34 0a34 34 0 1 1 68 0a34 34 0 1 1 -68 0"/></defs><circle cx="50" cy="50" r="49" fill="url(#dkG)"/><text><textPath href="#dkP">MILE HIGH CLUB · SKY POOL · SIDE A ·</textPath></text><circle cx="50" cy="50" r="34" fill="none" stroke="#1a0b05" stroke-opacity=".25" stroke-width=".6"/><circle cx="50" cy="50" r="5" fill="#0b0708"/></svg></div><i class="sheen"></i><i class="spdl"></i></div>
     <svg class="tarm" viewBox="0 0 118 100" aria-hidden="true"><defs><linearGradient id="dkB" x1="0" x2="1"><stop offset="0" stop-color="#8a6228"/><stop offset=".5" stop-color="#f9e2a8"/><stop offset="1" stop-color="#8a6228"/></linearGradient><radialGradient id="dkK" cx=".35" cy=".3"><stop offset="0" stop-color="#fbe7b0"/><stop offset="1" stop-color="#8a6228"/></radialGradient></defs>
       <circle cx="104" cy="18" r="8.5" fill="#21151a" stroke="#f7b50a" stroke-opacity=".28" stroke-width=".6"/><circle cx="107" cy="71" r="1.8" fill="#21151a" stroke="#f7b50a" stroke-opacity=".35" stroke-width=".5"/>
@@ -35,7 +35,9 @@ export function mountDeck(host, tracks = []) {
   const $ = s => host.querySelector(s), rec = $('#dkRec'), arm = $('#dkArm'), btn = $('#dkPlay'), deck = $('.deck'), note = $('#dkN');
   let own = (tracks || []).filter(t => t?.url), player = null, ready = false, loading = false, playing = false, shown = false, level = 0, fadeT = 0, want = pref.get('mhc-deck') !== 'off';
   let primed = false, idleT = 0, vol = Number(pref.get('mhc-deck-vol')) || 30, ang = 0, vel = 0, raf = 0, drag = null, last = 0, scr = 0, blockT = 0;
-  $('#dkVol').value = vol; deck.classList.toggle('none', !own.length);
+  $('#dkVol').value = vol; applyEmpty();
+  function applyEmpty() { const e = !own.length; deck.classList.toggle('empty', e); btn.disabled = e;
+    if (e) { $('#dkT').textContent = 'Тишина у бассейна'; note.innerHTML = opts.staff ? 'Диджей ещё не поставил музыку. Загрузите треки в панели: <b>Настройки → «Музыка на вертушке»</b>.' : 'Диджей отеля ещё не выбрал музыку на сегодня. Загляните позже.'; } }
 
   function loop(t) {
     raf = 0; const dt = Math.min(.05, last ? (t - last) / 1000 : .016); last = t;
@@ -101,7 +103,7 @@ export function mountDeck(host, tracks = []) {
     sound() { if (!soundOn) halt(); else if (shown && want) start(); },
     tracks(next) {
       const n = (next || []).filter(t => t?.url); if (JSON.stringify(n) === JSON.stringify(own)) return;
-      const hadOwn = own.length; own = n; deck.classList.toggle('none', !own.length);
+      const hadOwn = own.length; own = n; applyEmpty();
       if (own.length && hadOwn && player?.setTracks) { player.setTracks(own); return; }
       halt(); player = null; ready = false; loading = false; if (own.length) create();
     }
