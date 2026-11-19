@@ -36,7 +36,7 @@ const EDITABLE = {
 };
 // Отправители постов в Discord: имя и аватарка вебхука
 const DEFAULT_SENDERS = [['concierge', '🛎️ Консьерж MHC', '#F7B50A'], ['reception', '🔑 Ресепшен MHC', '#F0177A'], ['manager', '🥂 Управляющий MHC', '#EF5617'], ['journal', '📰 Журнал «Высота»', '#F4D9A0']].map(([id, name, color], order) => ({ id, name, color, avatar: `img/discord/${id}.png`, order }));
-const PUBLIC_SETTINGS = ['tiers', 'deckTracks', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer', 'special'];
+const PUBLIC_SETTINGS = ['tiers', 'deckTracks', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer', 'special', 'widgets'];
 
 export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const bad = m => { throw new HttpError(400, m); };
@@ -544,6 +544,7 @@ export function createCore(store, hooks = {}) {
     if (col === 'senders') { pick('name', S(80)); pick('avatar', U(400)); pick('color', v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : '#F0177A'); pick('order', N); }
     if (col === 'settings') { if ('replyTemplates' in b) o.replyTemplates = (Array.isArray(b.replyTemplates) ? b.replyTemplates : []).slice(0, 20).map(t => ({ title: str(t?.title, 40), text: str(t?.text, 600) })).filter(t => t.title && t.text); if ('deckTracks' in b) o.deckTracks = (Array.isArray(b.deckTracks) ? b.deckTracks : []).slice(0, 30).map(t => ({ url: str(t?.url, 200), title: str(t?.title, 80) })).filter(t => /^\/uploads\/[a-f0-9]{16}\.(mp3|ogg|m4a)$/.test(t.url)); if ('tiers' in b) o.tiers = (Array.isArray(b.tiers) ? b.tiers : []).slice(0, 6).map(t => ({ name: str(t.name, 30), nights: Math.max(1, Math.round(num(t.nights, 1))), discount: Math.min(50, Math.max(0, Math.round(num(t.discount, 0)))), perk: str(t.perk, 120) })).filter(t => t.name); for (const k of ['hotelName', 'tagline', 'address', 'footer']) pick(k, S(400)); for (const k of ['heroDay', 'heroNight', 'discordInvite', 'deckUrl']) pick(k, U(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if ('special' in b) { const sp = b.special || {}; const mode = ['auto', 'menu', 'custom'].includes(sp.mode) ? sp.mode : 'auto';
       o.special = mode === 'menu' ? { mode, menuId: str(sp.menuId, 40) } : mode === 'custom' ? { mode, name: str(sp.name, 60), desc: str(sp.desc, 200), price: Math.max(0, Math.round(num(sp.price, 0))) } : { mode: 'auto' }; }
+      if ('widgets' in b) { const w = b.widgets && typeof b.widgets === 'object' ? b.widgets : {}; o.widgets = { weather: w.weather !== false, guests: w.guests !== false, free: w.free !== false }; }
     if (b.channels && typeof b.channels === 'object') o.channels = Object.fromEntries(Object.entries(b.channels).slice(0, 80).map(([k, v]) => [str(k, 30), str(v, 30)])); if (b.roles && typeof b.roles === 'object') o.roles = Object.fromEntries(Object.entries(b.roles).slice(0, 10).map(([k, v]) => [str(k, 30), str(v, 200)])); }
     return o;
   }

@@ -58,7 +58,7 @@ export function mountHero(canvas, section) {
   ['uFar', 'uImg', 'uMask'].forEach((n, i) => gl.uniform1i(U(n), i));
   const texs = [0, 1, 2].map(() => gl.createTexture());
   const load = (unit, url, mip = true) => new Promise((res, rej) => {
-    const im = new Image(); im.crossOrigin = 'anonymous'; im.decoding = 'async';
+    const im = new Image(); im.decoding = 'async';
     im.onload = () => {
       gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, texs[unit]);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, im);

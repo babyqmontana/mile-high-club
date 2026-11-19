@@ -58,10 +58,12 @@ function paintNav() {
   const lx = S.items?.profile?.lifex, ava = lx?.avatar || u?.avatar;
   $('#navUser').innerHTML = u || ava ? `<button class="ibtn" id="userBtn" aria-label="${u ? 'Профиль' : 'Мои брони'}" style="overflow:hidden;padding:0">${ava ? `<img class="avatar" src="${esc(ava)}" alt="">` : `<span class="avatar">${esc((u.username || '?')[0])}</span>`}</button>` : `<button class="ibtn" id="userBtn" aria-label="Мои брони и вход">${I.user}</button>`;
   $('#userBtn').onclick = () => location.hash = u && u.role !== 'guest' ? '#admin' : '#me';
-  if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; { const nf = $('#navFree'), val = `${f}/${S.pub.rooms.length}`; if (nf.textContent !== val) { const had = nf.textContent !== '—'; nf.textContent = val; if (had) { nf.classList.remove('tick'); void nf.offsetWidth; nf.classList.add('tick'); } } } $('#foot').textContent = S.pub.settings.footer || ''; paintGuests(); }
+  if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; { const nf = $('#navFree'), fp = nf.closest('.pill'); if (fp) fp.hidden = !wOn('free'); const val = `${f}/${S.pub.rooms.length}`; if (nf.textContent !== val) { const had = nf.textContent !== '—'; nf.textContent = val; if (had) { nf.classList.remove('tick'); void nf.offsetWidth; nf.classList.add('tick'); } } } $('#foot').textContent = S.pub.settings.footer || ''; paintGuests(); }
 }
 // сайт всегда в ночной теме: тёмный интерфейс, ночной отель и ночное небо
 function mode() { return 'night'; }
+// окошки сайта (погода, онлайн-гости, свободно) можно скрыть в настройках; по умолчанию показаны
+function wOn(k) { return S.pub?.settings?.widgets?.[k] !== false; }
 // погода: фон страницы, главный экран, 3D-башня и значок в шапке
 const WXI = { clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   night: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
@@ -76,8 +78,8 @@ function applyWeather() {
   if (!w.newyear && garland?.destroy) { garland.destroy(); garland = null; }
   if (!wxBg && $('#wxBg')) wxBg = mountWeather($('#wxBg'), { strength: .55 });
   wxBg?.set(w.kind, m === 'day'); mods.heroWx?.set(w.kind, m === 'day'); mods.hero?.setWeather?.(w.kind); mods.tower?.setWeather?.(w);
-  const c = $('#wxChip'); if (c) c.innerHTML = `${w.kind === 'clear' && m === 'night' ? WXI.night : WXI[w.kind]}<b class="num">${w.temp > 0 ? '+' : w.temp < 0 ? '−' : ''}${Math.abs(w.temp)}°</b><span class="t">${hhmm(Date.now())}</span>`;
-  const wt = $('#wxTile'); if (wt) wt.textContent = `${w.label}, ${w.temp > 0 ? '+' : w.temp < 0 ? '−' : ''}${Math.abs(w.temp)}° · ${m === 'day' ? 'день' : 'ночь'}`;
+  const c = $('#wxChip'); if (c) { c.hidden = !wOn('weather'); c.innerHTML = `${w.kind === 'clear' && m === 'night' ? WXI.night : WXI[w.kind]}<b class="num">${w.temp > 0 ? '+' : w.temp < 0 ? '−' : ''}${Math.abs(w.temp)}°</b><span class="t">${hhmm(Date.now())}</span>`; }
+  const wt = $('#wxTile'); if (wt) wt.textContent = wOn('weather') ? `${w.label}, ${w.temp > 0 ? '+' : w.temp < 0 ? '−' : ''}${Math.abs(w.temp)}° · ${m === 'day' ? 'день' : 'ночь'}` : (m === 'day' ? 'День' : 'Ночь');
 }
 function applyMode() { const m = mode(); if (document.documentElement.dataset.mode !== m) { document.documentElement.dataset.mode = m; mods.tower?.relight?.(); mods.hum?.relight?.(); if (current === 'home') renderHome(); } paintNav(); applyWeather(); }
 function onScroll() { }
@@ -163,7 +165,7 @@ const flapPrev = new Map();
 // «Гостей в отеле»: сколько человек сейчас в отеле и сколько в гостевой книге. Источник — онлайн сервера отеля (IC-подача)
 function guestNote(g) { return `${g.total} ${plural(g.total, 'участник', 'участника', 'участников')} в Discord · ${g.online} онлайн`; }
 function paintGuests() {
-  const g = S.pub?.guests, pill = $('#navGuests'); if (pill) pill.hidden = !g; if (!g) return;
+  const g = S.pub?.guests, pill = $('#navGuests'); if (pill) pill.hidden = !g || !wOn('guests'); if (!g || !wOn('guests')) return;
   const n = $('#navG'), val = String(g.online); if (n && n.textContent !== val) { const had = n.textContent !== '—'; n.textContent = val; if (had) { n.classList.remove('tick'); void n.offsetWidth; n.classList.add('tick'); } }
   if (pill) pill.title = `${g.online} ${plural(g.online, 'гость', 'гостя', 'гостей')} в отеле прямо сейчас`;
   const v = $('#fbGv'); if (v) { v.innerHTML = flap('guests', val); $('#fbGs').textContent = guestNote(g); }
@@ -216,7 +218,7 @@ function renderHome() {
     <section class="fboard" aria-label="Табло отеля">
       <div class="fb-head"><span class="eyebrow">Табло отеля</span><span class="fb-live"><span class="d"></span>Обновляется вживую</span></div>
       <div class="fb-rows">
-      ${p.guests ? `<div class="fb-row" data-st="guests" id="fbGuests"><span class="fb-k">Гостей в отеле</span><span class="fb-v" id="fbGv">${flap('guests', String(p.guests.online))}</span><span class="fb-s" id="fbGs">${guestNote(p.guests)}</span></div>` : ''}
+      ${p.guests && wOn('guests') ? `<div class="fb-row" data-st="guests" id="fbGuests"><span class="fb-k">Гостей в отеле</span><span class="fb-v" id="fbGv">${flap('guests', String(p.guests.online))}</span><span class="fb-s" id="fbGs">${guestNote(p.guests)}</span></div>` : ''}
       <a class="fb-row" href="#stay" data-st="${free ? 'open' : 'closed'}"><span class="fb-k">Номера</span><span class="fb-v">${flap('rooms', `${free}/${p.rooms.length}`)}</span><span class="fb-s">${free ? 'свободно прямо сейчас' : 'все номера заняты'}</span></a>
       ${p.venues.map(v => ({ v, st: venueState(v, p.events) })).sort((a, b) => (RANK[a.st.state] ?? 9) - (RANK[b.st.state] ?? 9)).map(({ v, st }) => `<a class="fb-row" href="#${venueRoute(v)}" data-venue="${esc(v.id)}" data-st="${st.state}"><span class="fb-k">${esc(v.name)}</span><span class="fb-v">${flap('v-' + v.id, FLAP_WORD[st.state] || FLAP_WORD.open)}</span><span class="fb-s">${esc(st.label || '')}${st.state !== 'event' && st.state !== 'soon' && st.state !== 'closed' ? ' · ' + nextChange(v) : ''}</span></a>`).join('')}
       <div class="fb-row" data-st="clock"><span class="fb-k">Время в отеле</span><span class="fb-v" id="clock">${flap('clock', hhmm(Date.now()))}</span><span class="fb-s" id="wxTile">${wxNow ? '' : (m === 'day' ? 'День' : 'Ночь')}</span></div>
@@ -1147,7 +1149,8 @@ async function boot() {
     // логотип грузит заставка (<img> в index.html), атриум — CSS-фон и hero3d: отдельная предзагрузка только дублировала запросы
     let done = 0; const jobs = [document.fonts?.ready].map(p => Promise.resolve(p).catch(() => {}).then(() => set(95)));
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов
-    if (hasWebGL()) ((location.hash || '#home') === '#home' ? import('./hero3d.js') : import('three')).catch(() => {});
+    // прогреваем только тот 3D-модуль, что нужен открытой странице: на разделах без 3D (Le Ciel, отдых, кабинет…) three.js больше не качается впустую
+    if (hasWebGL()) { const h = (location.hash || '#home').slice(1).split('?')[0].split('/')[0]; const mod3d = { home: './hero3d.js', stay: './skyline3d.js', cigars: './humidor3d.js' }[h]; if (mod3d) import(mod3d).catch(() => {}); }
     // картинки и шрифты — украшение: если телефон их не отдал быстро, страница всё равно показывается
     // (раньше при повторном открытии без заставки ожидание было бесконечным — видны были только шапка и фон)
     await Promise.race([Promise.all(jobs), new Promise(r => setTimeout(r, 2500))]);

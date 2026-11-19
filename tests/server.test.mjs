@@ -182,6 +182,16 @@ test('блюдо дня: режимы авто/из меню/своё сохра
   s.close();
 });
 
+test('окошки сайта: можно скрыть погоду/онлайн/свободно, по умолчанию показаны', async () => {
+  const s = openStore(path.join(dir, 'wg-' + Date.now() + '.sqlite')); seed(s); const core = createCore(s, {});
+  assert.equal(core.publicData().settings.widgets, undefined, 'по умолчанию поля нет — сайт показывает всё');
+  await core.handle('PUT', '/admin/settings/main', { body: { widgets: { weather: false, guests: false } }, user: ADMIN });
+  assert.deepEqual(core.publicData().settings.widgets, { weather: false, guests: false, free: true }, 'непереданное окошко считается включённым');
+  await core.handle('PUT', '/admin/settings/main', { body: { widgets: { weather: true, guests: true, free: false } }, user: ADMIN });
+  assert.deepEqual(core.publicData().settings.widgets, { weather: true, guests: true, free: false });
+  s.close();
+});
+
 test('ссылки и цвета из панели проходят только безопасные', async () => {
   const s = openStore(path.join(dir, 'url.sqlite')); seed(s); const core = createCore(s, {}); const admin = { id: 'a', username: 'A', role: 'admin' };
   const { doc } = await core.handle('PUT', '/admin/offers/new', { body: { title: 'x', link: 'javascript:alert(1)', image: 'https://ok.example/a.webp' }, user: admin });
