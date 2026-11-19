@@ -570,14 +570,21 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     // площадь перед отелем: плитка в тон камня
     const tile = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); g.fillStyle = '#4a4744'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#56524e'; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) if ((i + j) % 2) g.fillRect(i * 32, j * 32, 32, 32); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(12, 4); t.colorSpace = THREE.SRGBColorSpace; return t; })();
     const plaza = new THREE.Mesh(new THREE.PlaneGeometry(W + VOL.C.w + 8, 6), new THREE.MeshStandardMaterial({ map: tile, roughness: .95 })); plaza.rotation.x = -Math.PI / 2; plaza.position.set(2.2, .01, D / 2 + 3); root.add(plaza);
-    // подсветка выбранного этажа: наглядная неоновая обойма — светящаяся «клетка» по периметру + две яркие неоновые ПОЛОСЫ по верху и низу этажа (не тонкие линии), с мягким пульсом
+    // подсветка выбранного этажа: объёмная «световая оболочка» по реальному контуру этажа (hotelPath).
+    // Френель — ярче у кромок, прозрачная в лоб — читается как свет вокруг этажа, а не плоская наклейка; покрывает те же видимые стороны, что и сам этаж.
     hl = new THREE.Group();
-    const cageMat = new THREE.MeshBasicMaterial({ color: 0xffbe2e, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
-    const bandMat = new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
-    const hlCage = new THREE.Mesh(ringGeo(outline(1.14), FH * .9, 0, true), cageMat); hl.add(hlCage);
-    const hlBandBot = new THREE.Mesh(ringGeo(outline(1.17), .12, -.06, true), bandMat); hl.add(hlBandBot);
-    const hlBandTop = new THREE.Mesh(ringGeo(outline(1.17), .12, FH * .9 - .06, true), bandMat); hl.add(hlBandTop);
-    hl.userData.parts = [{ m: cageMat, on: .42 }, { m: bandMat, on: .9 }];
+    const hlShellMat = new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: new THREE.Color(0xffc23a) }, uOp: { value: 0 } },
+      vertexShader: 'varying vec3 vN; varying vec3 vVd; void main(){ vec4 wp=modelMatrix*vec4(position,1.); vN=normalize(mat3(modelMatrix)*normal); vVd=normalize(cameraPosition-wp.xyz); gl_Position=projectionMatrix*viewMatrix*wp; }',
+      fragmentShader: 'uniform vec3 uColor; uniform float uOp; varying vec3 vN; varying vec3 vVd; void main(){ float f=pow(1.0-abs(dot(normalize(vN),normalize(vVd))),1.6); gl_FragColor=vec4(uColor*(0.28+f*1.7), uOp*(0.16+f*0.95)); }',
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false
+    });
+    const hlShell = new THREE.Mesh(ringGeo(hotelPath(), FH * .86, 0, true), hlShellMat); hlShell.scale.set(1.04, 1, 1.04); hl.add(hlShell);
+    // тонкий яркий кант по верхней и нижней кромке этажа — обтекает форму, задаёт границу
+    const trimMat = new THREE.MeshBasicMaterial({ color: 0xffe6a8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    const hlTrimBot = new THREE.Mesh(ringGeo(hotelPath(), .06, -.02, true), trimMat); hlTrimBot.scale.set(1.05, 1, 1.05); hl.add(hlTrimBot);
+    const hlTrimTop = new THREE.Mesh(ringGeo(hotelPath(), .06, FH * .86 - .04, true), trimMat); hlTrimTop.scale.set(1.05, 1, 1.05); hl.add(hlTrimTop);
+    hl.userData.shell = hlShellMat; hl.userData.trim = trimMat;
     root.add(hl);
     // снег на крышах, подиуме и козырьке
     snowCaps = new THREE.Group(); snowCaps.visible = false; root.add(snowCaps);
@@ -675,8 +682,9 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     cam.position.set(Math.sin(rotY) * dist * Math.cos(el2), camY + 2 + Math.sin(el2) * dist, Math.cos(rotY) * dist * Math.cos(el2)); cam.lookAt(0, camY + 1.2, 0);
     venueMeshes.forEach(m => { const L = m.userData.light, t2 = hoverV === m.userData.venue ? 1.9 : 1; if (L.emissiveIntensity != null) L.emissiveIntensity += (t2 - L.emissiveIntensity) * Math.min(1, dt * 8); else L.opacity += ((hoverV === m.userData.venue ? .95 : .55) - L.opacity) * Math.min(1, dt * 8); });
     poolWater.forEach(w => { w.emissiveIntensity = .55 + .15 * Math.sin(t / 700); });
-    floors.forEach(m => { const on = m.userData.floor === sel, hv = m.userData.floor === hover; const target = on ? 1.6 + pulse : hv && m.userData.hotel ? 1.25 : m.userData.hotel ? (sel !== null ? 0.75 : 1) : officeK; m.material.emissiveIntensity += (target - m.material.emissiveIntensity) * Math.min(1, dt * 8); const sc = on ? 1.035 : 1; m.scale.x += (sc - m.scale.x) * Math.min(1, dt * 8); m.scale.z = m.scale.x; m.userData.slab?.scale.set(m.scale.x, 1, m.scale.x); });
-    if (hl) { const vis = sel !== null ? 1 : 0, pz = .82 + .18 * Math.sin(t / 360); hl.userData.parts.forEach(p => { p.m.opacity += (p.on * vis * pz - p.m.opacity) * Math.min(1, dt * 6); }); }
+    // фокус на выбранном этаже: он горит ярче, а остальные приглушаются (как подсветка выбора на топовых 3D-сайтах)
+    floors.forEach(m => { const on = m.userData.floor === sel, hv = m.userData.floor === hover; const target = on ? 2.0 + pulse : hv && m.userData.hotel ? 1.3 : m.userData.hotel ? (sel !== null ? 0.42 : 1) : (sel !== null ? officeK * 0.55 : officeK); m.material.emissiveIntensity += (target - m.material.emissiveIntensity) * Math.min(1, dt * 8); const sc = on ? 1.04 : 1; m.scale.x += (sc - m.scale.x) * Math.min(1, dt * 8); m.scale.z = m.scale.x; m.userData.slab?.scale.set(m.scale.x, 1, m.scale.x); });
+    if (hl) { const vis = sel !== null ? 1 : 0, pz = .82 + .18 * Math.sin(t / 360); const s = hl.userData.shell.uniforms.uOp; s.value += (vis * pz - s.value) * Math.min(1, dt * 6); hl.userData.trim.opacity += (vis * pz * .85 - hl.userData.trim.opacity) * Math.min(1, dt * 6); }
     if (beacon) beacon.material.color.setHSL(0.05, .9, 0.42 + Math.max(0, Math.sin(t / 420)) * 0.18);
     beacons.material.opacity = .55 + .45 * Math.sin(t / 500);
     const s = t / 1000; cars.forEach((c, i) => { c.p += c.v * c.dir * dt; if (c.p > 63) c.p = -63; if (c.p < -63) c.p = 63; const x = c.axis ? c.line : c.p, z = c.axis ? c.p : c.line; carPos[i * 3] = x; carPos[i * 3 + 1] = GROUND + .12; carPos[i * 3 + 2] = z; }); carG.attributes.position.needsUpdate = true;
