@@ -177,11 +177,17 @@ function cityMaterial() {
           win=smoothstep(.15,.85,fa.a)*aa; // без порога: на среднем плане стекло мягко сливается, без ряби
         }
         float r=h21(id+vId*7.13);
-        float on=step(1.-uLit,r)*win;
+        // LOD эмиссии окон: когда ячейка окна становится мельче пикселя, случайное «вкл/выкл» заменяем средней
+        // яркостью — зажжённые окна перестают бликать на движении камеры (аналог мип-фильтрации процедурного узора)
+        float lw=clamp((max(fwidth(g.x),fwidth(g.y))-.4)/.7,0.,1.);
+        float onCrisp=step(1.-uLit,r)*win;   // вблизи — чёткие отдельные окна
+        float onAvg=uLit*win;                // вдали — ровная доля зажжённых окон
+        float on=mix(onCrisp,onAvg,lw);
+        float bf=mix(.9+.6*r,1.2,lw);         // и яркость сходится к средней
         totalEmissiveRadiance+=vec3(.91,.76,.49)*uLit*.22*(1.-aa)*(1.-uDay*.75);
         vec3 wc=mix(vec3(.91,.76,.49),vec3(.96,.92,.82),step(.8,h21(id.yx+vId)));
         diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*1.6+vec3(.02,.04,.05),win*(1.-on));
-        totalEmissiveRadiance+=wc*on*(.9+.6*r)*(1.-uDay*.75);
+        totalEmissiveRadiance+=wc*on*bf*(1.-uDay*.75);
         float band=step(.94,fract(vWp.y/.42/6.));
         diffuseColor.rgb*=1.-band*.25;
       } else if(vN.y>.5){ diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.93,.92,.9),uSnow); }`);
