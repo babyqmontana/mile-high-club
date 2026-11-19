@@ -498,8 +498,13 @@ footer .wrap{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
 @media(max-width:900px){.aside{position:sticky;top:var(--nav);z-index:20;height:auto;display:flex;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);background:var(--bg);padding:.5rem var(--gr) .5rem var(--gl);gap:0.25rem}}
 .aside .who{display:flex;gap:.6rem;align-items:center;padding:.4rem .5rem 1rem;border-bottom:1px solid var(--line);margin-bottom:.6rem}
 @media(max-width:900px){.aside .who,.aside .grp{display:none}}
-.aside .grp{font:800 .62rem var(--body);letter-spacing:.18em;text-transform:uppercase;color:var(--mut);padding:.9rem .7rem .3rem}
+.aside .grp{font:800 .62rem var(--body);letter-spacing:.18em;text-transform:uppercase;color:var(--mut);padding:1rem .7rem .3rem;display:flex;align-items:center;gap:.5rem}
+.aside .grp::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
 .aside button{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.55rem .7rem;border-radius:0.625rem;font:700 .86rem var(--body);color:var(--mut);text-align:left;white-space:nowrap;flex:none}
+.aside button .nl{display:flex;align-items:center;gap:.6rem;min-width:0}
+.aside button .sic{width:1.15rem;height:1.15rem;flex:none;opacity:.72;transition:opacity .2s,color .2s}
+.aside button:hover .sic{opacity:.95}
+.aside button[aria-pressed="true"] .sic{opacity:1;color:var(--gold)}
 .aside button:hover{color:var(--fg);background:var(--card)}
 .aside button[aria-pressed="true"]{background:var(--card2);color:var(--fg)}
 .badge{min-width:1.25rem;height:1.25rem;padding:0 0.375rem;border-radius:62.4375rem;background:var(--pink);color:#fff;font:800 .68rem/1.25rem var(--body);text-align:center}
@@ -842,6 +847,7 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
   .aside button{min-height:var(--hs);height:var(--hs);padding:0 .85rem;border-radius:62rem;align-self:center}
   .aside button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
   .aside button[aria-pressed="true"]::before{display:none}
+  .aside button[aria-pressed="true"] .sic{color:inherit}
 }
 .atop .row{gap:.5rem;align-items:center}
 @media(max-width:900px){.admin{align-content:start;grid-template-rows:auto 1fr}}
@@ -1193,6 +1199,13 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
 .cf-h{display:grid;grid-template-columns:auto 1fr;column-gap:.35rem;align-items:baseline;line-height:1.15}
 .cf-h b{font:800 1.3rem var(--display)}.cf-h span{font-size:.72rem;color:var(--mut)}.cf-h small{grid-column:1/-1;font-size:.66rem;color:var(--mut)}
 .cf-r{display:grid;grid-template-columns:repeat(auto-fit,minmax(4rem,1fr));gap:.4rem}
+/* размер плиток доски: крупно (нагляднее) и компактно (больше номеров на экране) */
+.chess.sz-lg .cf-r{grid-template-columns:repeat(auto-fit,minmax(5.4rem,1fr));gap:.5rem}
+.chess.sz-lg .ch{padding:.55rem .25rem .5rem}
+.chess.sz-lg .ch b{font-size:1rem}.chess.sz-lg .ch span{font-size:.66rem}
+.chess.sz-sm .cf-r{grid-template-columns:repeat(auto-fit,minmax(3.1rem,1fr));gap:.3rem}
+.chess.sz-sm .ch{padding:.25rem .15rem .22rem}
+.chess.sz-sm .ch b{font-size:.74rem}.chess.sz-sm .ch span{font-size:.55rem}
 .ch{position:relative;display:grid;place-items:center;gap:0;padding:.35rem .2rem .3rem;border-radius:.55rem;border:1px solid color-mix(in srgb,var(--sc) 55%,transparent);background:color-mix(in srgb,var(--sc) 16%,var(--card2));color:var(--fg);cursor:pointer;line-height:1.1;transition:transform .15s,box-shadow .15s,opacity .2s}
 .ch b{font:800 .82rem var(--display)}.ch span{font-size:.6rem;color:var(--mut);letter-spacing:.05em}
 .ch::before{content:"";position:absolute;left:0;top:.3rem;bottom:.3rem;width:3px;border-radius:2px;background:var(--sc)}

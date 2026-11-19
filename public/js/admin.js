@@ -11,6 +11,34 @@ const SECTIONS = [
   ['Отель', [['structure', 'Этажи и номера', 'admin'], ['types', 'Типы и цены', 'admin'], ['venues', 'Площадки', 'admin'], ['menu', 'Меню Le Ciel', 'admin'], ['cigars', 'Сигары', 'admin'], ['team', 'Анкеты сотрудников', 'admin'], ['depts', 'Отделы', 'admin']]],
   ['Система', [['discord', 'Discord', 'mod'], ['senders', 'Отправители', 'admin'], ['settings', 'Настройки', 'admin'], ['danger', 'Сброс данных', 'admin']]]
 ];
+// Иконки разделов панели: единый контурный стиль (без эмодзи), помогают быстро находить нужное.
+const SIP = 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+const svg = p => `<svg class="sic" viewBox="0 0 24 24" ${SIP} aria-hidden="true">${p}</svg>`;
+const SI = {
+  overview: svg('<rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="3" y="14" width="7" height="7" rx="1.2"/><rect x="14" y="14" width="7" height="7" rx="1.2"/>'),
+  bookings: svg('<rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="M9 14.5l2 2 4-4"/>'),
+  board: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/>'),
+  tickets: svg('<path d="M4 5h16v11h-9l-4 3v-3H4z"/><path d="M8 9h8M8 12h5"/>'),
+  orders: svg('<path d="M5 7h14l-1.4 8H6.4z"/><path d="M5 7 4 3H2"/><circle cx="9" cy="20" r="1.1"/><circle cx="16.5" cy="20" r="1.1"/>'),
+  reviews: svg('<path d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.9 7.2 19.4l.9-5.4L4.2 9.7l5.4-.8z"/>'),
+  events: svg('<rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="M12 12.5l1 2 2 .3-1.5 1.5.4 2-1.9-1-1.9 1 .4-2L8.5 14.8l2-.3z"/>'),
+  journal: svg('<path d="M5 4.5h10a3 3 0 0 1 3 3v12.5H8a3 3 0 0 1-3-3z"/><path d="M5 16.5a3 3 0 0 1 3-3h10"/>'),
+  offers: svg('<path d="M4 4h7l9 9-7 7-9-9z"/><circle cx="8.5" cy="8.5" r="1.3"/>'),
+  faq: svg('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 0 1 4 2.1c0 1.6-2 2-2 3.1"/><path d="M12 17.3h.01"/>'),
+  jobs: svg('<rect x="3" y="7.5" width="18" height="12.5" rx="2"/><path d="M8 7.5V5.5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>'),
+  media: svg('<rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m4.5 18 5-5 4 4 2-2 4 4"/>'),
+  structure: svg('<path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16"/><path d="M14 21V9h5a1 1 0 0 1 1 1v11M8 8h2M8 12h2M8 16h2"/>'),
+  types: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M14.5 9.3a2.4 2.4 0 0 0-2.3-1.5h-1a2 2 0 0 0 0 4h1.4a2 2 0 0 1 0 4h-1a2.4 2.4 0 0 1-2.3-1.6"/>'),
+  venues: svg('<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
+  menu: svg('<path d="M6 3v6a2 2 0 0 0 4 0V3M8 11v10M16.5 3c-1.4 0-2.3 2.2-2.3 5s.9 4 2.3 4m0-9v18"/>'),
+  cigars: svg('<rect x="3" y="10" width="14" height="4" rx="1"/><path d="M17 10h2.5a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H17M6.5 10V9M10 10V9"/>'),
+  team: svg('<circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3 3 0 0 1 0 5.6M20.5 20a5.5 5.5 0 0 0-4.5-5.4"/>'),
+  depts: svg('<rect x="9" y="3" width="6" height="5" rx="1"/><path d="M12 8v3M6 14H5v-1a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1h-1"/><rect x="3" y="15" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/>'),
+  discord: `<svg class="sic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18 18 0 0 0-5.6 0L8.6 3a19.6 19.6 0 0 0-4.9 1.4C.6 9.1-.3 13.6.2 18.1a19.8 19.8 0 0 0 6 3l1.3-2.1a12.8 12.8 0 0 1-2-1l.5-.4a14 14 0 0 0 12 0l.5.4c-.6.4-1.3.7-2 1l1.3 2.1a19.7 19.7 0 0 0 6-3c.5-5.2-.9-9.7-3.5-13.7ZM8 15.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.6 8 10.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg>`,
+  senders: svg('<path d="M4.5 12 20 5l-6.5 15-2.6-6.4z"/><path d="M11 13.5 20 5"/>'),
+  settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M3 12h3M18 12h3M5.3 5.3 7.4 7.4M16.6 16.6l2.1 2.1M18.7 5.3 16.6 7.4M7.4 16.6l-2.1 2.1"/>'),
+  danger: svg('<path d="M12 3 2.5 20h19z"/><path d="M12 9.5v4.5M12 17.2h.01"/>')
+};
 const BUILTIN_IMG = ['img/atrium-night.webp', 'img/atrium-day.webp', 'img/reception.webp', 'img/library.webp', ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => `img/journal/p${n}.webp`)];
 const BCHIP = { new: 'p', confirmed: 'ok', checkedin: 'v', done: 'm', cancelled: 'bad' };
 let A = null, root = null, sec = 'overview', ctx = {}, sel = {}, bFilter = 'active', bq = '', aTicket = null, bChat = null, bFocus = null;
@@ -40,7 +68,7 @@ function badges() { if (!A) return {}; return { bookings: A.bookings.filter(b =>
 function paintAside() {
   const b = badges(), u = S.me;
   $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}${APP_VER ? ` · <span class="ver num">${APP_VER}</span>` : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div><div class="asearch"><input class="inp" id="aSq" type="search" placeholder="Поиск: код, ник, имя, номер" autocomplete="off" aria-label="Поиск по броням, заказам, обращениям и отзывам"><div class="ares" id="aRes" hidden></div></div><div class="anav" id="anav">` +
-    SECTIONS.map(([g, items]) => { const vis = items.filter(([, , r]) => can(r)); return vis.length ? (g ? `<span class="grp">${g}</span>` : '') + vis.map(([k, n]) => `<button data-s="${k}" aria-pressed="${k === sec}" data-sfx="soft"><span>${n}</span>${b[k] ? `<span class="badge">${b[k]}</span>` : ''}</button>`).join('') : ''; }).join('') + '</div>';
+    SECTIONS.map(([g, items]) => { const vis = items.filter(([, , r]) => can(r)); return vis.length ? (g ? `<span class="grp">${g}</span>` : '') + vis.map(([k, n]) => `<button data-s="${k}" aria-pressed="${k === sec}" data-sfx="soft"><span class="nl">${SI[k] || ''}<span>${n}</span></span>${b[k] ? `<span class="badge">${b[k]}</span>` : ''}</button>`).join('') : ''; }).join('') + '</div>';
   if (innerWidth <= 900) { const on = $('#anav [aria-pressed="true"]'), as = $('#anav'); if (on && as) as.scrollTo({ left: on.offsetLeft - as.clientWidth / 2 + on.offsetWidth / 2, behavior: 'smooth' }); }
   $$('#aside [data-s]').forEach(x => x.onclick = () => { sec = x.dataset.s; try { sessionStorage.setItem('mhc-sec', sec); } catch { } paintAside(); paint(); scrollTo({ top: 0 }); });
   $('#aOut').onclick = () => ctx.logout();
@@ -178,9 +206,12 @@ let bSel = new Set(), bMulti = false, bOpen = null;
 // Вид доски запоминается у администратора в браузере: 'floors' — по этажам (шахматка), 'kanban' — колонки по статусу (как было изначально).
 function boardStyle() { try { return localStorage.getItem('mhc:boardStyle') === 'kanban' ? 'kanban' : 'floors'; } catch { return 'floors'; } }
 function setBoardStyle(v) { try { localStorage.setItem('mhc:boardStyle', v === 'kanban' ? 'kanban' : 'floors'); } catch {} }
+// Размер плиток доски «по этажам»: 'lg' — крупно и наглядно (как было раньше), 'sm' — компактно, больше номеров на экране.
+function boardSize() { try { return localStorage.getItem('mhc:boardSize') === 'sm' ? 'sm' : 'lg'; } catch { return 'lg'; } }
+function setBoardSize(v) { try { localStorage.setItem('mhc:boardSize', v === 'sm' ? 'sm' : 'lg'); } catch {} }
 function board(m) {
   const T = Object.fromEntries(A.types.map(t => [t.id, t.name])), ft = sel.boardType || '', fs = sel.boardStatus || '';
-  const style = boardStyle(), kb = style === 'kanban';
+  const style = boardStyle(), kb = style === 'kanban', bsz = boardSize();
   if (kb) { bMulti = false; bOpen = null; }
   const rooms = A.rooms.filter(r => (!ft || r.type === ft));
   const shown = r => !fs || r.status === fs;
@@ -191,7 +222,8 @@ function board(m) {
   const short = id => SH[id] || id;
   bSel = new Set([...bSel].filter(id => A.rooms.some(r => r.id === id)));
   const styleToggle = `<div class="seg bstyle" role="group" aria-label="Вид доски"><button data-bs="floors" aria-pressed="${!kb}">По этажам</button><button data-bs="kanban" aria-pressed="${kb}">Колонки по статусу</button></div>`;
-  m.innerHTML = head('Доска номеров', `${styleToggle}${isAdmin() ? '<button class="btn sm ghost" id="bStruct">Этажи и номера</button>' : ''}<select class="inp" id="bt" style="width:190px"><option value="">Все типы</option>${A.types.map(t => `<option value="${esc(t.id)}" ${t.id === ft ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>${kb ? '' : `<button class="btn sm ${bMulti ? '' : 'ghost'}" id="bMulti">${bMulti ? 'Готово' : 'Выбрать несколько'}</button>`}`,
+  const sizeToggle = kb ? '' : `<div class="seg bsize" role="group" aria-label="Размер доски"><button data-bz="lg" aria-pressed="${bsz === 'lg'}">Крупно</button><button data-bz="sm" aria-pressed="${bsz === 'sm'}">Компактно</button></div>`;
+  m.innerHTML = head('Доска номеров', `${styleToggle}${sizeToggle}${isAdmin() ? '<button class="btn sm ghost" id="bStruct">Этажи и номера</button>' : ''}<select class="inp" id="bt" style="width:190px"><option value="">Все типы</option>${A.types.map(t => `<option value="${esc(t.id)}" ${t.id === ft ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>${kb ? '' : `<button class="btn sm ${bMulti ? '' : 'ghost'}" id="bMulti">${bMulti ? 'Готово' : 'Выбрать несколько'}</button>`}`,
     kb ? 'Перетащите карточку номера в другую колонку или смените статус в списке на карточке. Бот в Discord сразу обновит свободные номера.'
        : 'Нажмите на номер, чтобы сменить статус и увидеть гостя. Номер можно перетащить на нужный статус в строке сверху. Бот в Discord сразу обновит свободные номера.') +
     (kb
@@ -199,7 +231,7 @@ function board(m) {
           return `<div class="col" data-drop="${k}" style="--sc:${RSC[k]}"><h4><span>${n}</span><span class="num">${rs.length}</span></h4>${rs.map(r => `<div class="rc" draggable="true" data-id="${esc(r.id)}"><b>${esc(r.id)}</b><span class="note">${esc(T[r.type] || r.type)}${r.guest ? ' · ' + esc(r.guest) : ''}</span><select class="inp sm" data-id="${esc(r.id)}" aria-label="Статус номера ${esc(r.id)}">${Object.entries(ROOM_STATUS).map(([s, sn]) => `<option value="${s}" ${s === k ? 'selected' : ''}>${sn}</option>`).join('')}</select></div>`).join('') || '<p class="note" style="margin:.2rem .3rem 0">—</p>'}</div>`; }).join('')}</div>`
       : `<div class="bst" role="group" aria-label="Фильтр по статусу"><button class="bst-i ${!fs ? 'on' : ''}" data-fs=""><b class="num">${rooms.length}</b><span>Все</span></button>${Object.entries(ROOM_STATUS).map(([k, n]) => `<button class="bst-i ${fs === k ? 'on' : ''}" data-fs="${k}" data-drop="${k}" style="--sc:${RSC[k]}"><i></i><b class="num">${cnt(k)}</b><span>${n}</span></button>`).join('')}</div>
     ${bMulti ? `<div class="bbulk"><span><b class="num">${bSel.size}</b> выбрано</span>${Object.entries(ROOM_STATUS).map(([k, n]) => `<button class="btn sm ghost" data-bulk="${k}" ${bSel.size ? '' : 'disabled'} style="--sc:${RSC[k]}"><i class="dot"></i>${n}</button>`).join('')}<button class="btn sm ghost" id="bAll">Выбрать видимые</button><button class="btn sm ghost" id="bNone" ${bSel.size ? '' : 'disabled'}>Снять</button></div>` : ''}
-    <div class="chess ${bMulti ? 'multi' : ''}">${floors.map(f => { const fr = rooms.filter(r => r.floor === f).sort((a, b) => String(a.id).localeCompare(String(b.id), 'ru', { numeric: true })), free = fr.filter(r => r.status === 'free').length;
+    <div class="chess sz-${bsz} ${bMulti ? 'multi' : ''}">${floors.map(f => { const fr = rooms.filter(r => r.floor === f).sort((a, b) => String(a.id).localeCompare(String(b.id), 'ru', { numeric: true })), free = fr.filter(r => r.status === 'free').length;
       return `<div class="cf"><div class="cf-h"><b class="num">${f}</b><span>этаж</span><small>${esc(roomGameFloor(A.rooms, f))}</small><small class="num">${free}/${fr.length} св.</small></div><div class="cf-r">${fr.map(r => `<button class="ch ${shown(r) ? '' : 'dim'} ${bSel.has(r.id) ? 'sel' : ''} ${bOpen === r.id ? 'open' : ''}" draggable="true" data-id="${esc(r.id)}" style="--sc:${RSC[r.status]}" title="${esc(r.id)} · ${esc(T[r.type] || r.type)} · ${ROOM_STATUS[r.status]}${r.guest ? ' · ' + esc(r.guest) : ''}" aria-label="Номер ${esc(r.id)}, ${ROOM_STATUS[r.status]}"><b class="num">${esc(r.id)}</b><span>${esc(short(r.type))}</span>${r.guest ? '<i class="g" aria-hidden="true"></i>' : ''}</button>`).join('')}</div></div>`; }).join('') || '<div class="empty">Номеров нет. Добавьте этажи в разделе «Этажи и номера».</div>'}</div>`) +
     `<div class="legend chl">${Object.entries(ROOM_STATUS).map(([k, n]) => `<span><i style="background:${RSC[k]}"></i>${n}</span>`).join('')}<span><i class="g"></i>Есть гость</span>${kb ? '' : `<span class="note">Буквы — тип номера: ${A.types.map(t => `${short(t.id)} — ${esc(t.name)}`).join(', ')}</span>`}</div>
     <div id="bCard"></div>`;
@@ -207,6 +239,7 @@ function board(m) {
   $('#bt').onchange = e => { sel.boardType = e.target.value; paint(); };
   $('#bStruct') && ($('#bStruct').onclick = () => { sec = 'structure'; paintAside(); paint(); scrollTo({ top: 0 }); });
   $$('.bstyle [data-bs]').forEach(b => b.onclick = () => { if (b.dataset.bs !== boardStyle()) { setBoardStyle(b.dataset.bs); bMulti = false; bOpen = null; bSel.clear(); paint(); } });
+  $$('.bsize [data-bz]').forEach(b => b.onclick = () => { if (b.dataset.bz !== boardSize()) { setBoardSize(b.dataset.bz); paint(); } });
   $('#bMulti') && ($('#bMulti').onclick = () => { bMulti = !bMulti; bSel.clear(); bOpen = null; paint(); });
   $$('.bst-i').forEach(b => b.onclick = () => { sel.boardStatus = sel.boardStatus === b.dataset.fs ? '' : b.dataset.fs; paint(); });
   // карточки канбана: перетаскивание между колонками + выбор статуса в списке
@@ -581,7 +614,10 @@ function settings(m) {
       <label class="check"><input type="checkbox" id="wgWeather"> Погода и температура над отелем</label>
       <label class="check"><input type="checkbox" id="wgGuests"> Счётчик гостей онлайн</label>
       <label class="check"><input type="checkbox" id="wgFree"> «Свободно» — свободные номера в шапке</label></div>
-    <div class="stack" style="gap:.5rem"><span class="lbl">Музыка на вертушке («Отдых»)</span><p class="note">Треки mp3, ogg или m4a до 10 МБ. Играет случайный трек со случайного места. Пока треков нет, вертушка в разделе «Отдых» скрыта.</p>
+    <div class="stack" style="gap:.5rem"><span class="lbl">Интеграция LifeX</span><p class="note">Привязка профиля игровой соцсети LifeX в кабинете гостя: подтягиваются аватар, имя персонажа и телефон. Включение и выключение не удаляют уже привязанные профили — данные гостей остаются.</p>
+      <label class="check"><input type="checkbox" id="lxEn" ${A.lifex?.envOk ? '' : 'disabled'}> Включить привязку LifeX для гостей</label>
+      ${A.lifex?.envOk ? '' : '<p class="note" style="margin:0">Адреса приложения LifeX не заданы на хостинге, поэтому привязка сейчас не работает. Чтобы включить её, добавьте в <b>.env</b> ключи <span class="num">LIFEX_CLIENT_ID</span>, <span class="num">LIFEX_REDIRECT_URI</span>, <span class="num">LIFEX_TOKEN_URL</span> и <span class="num">LIFEX_PROFILE_URL</span> (см. README).</p>'}</div>
+    <div class="stack" style="gap:.5rem"><span class="lbl">Музыка на вертушке («Отдых»)</span><p class="note">Треки mp3, ogg или m4a. Играет случайный трек со случайного места. Пока треков нет, вертушка в разделе «Отдых» скрыта.</p>
       <div class="stack" id="trkBox" style="gap:.4rem"></div><div class="row"><label class="btn sm ghost" style="cursor:pointer">${I.plus} Загрузить треки<input type="file" id="trkUp" accept="audio/mpeg,audio/ogg,audio/mp4,.mp3,.ogg,.m4a" multiple hidden></label></div></div>
     <p class="note">Роли, которые дают доступ к панели, выбираются в разделе Discord.</p><div><button class="btn">Сохранить</button></div></form>`;
   wirePickers($('#sF'));
@@ -590,6 +626,7 @@ function settings(m) {
     const upd = () => { const mv = $('#spMode').value; $('#spMenuF').hidden = mv !== 'menu'; $('#spCustomF').hidden = $('#spDescF').hidden = mv !== 'custom'; };
     $('#spMode').onchange = upd; upd(); })();
   (() => { const w = s.widgets || {}; $('#wgWeather').checked = w.weather !== false; $('#wgGuests').checked = w.guests !== false; $('#wgFree').checked = w.free !== false; })();
+  (() => { $('#lxEn').checked = (s.lifex?.enabled !== false); })();
   let tpls = (A.replyTemplates?.length ? A.replyTemplates : DEFAULT_REPLIES).map(t => ({ ...t }));
   const paintTpl = () => { $('#tplBox').innerHTML = tpls.map((t, i) => `<div class="tplrow"><input class="inp" data-tt="${i}" value="${esc(t.title)}" placeholder="Название"><textarea class="inp" data-tx="${i}" rows="2" placeholder="Текст ответа">${esc(t.text)}</textarea><button type="button" class="btn sm ghost" data-tdel="${i}" aria-label="Удалить шаблон">${I.trash}</button></div>`).join('');
     $$('#tplBox [data-tt]').forEach(x => x.oninput = () => { tpls[+x.dataset.tt].title = x.value; }); $$('#tplBox [data-tx]').forEach(x => x.oninput = () => { tpls[+x.dataset.tx].text = x.value; });
@@ -603,7 +640,7 @@ function settings(m) {
   $('#trkUp').onchange = async e => { const files = [...e.target.files]; if (!files.length) return; const r = await run(() => upload(files)); e.target.value = '';
     const got = (r || []).filter(x => /\.(mp3|ogg|m4a)$/i.test(x.url)); if (!got.length) return toast('Не получилось загрузить. Нужны mp3, ogg или m4a до 10 МБ', 'err');
     got.forEach(x => tracks.push({ url: x.url, title: String(x.name || '').replace(/\.[^.]+$/, '') })); paintTracks(); toast(`Загружено треков: ${got.length}. Не забудьте сохранить настройки`); };
-  $('#sF').onsubmit = async e => { e.preventDefault(); const body = { ...readFields(F), replyTemplates: tpls.filter(t => t.title.trim() && t.text.trim()), deckTracks: tracks, special: (() => { const mv = $('#spMode').value; return mv === 'menu' ? { mode: 'menu', menuId: $('#spMenu').value } : mv === 'custom' ? { mode: 'custom', name: $('#spName').value, desc: $('#spDesc').value, price: +$('#spPrice').value || 0 } : { mode: 'auto' }; })(), widgets: { weather: $('#wgWeather').checked, guests: $('#wgGuests').checked, free: $('#wgFree').checked }, tiers: $$('#tiersBox .tier-row').map(r => Object.fromEntries([...r.querySelectorAll('[data-t]')].map(i => [i.dataset.t, i.value]))).filter(t => t.name.trim()) }; if (await run(() => api('PUT', '/admin/settings/main', body), 'Настройки сохранены')) { await load(); ctx.reloadPublic?.(); } };
+  $('#sF').onsubmit = async e => { e.preventDefault(); const body = { ...readFields(F), replyTemplates: tpls.filter(t => t.title.trim() && t.text.trim()), deckTracks: tracks, special: (() => { const mv = $('#spMode').value; return mv === 'menu' ? { mode: 'menu', menuId: $('#spMenu').value } : mv === 'custom' ? { mode: 'custom', name: $('#spName').value, desc: $('#spDesc').value, price: +$('#spPrice').value || 0 } : { mode: 'auto' }; })(), widgets: { weather: $('#wgWeather').checked, guests: $('#wgGuests').checked, free: $('#wgFree').checked }, lifex: { enabled: $('#lxEn').checked }, tiers: $$('#tiersBox .tier-row').map(r => Object.fromEntries([...r.querySelectorAll('[data-t]')].map(i => [i.dataset.t, i.value]))).filter(t => t.name.trim()) }; if (await run(() => api('PUT', '/admin/settings/main', body), 'Настройки сохранены')) { await load(); ctx.reloadPublic?.(); } };
 }
 function danger(m) {
   m.innerHTML = head('Сброс данных', '', 'Используйте, чтобы начать с чистого листа: например, после тестов.') + `<div class="danger"><h3 style="font-size:1.05rem;color:var(--bad)">Сбросить статистику</h3>

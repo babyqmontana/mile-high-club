@@ -57,7 +57,8 @@ function paintNav() {
   const u = S.me;
   const lx = S.items?.profile?.lifex, ava = lx?.avatar || u?.avatar;
   $('#navUser').innerHTML = u || ava ? `<button class="ibtn" id="userBtn" aria-label="${u ? 'Профиль' : 'Мои брони'}" style="overflow:hidden;padding:0">${ava ? `<img class="avatar" src="${esc(ava)}" alt="">` : `<span class="avatar">${esc((u.username || '?')[0])}</span>`}</button>` : `<button class="ibtn" id="userBtn" aria-label="Мои брони и вход">${I.user}</button>`;
-  $('#userBtn').onclick = () => location.hash = u && u.role !== 'guest' ? '#admin' : '#me';
+  // клик по аватару открывает личный профиль/кабинет (а не сразу панель) — в кабинете у персонала есть кнопка «Панель персонала»
+  $('#userBtn').onclick = () => location.hash = '#me';
   if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; { const nf = $('#navFree'), fp = nf.closest('.pill'); if (fp) fp.hidden = !wOn('free'); const val = `${f}/${S.pub.rooms.length}`; if (nf.textContent !== val) { const had = nf.textContent !== '—'; nf.textContent = val; if (had) { nf.classList.remove('tick'); void nf.offsetWidth; nf.classList.add('tick'); } } } $('#foot').textContent = S.pub.settings.footer || ''; paintGuests(); }
 }
 // сайт всегда в ночной теме: тёмный интерфейс, ночной отель и ночное небо

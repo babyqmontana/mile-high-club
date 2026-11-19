@@ -137,7 +137,9 @@ app.get('/auth/demo', (req, res) => {
 app.post('/auth/logout', (req, res) => { setCookie(res, 'mhc_s', '', 0); res.json({ ok: true }); });
 
 /* ---- загрузка картинок ---- */
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 40, fields: 10, parts: 60 } });
+// Размер отдельного файла не ограничиваем на уровне приложения — сколько можно загрузить, определяет хостинг (его лимиты тела запроса и диск).
+// Оставляем только защиту от слишком большого числа файлов/полей в одном запросе.
+const upload = multer({ storage: multer.memoryStorage(), limits: { files: 40, fields: 10, parts: 60 } });
 const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'm4a' };
 // тип файла проверяется по содержимому, а не по тому, что прислал браузер
 const MAGIC = { jpg: b => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff, png: b => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
@@ -147,7 +149,7 @@ const MAGIC = { jpg: b => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff, png: 
 const staffOnly = async (req, res, next) => { try { const user = await currentUser(req, res); if (!user || !['admin', 'mod'].includes(user.role)) return res.status(403).json({ error: 'Нужен вход персонала' }); req.user = user; next(); } catch (e) { next(e); } };
 let uploading = 0;
 const uploadSlot = (req, res, next) => { if (uploading >= 3) return res.status(503).json({ error: 'Сервер занят загрузкой, повторите через минуту' }); uploading++; res.on('close', () => uploading--); next(); };
-app.post('/api/admin/upload', staffOnly, uploadSlot, (req, res, next) => upload.array('files', 40)(req, res, e => e ? res.status(400).json({ error: e.code === 'LIMIT_FILE_SIZE' ? 'Файл больше 10 МБ' : 'Файлы не приняты' }) : next()), async (req, res) => {
+app.post('/api/admin/upload', staffOnly, uploadSlot, (req, res, next) => upload.array('files', 40)(req, res, e => e ? res.status(e.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: e.code === 'LIMIT_FILE_SIZE' ? 'Файл слишком большой для хостинга' : 'Файлы не приняты' }) : next()), async (req, res) => {
   const user = req.user;
   const out = [];
   for (const f of req.files || []) {

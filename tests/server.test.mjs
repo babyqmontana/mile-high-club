@@ -192,6 +192,21 @@ test('окошки сайта: можно скрыть погоду/онлайн
   s.close();
 });
 
+test('LifeX: тумблер в настройках сохраняется и не трогает данные гостей', async () => {
+  const s = openStore(path.join(dir, 'lx-' + Date.now() + '.sqlite')); seed(s); const core = createCore(s, {});
+  assert.equal(core.settings().lifex, undefined, 'по умолчанию поля нет');
+  // гость привязал профиль LifeX
+  core.linkLifex('g:guestkey123456', { id: 'u1', username: 'ivan', name: 'Иван', bio: 'био', phone: '555', url: 'https://lifex.ls-project.com/u', avatar: '' });
+  assert.equal(s.get('profiles', 'g:guestkey123456').lifex.username, 'ivan');
+  // админ выключает интеграцию — данные гостя должны остаться
+  await core.handle('PUT', '/admin/settings/main', { body: { lifex: { enabled: false } }, user: ADMIN });
+  assert.equal(core.settings().lifex.enabled, false);
+  assert.equal(s.get('profiles', 'g:guestkey123456').lifex.username, 'ivan', 'привязанный профиль не сброшен');
+  await core.handle('PUT', '/admin/settings/main', { body: { lifex: { enabled: true } }, user: ADMIN });
+  assert.equal(core.settings().lifex.enabled, true);
+  s.close();
+});
+
 test('ссылки и цвета из панели проходят только безопасные', async () => {
   const s = openStore(path.join(dir, 'url.sqlite')); seed(s); const core = createCore(s, {}); const admin = { id: 'a', username: 'A', role: 'admin' };
   const { doc } = await core.handle('PUT', '/admin/offers/new', { body: { title: 'x', link: 'javascript:alert(1)', image: 'https://ok.example/a.webp' }, user: admin });

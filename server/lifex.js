@@ -49,8 +49,12 @@ export function mountLifex(app, { env, core, setCookie, encode, decode, cookies,
     authUrl: env.LIFEX_AUTH_URL || 'https://lifex.ls-project.com/oauth/authorize',
     tokenUrl: env.LIFEX_TOKEN_URL || '', profileUrl: env.LIFEX_PROFILE_URL || '', scope: env.LIFEX_SCOPE || 'profile'
   };
-  // LifeX выключен по умолчанию: включается только явным LIFEX_ENABLED=true и при заданных адресах приложения
-  const on = env.LIFEX_ENABLED === 'true' && !!(conf.clientId && conf.redirect && conf.tokenUrl && conf.profileUrl);
+  // Интеграция «подключена к движку», когда в .env заданы адреса приложения LifeX (clientId, redirect, token, profile).
+  // Включение/выключение для гостей — тумблер администратора в настройках сайта (по умолчанию включено, когда адреса заданы).
+  // Переключение тумблера НЕ трогает данные гостей: уже привязанные профили и аватары остаются на месте.
+  // Жёсткий стоп у хостинга: LIFEX_ENABLED=false отключает интеграцию независимо от настроек панели.
+  const envOk = !!(conf.clientId && conf.redirect && conf.tokenUrl && conf.profileUrl) && env.LIFEX_ENABLED !== 'false';
+  const isOn = () => envOk && core.settings()?.lifex?.enabled !== false;
   // короткое сообщение для кабинета: сайт покажет его всплывашкой и сотрёт
   const flash = (res, code) => res.append('Set-Cookie', `mhc_lx_msg=${code}; Path=/; Max-Age=120; SameSite=Lax${secure ? '; Secure' : ''}`);
   const back = (res, code) => { setCookie(res, 'mhc_lx', '', 0); flash(res, code); res.redirect('/#me'); };
@@ -74,11 +78,12 @@ export function mountLifex(app, { env, core, setCookie, encode, decode, cookies,
   }
   // удалить свою копию аватара, когда профиль отвязан или данные удалены
   hooks.removeUpload = url => { const m = /^\/uploads\/(lx-[a-f0-9]{16}\.(png|jpg|webp|gif))$/.exec(url || ''); if (m) fs.rmSync(path.join(UPLOADS, m[1]), { force: true }); };
-  hooks.lifexOn = () => on;
+  hooks.lifexOn = () => isOn();
+  hooks.lifexEnvOk = () => envOk;
 
   // начало: гость с кабинета; без входа через Discord профиль привязывается к ключу этого устройства
   app.get('/auth/lifex', async (req, res) => {
-    if (!on) return back(res, 'off');
+    if (!isOn()) return back(res, 'off');
     const user = await currentUser(req, res).catch(() => null), gk = str(req.query.gk, 64);
     const owner = user ? 'd:' + user.id : /^[\w.-]{8,64}$/.test(gk) ? 'g:' + gk : null;
     if (!owner) return back(res, 'owner');
@@ -106,5 +111,5 @@ export function mountLifex(app, { env, core, setCookie, encode, decode, cookies,
       back(res, 'ok');
     } catch (e) { console.error('LifeX:', e.message); back(res, 'error'); }
   });
-  return { on };
+  return { get on() { return isOn(); }, envOk };
 }

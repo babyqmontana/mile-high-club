@@ -19,7 +19,10 @@ async function demoInit() {
   const hooks = {
     changed: cols => setTimeout(() => listeners.forEach(fn => fn(cols)), 30),
     status: () => ({ connected: false, demo: true }),
-    post: async () => true
+    post: async () => true,
+    // в демо интеграция LifeX «настроена», а тумблером в настройках можно показать/скрыть привязку
+    lifexEnvOk: () => true,
+    lifexOn: () => { try { return demo.core.settings().lifex?.enabled !== false; } catch { return true; } }
   };
   const core = createCore(store, hooks);
   let user = null; try { user = JSON.parse(ls.get('mhc-demo-user') || 'null'); } catch { }
@@ -51,7 +54,7 @@ export function subscribe(fn) {
 }
 
 export async function authConfig() {
-  if (DEMO) return { oauth: false, demo: true };
+  if (DEMO) { const d = await demoInit(); let lifex = true; try { lifex = d.core.settings().lifex?.enabled !== false; } catch { } return { oauth: false, demo: true, lifex }; }
   try { return await fetch('/auth/config').then(r => r.json()); } catch { return { oauth: false, demo: false }; }
 }
 export async function login(role = 'admin', next = 'admin') {

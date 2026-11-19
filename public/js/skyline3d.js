@@ -164,8 +164,10 @@ function cityMaterial() {
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       if(abs(vN.y)<.5){
         float u=abs(vN.x)>abs(vN.z)?vWp.z:vWp.x; vec2 g=vec2(u/.34,vWp.y/.42); vec2 id=floor(g), f=fract(g);
-        float aa=clamp(1.6-max(fwidth(g.x),fwidth(g.y))*2.2,0.,1.); // вдали окна сливаются в ровный тон без ряби
-        float win=step(.18,f.x)*step(f.x,.82)*step(.2,f.y)*step(f.y,.78)*aa;
+        float aa=clamp(1.6-max(fwidth(g.x),fwidth(g.y))*2.6,0.,1.); // вдали окна сливаются в ровный тон без ряби
+        // края окон сглаживаем по производным пикселя: на движении ряды окон не мерцают (темпоральный алиасинг)
+        vec2 ew=vec2(fwidth(f.x),fwidth(f.y))+.004;
+        float win=smoothstep(.18-ew.x,.18+ew.x,f.x)*smoothstep(.82+ew.x,.82-ew.x,f.x)*smoothstep(.2-ew.y,.2+ew.y,f.y)*smoothstep(.78+ew.y,.78-ew.y,f.y)*aa;
         // фасады из Blender: у каждого дома свой стиль (кирпич, ленточные окна, стеклянная стена, ар-деко),
         // кусок 4 окна × 3 этажа; альфа — стекло, по нему и горят окна
         if(uHasFac>.5&&aa>.02){ // дальние дома — без выборки из текстуры, там окна всё равно сливаются в тон
