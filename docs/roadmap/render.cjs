@@ -7,6 +7,6 @@ const { chromium } = require('playwright'), path = require('path');
   // текущая версия всегда из package.json, даже если roadmap.html забыли поправить
   const ver = 'v' + require(path.join(__dirname, '../../package.json')).version;
   await p.evaluate(v => document.querySelectorAll('[data-current]').forEach(e => { e.textContent = v; }), ver);
-  await p.screenshot({ path: path.join(__dirname, 'roadmap.png') }); await b.close();
+  await p.screenshot({ path: path.join(__dirname, 'roadmap.png'), fullPage: true }); // высота по содержимому: длинный список не обрезается await b.close();
   console.log('Готово: docs/roadmap/roadmap.png. Сожмите в docs/img/roadmap.webp (например, cwebp -q 85).');
 })();

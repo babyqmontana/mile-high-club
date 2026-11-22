@@ -304,7 +304,7 @@ function paintChat(force) {
   const msgs = t.mode === 'site' ? t.messages : t.status === 'closed' && t.messages[0]?.text === t.text ? t.messages : [{ from: 'guest', text: t.text, at: t.createdAt }, ...t.messages];
   el.innerHTML = `<div class="chat"><header><div><b>${esc(t.discord)} · ${esc(t.topic)}</b><div class="note">${esc(t.name || 'Без имени')} · ${t.mode === 'discord' ? (t.channel ? 'тикет-канал создан в Discord' : 'тикет в Discord') : 'чат на сайте'}</div></div>${t.status !== 'closed' ? `<button class="btn sm ghost" id="acClose">Закрыть</button>` : `<div class="row"><span class="chip m">Закрыто</span>${isAdmin() ? `<button class="btn sm ghost" id="acDel">${I.trash} Удалить</button>` : ''}</div>`}</header>
     <div class="msgs" id="acMsgs">${msgs.map(x => `<div class="msg ${x.from === 'staff' ? 'me' : ''}${x.ooc ? ' ooc' : ''}">${oocTag(x)}${esc(x.text)}<small>${x.from === 'staff' ? esc(x.by || 'Персонал') : esc(x.by || 'Гость')} · ${when(x.at)}</small></div>`).join('')}</div>
-    ${(t.mode === 'site' || t.channel) && t.status !== 'closed' ? (A.me?.ic ? `<form class="compose" id="acF">${tplSelect('acTpl')}${oocSwitch('t:' + t.id)}<input id="acIn" placeholder="Ответ гостю от ${esc(A.me.ic)}" autocomplete="off" aria-label="Ответ гостю"><button class="btn sm" data-sfx="">Ответить</button></form>` : icNeedBox('вашего персонажа')) : `<div class="compose note">${t.status === 'closed' ? `Обращение закрыто${t.closedBy ? ': ' + esc(t.closedBy) : ''}. Выше сохранённая история.` : 'Гостя нет на сервере, ответить здесь нельзя.'}</div>`}</div>`;
+    ${(t.mode === 'site' || t.channel) && t.status !== 'closed' ? (A.me?.ic ? `<form class="compose" id="acF">${tplSelect('acTpl')}${oocSwitch('t:' + t.id)}<input id="acIn" placeholder="Ответ гостю от ${esc(A.me.ic)}" autocomplete="off" aria-label="Ответ гостю"><button class="btn sm" data-sfx="">Ответить</button></form>` : icNeedBox('вашего персонажа')) : `<div class="compose note">${t.status === 'closed' ? `Обращение закрыто${t.closedBy ? ': ' + esc(t.closedBy) + (t.closedByGuest ? ' (гость)' : '') : ''}. Выше сохранённая история.` : 'Гостя нет на сервере, ответить здесь нельзя.'}</div>`}</div>`;
   if ($('#acIn')) { $('#acIn').value = draft; if (focused || force) $('#acIn').focus(); }
   wireTpl('acTpl', '#acIn', t.name || t.discord);
   $('#acMsgs').scrollTop = 1e6;
@@ -658,12 +658,14 @@ function vice(m) {
   const v = A.settingsFull?.vice || {};
   const F = [{ k: 'heroNight', label: 'Первый экран ночью', type: 'image' }, { k: 'heroDay', label: 'Первый экран днём', type: 'image' }, { k: 'bg', label: 'Фон страниц (за карточками)', type: 'image' }];
   m.innerHTML = head('Вайс-Сити', '', 'Пасхалка «Горячие туры»: гость покупает рейс в подвале сайта, улетает в Вайс-Сити и получает секрет «Горячий тур». Рейс одноразовый — после возвращения в Лос-Сантос кнопка у гостя пропадает.') + `<form class="card pad stack" id="vF">
-    <label class="check"><input type="checkbox" id="vEn"> Показывать кнопку «Горячие туры» в подвале сайта</label>
+    <div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center"><button type="button" class="btn sm" id="vGo">${document.documentElement.classList.contains('vice') ? 'Вернуться в Лос-Сантос' : 'Перенестись в Вайс-Сити'}</button><span class="note">Для персонала рейс доступен всегда — и здесь, и кнопкой в подвале сайта.</span></div>
+    <label class="check"><input type="checkbox" id="vEn"> Показывать кнопку «Горячие туры» гостям в подвале сайта</label>
     <p class="note" style="margin:0">Выключено — новые гости кнопку не видят. Кто уже в Вайс-Сити, сможет вернуться: кнопка обратного рейса у них останется.</p>
     <div class="stack" style="gap:.5rem"><span class="lbl">Фоны темы</span><p class="note" style="margin:0">Свои картинки вместо стандартных сцен Вайс-Сити. Пусто — используются сцены отеля в Майами. Лучше всего — горизонтальные, от 1920 px.</p>
       <div class="g2">${F.map(f => field(f, v[f.k] || '')).join('')}</div></div>
     <div><button class="btn">Сохранить</button></div></form>`;
   wirePickers($('#vF')); $('#vEn').checked = v.enabled !== false;
+  $('#vGo').onclick = () => import('./vice.js').then(mm => mm.open()).then(() => { const b = $('#vGo'); if (b) b.textContent = document.documentElement.classList.contains('vice') ? 'Вернуться в Лос-Сантос' : 'Перенестись в Вайс-Сити'; });
   $('#vF').onsubmit = async e => { e.preventDefault(); const body = { vice: { enabled: $('#vEn').checked, ...readFields(F) } };
     if (await run(() => api('PUT', '/admin/settings/main', body), 'Сохранено')) { delete $('#vF').dataset.dirty; await load(); ctx.reloadPublic?.(); } };
 }

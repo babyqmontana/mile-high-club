@@ -4,6 +4,7 @@
 # Всё строится кодом — никаких чужих моделей и текстур.
 #
 #   blender -b -P brand/vice/vice_scene.py -- <day|night> <out_dir> [scale]
+#   blender -b -P brand/vice/vice_scene.py -- model public/img/vice   — только главный отель с площадкой → hotel.glb (витрина «Номеров»)
 #
 # Рендерит четыре прохода: full (кадр), far (без среднего и ближнего планов), mn (альфа среднего+ближнего),
 # n (альфа ближнего). build_vice.py собирает из них img/vice/<day|night>.webp, -far.webp и -mask.webp.
@@ -14,7 +15,8 @@ argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 VAR = argv[0] if argv else 'night'
 OUT = argv[1] if len(argv) > 1 else os.path.join(os.path.dirname(__file__), 'out')
 SCALE = float(argv[2]) if len(argv) > 2 else 1.0
-NIGHT = VAR == 'night'
+MODEL = VAR == 'model'
+NIGHT = VAR in ('night', 'model')  # в модели неон и окна с эмиссией, яркость дня/ночи регулирует сайт
 os.makedirs(OUT, exist_ok=True)
 random.seed(306)
 
@@ -90,9 +92,9 @@ M = {
 
 # ---------- примитивы ----------
 def _mesh_box():
-    me = bpy.data.meshes.new('box'); bm = bmesh.new(); bmesh.ops.create_cube(bm, size=1); bm.to_mesh(me); bm.free(); me.materials.append(None); return me
+    me = bpy.data.meshes.new('box'); bm = bmesh.new(); bm.loops.layers.uv.new(); bmesh.ops.create_cube(bm, size=1, calc_uvs=True); bm.to_mesh(me); bm.free(); me.materials.append(None); return me
 def _mesh_cyl(seg=32):
-    me = bpy.data.meshes.new('cyl'); bm = bmesh.new(); bmesh.ops.create_cone(bm, cap_ends=True, segments=seg, radius1=1, radius2=1, depth=1); bm.to_mesh(me); bm.free(); me.materials.append(None)
+    me = bpy.data.meshes.new('cyl'); bm = bmesh.new(); bm.loops.layers.uv.new(); bmesh.ops.create_cone(bm, cap_ends=True, segments=seg, radius1=1, radius2=1, depth=1, calc_uvs=True); bm.to_mesh(me); bm.free(); me.materials.append(None)
     for p in me.polygons: p.use_smooth = True
     return me
 BOX, CYL = _mesh_box(), _mesh_cyl()
@@ -212,7 +214,7 @@ def retro_sun():
     wave.wave_type = 'BANDS'; wave.bands_direction = 'Y'; wave.inputs['Scale'].default_value = 5.0; wave.inputs['Distortion'].default_value = 0
     nt.links.new(tc.outputs['Generated'], wave.inputs['Vector'])
     # полосы только в нижней половине диска
-    nt.links.new(wave.outputs['Fac'], gt.inputs[0]); gt.inputs[1].default_value = .25
+    nt.links.new(wave.outputs['Fac'], gt.inputs[0]); gt.inputs[1].default_value = 2.0  # без полос: спокойный мягкий диск
     m2 = nt.nodes.new('ShaderNodeMath'); m2.operation = 'LESS_THAN'; nt.links.new(sep.outputs['Y'], m2.inputs[0]); m2.inputs[1].default_value = .55
     m3 = nt.nodes.new('ShaderNodeMath'); m3.operation = 'MULTIPLY'; nt.links.new(gt.outputs[0], m3.inputs[0]); nt.links.new(m2.outputs[0], m3.inputs[1])
     m4 = nt.nodes.new('ShaderNodeMath'); m4.operation = 'SUBTRACT'; m4.inputs[0].default_value = 1; nt.links.new(m3.outputs[0], m4.inputs[1])
@@ -220,7 +222,7 @@ def retro_sun():
     try: sun.blend_method = 'BLEND'
     except Exception: pass
     me = bpy.data.meshes.new('sun'); bm = bmesh.new(); bmesh.ops.create_circle(bm, cap_ends=True, segments=96, radius=1); bm.to_mesh(me); bm.free(); me.materials.append(sun)
-    o = bpy.data.objects.new('sun', me); FAR.objects.link(o); o.location = (-95, 260, 100); o.scale = (40, 40, 40); o.rotation_euler = (math.pi / 2, 0, 0)
+    o = bpy.data.objects.new('sun', me); FAR.objects.link(o); o.location = (-95, 260, 92); o.scale = (24, 24, 24); o.rotation_euler = (math.pi / 2, 0, 0)
 
 def lamp(x, y, col=MID):
     cyl((x, y, 2.6), .07, 5.2, M['metal'], col)
@@ -264,6 +266,65 @@ def car(x, y):
     for dx in (-1.5, 1.5):
         for dy in (-.95, .95): cyl((x + dx, y + dy, .42), .42, .3, M['metal'], MID, rot=(math.pi / 2, 0, 0)); cyl((x + dx, y + dy * 1.02, .42), .24, .32, M['chrome'], MID, rot=(math.pi / 2, 0, 0))
     if NIGHT: box((x - 2.32, y, .8), (.05, 1.6, .06), M['neon_pink'], MID)
+
+
+# ---------- модель для сайта: главный отель на площадке ----------
+def tex_image(name, size, fn):
+    import numpy as np
+    img = bpy.data.images.new(name, size, size, alpha=False)
+    px = fn(np, size).astype('float32'); a = np.ones((size, size, 1), 'float32')
+    img.pixels.foreach_set(np.concatenate([px, a], axis=2).ravel()); img.file_format = 'PNG'; img.pack(); return img
+def stucco(col):
+    def f(np, n):
+        rng = np.random.default_rng(len(col) * 7 + int(col[0] * 100))
+        big = np.kron(rng.random((16, 16)), np.ones((n // 16, n // 16))); fine = rng.random((n, n))
+        k = (.93 + .05 * big + .04 * fine)[..., None]
+        return np.clip(np.array(col)[None, None, :] * k, 0, 1)
+    return f
+def glass_tex(np, n):
+    y = np.linspace(0, 1, n)[:, None, None]
+    top, bot = np.array(hexc('#7fd3e0')), np.array(hexc('#1b3a4a'))
+    c = bot + (top - bot) * y ** 1.6
+    x = np.linspace(0, 1, n)[None, :, None]; c = c + .18 * np.exp(-((x - y * .6 - .2) ** 2) / .004)  # блик по диагонали
+    c[:4], c[-4:], c[:, :4], c[:, -4:] = .9, .9, .9, .9                                              # белая рама
+    return np.clip(c * np.ones((n, n, 3)), 0, 1)
+def use_tex(m, img):
+    nt = m.node_tree; b = nt.nodes.get('Principled BSDF'); t = nt.nodes.new('ShaderNodeTexImage'); t.image = img
+    nt.links.new(t.outputs['Color'], b.inputs['Base Color'])
+def build_model():
+    from mathutils import Matrix
+    for k, h in (('stucco_pink', '#f4b6c8'), ('stucco_mint', '#a8e6d4'), ('stucco_cream', '#f6e7cf'), ('trim', '#fbf6ee')):
+        use_tex(M[k], tex_image(k, 256, stucco(hexc(h))))
+    use_tex(M['glass'], tex_image('glass', 128, glass_tex))
+    main_hotel(-3.0, 19.0)
+    box((5.5, 1.0, -.06), (36, 26, .12), M['walk'], MID)                   # площадка
+    box((5.5, -10.6, .04), (36, 1.2, .08), M['trim'], MID)
+    box((5.5, -11.18, .1), (36, .06, .06), M['neon_cyan'], MID)
+    for x in (-8, -1, 12, 19): palm(x, -6.0, random.uniform(8.5, 10.5), MID, lean=random.uniform(-.06, .06), rot=random.uniform(0, 6), fs=1.35)
+    for z in (2, 8): palm(-9.5, z, random.uniform(8, 10), MID, rot=random.uniform(0, 6), fs=1.3); palm(20.5, z, random.uniform(8, 10), MID, rot=random.uniform(0, 6), fs=1.3)
+    for x in (-5, 5.5, 16): lamp(x, -4.6)
+    car(5.5, -8.0)
+    # слить всё по материалам: два десятка сеток вместо сотен объектов — быстро грузится и рисуется
+    dg = bpy.context.evaluated_depsgraph_get(); groups = {}; shift = Matrix.Translation((-5.5, -1.0, 0))
+    for o in list(sc.objects):
+        if o.type not in ('MESH', 'FONT') or not o.material_slots: continue
+        m = o.material_slots[0].material
+        me = bpy.data.meshes.new_from_object(o.evaluated_get(dg)); me.transform(shift @ o.matrix_world)
+        groups.setdefault(m.name, []).append(me)
+    for o in list(sc.objects): bpy.data.objects.remove(o)
+    for name, meshes in groups.items():
+        bm = bmesh.new()
+        for me in meshes: bm.from_mesh(me)
+        out = bpy.data.meshes.new(name); bm.to_mesh(out); bm.free(); out.materials.clear(); out.materials.append(bpy.data.materials[name])
+        for pl in out.polygons: pl.material_index = 0
+        sc.collection.objects.link(bpy.data.objects.new(name, out))
+    path = os.path.join(OUT, 'hotel.glb'); kw = dict(filepath=path, export_format='GLB', export_apply=True, export_yup=True, export_cameras=False, export_lights=False)
+    try: bpy.ops.export_scene.gltf(**kw, export_image_format='WEBP')
+    except TypeError: bpy.ops.export_scene.gltf(**kw)
+    print('VICE MODEL', path, round(os.path.getsize(path) / 1e6, 2), 'MB', len(groups), 'meshes')
+
+if MODEL:
+    build_model(); raise SystemExit(0)
 
 # ---------- сборка кадра ----------
 ground(); far_city(); retro_sun()

@@ -23,14 +23,16 @@ export function createInteractions({ core, resolveRole }) {
     return say(i, r.ticket.channel ? `Обращение открыто: <#${r.ticket.channel}>` : 'Обращение принято, управляющие ответят.');
   };
 
-  // закрывает только администрация: транскрипт и удаление канала делает core через бота
+  // закрыть может персонал или сам автор обращения: транскрипт и удаление канала делает core через бота
   const closeTicket = async i => {
     const role = await resolveRole(i.user.id);
-    if (role === 'guest') return i.reply({ content: 'Закрыть обращение может только администрация.', flags: EPH });
     const t = core.store.all('tickets').find(x => x.channel === i.channelId && x.status !== 'closed');
     if (!t) return i.reply({ content: 'Это обращение уже закрыто.', flags: EPH });
+    const own = t.discordId === i.user.id;
+    if (role === 'guest' && !own) return i.reply({ content: 'Закрыть обращение может его автор или администрация.', flags: EPH });
     await i.deferReply({ flags: EPH });
-    await core.handle('POST', `/admin/tickets/${t.id}/close`, { user: { id: i.user.id, username: i.member?.displayName || i.user.username, role } });
+    const user = { id: i.user.id, username: i.member?.displayName || i.user.username, role };
+    await core.handle('POST', role === 'guest' ? `/tickets/${t.id}/close` : `/admin/tickets/${t.id}/close`, { user });
   };
 
   return async function handle(i) {

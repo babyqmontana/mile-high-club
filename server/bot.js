@@ -96,14 +96,14 @@ export async function startBot({ core, store, env, hooks }) {
   const fromSite = m => relayStaff(m) || relayGuest(m);
   const authorKind = (t, m) => (relayGuest(m) ? 'guest' : relayStaff(m) ? 'staff' : m.author.bot ? 'bot' : m.author.id === t.discordId ? 'guest' : 'staff');
   // Закрытие: сначала архив, потом удаление канала. Не сохранился транскрипт — канал остаётся.
-  hooks.closeTicketChannel = async (t, by) => {
+  hooks.closeTicketChannel = async (t, by, byGuest) => {
     const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) return [];
     const log = (await allMessages(c)).filter(m => !m.system).map(m => ({ from: authorKind(t, m), by: fromSite(m)?.[1] || m.member?.displayName || m.author.username, text: fromSite(m)?.[2] || textOf(m), files: [...m.attachments.values()].map(a => a.url), at: m.createdTimestamp }));
     const sent = await send('ticketArchive', { ...archiveCard(t, log, by, t.discordId), files: [{ attachment: Buffer.from(transcriptHtml(t, log, by), 'utf8'), name: `ticket-${t.id}.html` }] });
     if (!sent) throw new Error('не удалось сохранить транскрипт');
     const m = t.discordId && await guild.members.fetch(t.discordId).catch(() => null);
-    if (m) m.send(`Ваше обращение «${t.topic}» закрыто. Если вопрос остался, откройте новое.`).catch(() => {});
-    await c.delete(`Обращение закрыл ${by}`);
+    if (m && !byGuest) m.send(`Ваше обращение «${t.topic}» закрыто. Если вопрос остался, откройте новое.`).catch(() => {}); // сам закрыл — писать не нужно
+    await c.delete(`Обращение закрыл ${byGuest ? 'гость ' : ''}${by}`);
     return log;
   };
   // ответ из панели сайта уходит в тикет-канал

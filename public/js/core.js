@@ -473,14 +473,25 @@ export function createCore(store, hooks = {}) {
     emit(['bookings', 'log']); roomsChanged(); notifyGuest('booking_status', b); return { booking: b };
   });
   on('POST', '/admin/orders/:id/status', ({ params, body, user }) => { need(user, 'mod'); const o = store.get('orders', params.id); if (!o) throw new HttpError(404, 'Заказ не найден'); const st = str(body.status, 20); if (!ORDER_STATUS[st]) bad('Неверный статус'); o.status = st; o.updatedAt = Date.now(); store.put('orders', o.id, o); { const ON = { cooking: `Заказ в номер ${o.room} готовится.`, delivering: `Заказ уже несут в номер ${o.room}.`, done: `Заказ доставлен в номер ${o.room}. Приятного аппетита!`, cancelled: `Заказ в номер ${o.room} отменён.` }; if (ON[st]) notice(o.owner, 'order', ON[st]); } emit(['orders']); notifyGuest('order_status', o); return { order: o }; });
-  on('POST', '/admin/tickets/:id/close', async ({ params, user }) => { need(user, 'mod'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения');
+  // закрыть обращение может и персонал, и сам гость: канал Discord уходит в архив с транскриптом, переписка остаётся на сайте
+  async function closeTicket(t, by, actor, byGuest) {
     if (t.status === 'closed') return { ticket: t };
     if (closing.has(t.id)) bad('Обращение уже закрывается'); closing.add(t.id);
     try {
-    if (t.channel && hooks.closeTicketChannel) { let history; try { history = await hooks.closeTicketChannel(t, user.username); } catch (e) { bad('Обращение не закрыто: ' + e.message); } if (history.length) t.messages = [{ from: 'guest', by: t.name || t.discord, text: t.text, at: t.createdAt }, ...history.filter(m => m.from !== 'bot')].slice(-300); t.channel = null; }
-    const fresh = store.get('tickets', t.id) || t; Object.assign(fresh, { messages: t.messages, channel: t.channel, status: 'closed', closedBy: user.username, lastAt: Date.now() });
-    store.put('tickets', fresh.id, fresh); log(`${user.username} закрыл обращение ${fresh.discord}`, 'ticket', user.username); emit(['tickets', 'log']); notice(fresh.owner, 'ticket', `Обращение «${fresh.topic}» закрыто.`); notifyGuest('ticket_closed', fresh); return { ticket: fresh };
-    } finally { closing.delete(t.id); } });
+    if (t.channel && hooks.closeTicketChannel) { let history; try { history = await hooks.closeTicketChannel(t, by, byGuest); } catch (e) { bad('Обращение не закрыто: ' + e.message); } if (history.length) t.messages = [{ from: 'guest', by: t.name || t.discord, text: t.text, at: t.createdAt }, ...history.filter(m => m.from !== 'bot')].slice(-300); t.channel = null; }
+    const fresh = store.get('tickets', t.id) || t; Object.assign(fresh, { messages: t.messages, channel: t.channel, status: 'closed', closedBy: by, closedByGuest: !!byGuest, lastAt: Date.now() });
+    store.put('tickets', fresh.id, fresh); log(byGuest ? `Гость ${by} закрыл своё обращение «${fresh.topic}»` : `${by} закрыл обращение ${fresh.discord}`, 'ticket', actor); emit(['tickets', 'log']);
+    // гость закрыл сам — личное сообщение ему не нужно, карточка персонала просто помечается закрытой
+    if (byGuest) call('notify', 'ticket_closed', { ...fresh, discordId: discordIdOf(fresh), quiet: true });
+    else { notice(fresh.owner, 'ticket', `Обращение «${fresh.topic}» закрыто.`); notifyGuest('ticket_closed', fresh); }
+    return { ticket: fresh };
+    } finally { closing.delete(t.id); }
+  }
+  on('POST', '/admin/tickets/:id/close', async ({ params, user }) => { need(user, 'mod'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения');
+    return closeTicket(t, icName(user) || user.username, user.username, false); });
+  on('POST', '/tickets/:id/close', async ({ params, user, guestKey }) => {
+    const t = store.get('tickets', params.id); if (!t || !isOwner(t, user, guestKey)) throw new HttpError(404, 'Обращение не найдено');
+    return closeTicket(t, icName(user, guestKey) || t.name || t.discord || 'гость', user?.username || 'гость', true); });
 
   // события
   on('POST', '/admin/events/sync', async ({ user }) => { need(user, 'mod'); const r = await call('syncEvents'); emit(['events']); return { synced: r ?? 0, connected: !!hooks.syncEvents }; });

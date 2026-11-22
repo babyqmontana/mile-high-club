@@ -1385,8 +1385,8 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
 :root.vice #viceSky{opacity:1}
 #viceSky i,#viceSky .palm{position:absolute;display:block}
 #viceSky .glow{left:-10%;right:-10%;bottom:-20vh;height:70vh;background:radial-gradient(55% 55% at 50% 100%,rgba(255,45,149,.42),rgba(182,92,255,.18) 50%,transparent 78%)}
-#viceSky .sun{left:50%;bottom:-16vmin;width:56vmin;aspect-ratio:1;translate:-50% 0;border-radius:50%;background:linear-gradient(180deg,#FFC46B 0%,#FF5E8A 34%,#FF2D95 62%,#8A3FFC 100%);opacity:.42;
-  -webkit-mask:repeating-linear-gradient(180deg,#000 0 7%,transparent 7% 9%);mask:repeating-linear-gradient(180deg,#000 0 7%,transparent 7% 9%)}
+#viceSky .sun{left:62%;bottom:-9vmin;width:30vmin;aspect-ratio:1;translate:-50% 0;border-radius:50%;background:radial-gradient(circle at 50% 40%,#FFD9A0 0%,#FF9A8A 45%,#FF5E9A 75%,transparent 76%);opacity:.22;filter:blur(1.5px);
+  box-shadow:0 0 6rem 2rem rgba(255,120,150,.25)}
 #viceSky .palm{bottom:-3vh;width:min(20vw,15rem);color:#05020A;opacity:1;filter:drop-shadow(0 0 1.2rem rgba(255,45,149,.35))}
 #viceSky .palm.l{left:-3vw}
 #viceSky .palm.r{right:-4vw;scale:-1.15 1.15;transform-origin:bottom}
@@ -1430,3 +1430,18 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
 :root.vice .ghost.btn:hover{border-color:#3EF2E0;color:#3EF2E0}
 :root.vice a:not(.btn):hover{color:#3EF2E0}
 :root.calm.vice h1,:root.calm.vice .eyebrow,:root.calm.vice .nav::after,:root.calm.vice .btn{animation:none}
+
+/* «Номера» в Вайс-Сити: витрина отеля */
+.vbox{position:relative}
+.vstage{position:relative;height:clamp(26rem,72vh,48rem);border-radius:1.5rem;overflow:hidden;border:1px solid var(--line2);background:linear-gradient(180deg,#2a1038 0%,#9a3d78 60%,#f39a8a 100%)}
+.vstage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:pan-y}
+.vstage canvas:active{cursor:grabbing}
+.vfallback{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.vhint{position:absolute;left:1rem;top:1rem;padding:.35rem .7rem;border-radius:62rem;font-size:.75rem;font-weight:700;background:rgba(12,7,23,.55);backdrop-filter:blur(6px);color:#fff;pointer-events:none}
+.vnote{position:absolute;right:1.2rem;bottom:1.2rem;width:min(23rem,calc(100% - 2.4rem));display:grid;gap:.55rem;padding:1.2rem 1.3rem;border-radius:1.1rem;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(12px);border:1px solid var(--line2);box-shadow:var(--shadow)}
+.vnote h3{font-size:1.25rem}.vnote p{margin:0;color:var(--mut);font-size:.9rem}
+.vfacts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.8rem;margin-top:1rem}
+.vfact{display:grid;gap:.25rem;padding:1rem 1.1rem;border-radius:1rem;background:var(--card);border:1px solid var(--line)}
+.vfact b{font-family:var(--display);font-size:1.05rem;background:var(--vice,linear-gradient(90deg,#FFB65C,#FF2D95));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.vfact span{color:var(--mut);font-size:.88rem}
+@media(max-width:760px){.vnote{position:static;width:auto;margin-top:.8rem}.vfacts{grid-template-columns:1fr}.vstage{height:62vh}}
