@@ -33,7 +33,7 @@ function shell() {
   </div></header>
   <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button><button type="button" class="btn ghost" id="dCalm" data-sfx=""></button></div></nav>
   <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['jobs'], ['privacy'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
-  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span>·</span><button class="secrets" id="calmBtn" data-sfx="" aria-pressed="false">Спокойный режим</button><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana${APP_VER ? `<span class="ver num" title="Версия сайта">${APP_VER}</span>` : ''}</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
+  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span>·</span><button class="secrets vice-t" id="viceBtn" data-sfx="" aria-pressed="false">Горячие туры</button><span>·</span><button class="secrets" id="calmBtn" data-sfx="" aria-pressed="false">Спокойный режим</button><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana${APP_VER ? `<span class="ver num" title="Версия сайта">${APP_VER}</span>` : ''}</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
   const drawer = $('#drawer'), closeDrawer = () => { if (!drawer.classList.contains('on')) return; drawer.classList.remove('on'); popLayer(drawer); $('#burger').setAttribute('aria-expanded', 'false'); };
   $('#burger').setAttribute('aria-controls', 'drawer'); $('#burger').setAttribute('aria-expanded', 'false');
@@ -52,6 +52,15 @@ function shell() {
   // логотип: с каждым кликом подрагивает сильнее — намёк, что что-то будет
   { let n = 0, tmr = 0; $('.brand').addEventListener('click', () => { clearTimeout(tmr); tmr = setTimeout(() => { n = 0; $('.brand').style.removeProperty('--wob'); }, 2500); n++; const b = $('.brand'); b.style.setProperty('--wob', Math.min(n, 7)); b.classList.remove('wob'); void b.offsetWidth; b.classList.add('wob'); if (n >= 7) { n = 0; unlock('logo'); } }); }
   $('#achBtn').onclick = () => openCabinet();
+  // гость сам закрывает обращение — из чата на сайте или из списка (тикет в Discord уходит в архив)
+  document.addEventListener('click', async e => { const b = e.target.closest?.('[data-tclose]'); if (!b) return;
+    if (!await confirmBox('Закрыть обращение?', 'Переписка сохранится в кабинете. Если вопрос останется — откройте новое.', 'Закрыть')) return;
+    b.disabled = true; try { await api('POST', `/tickets/${b.dataset.tclose}/close`); play('soft'); toast('Обращение закрыто'); await loadItems(); } catch (err) { fail(err); b.disabled = false; } });
+  // «Горячие туры»: пасхалка с рейсом в Вайс-Сити, модуль грузится только по клику (или если тема уже включена)
+  $('#viceBtn').onclick = () => import('./vice.js').then(m => m.open());
+  if (document.documentElement.classList.contains('vice')) import('./vice.js').then(m => m.mount());
+  // тема сменилась (вылет или возвращение): перерисовываем экран — фон первого экрана и сцены другие
+  document.addEventListener('mhc-vice', () => { mods.tower?.setVice?.(isVice()); paintNav(); render(); });
   const paintAch = () => { $('#achN').textContent = `${achCount()}/${ACH.length}`; }; paintAch(); onAch(paintAch);
   $('#fab').onclick = openCart; magnet($('#fab'));
   setupApp();
@@ -75,6 +84,11 @@ function fitNav() {
 const fitNavSoon = () => { cancelAnimationFrame(fitNav.raf); fitNav.raf = requestAnimationFrame(fitNav); };
 function paintNav() {
   { const calm = document.documentElement.classList.contains('calm'); $('#dCalm').textContent = calm ? 'Спокойный режим: вкл' : 'Спокойный режим: выкл'; $('#dCalm').setAttribute('aria-pressed', calm); $('#calmBtn').setAttribute('aria-pressed', calm); $('#calmBtn').textContent = calm ? 'Спокойный режим · вкл' : 'Спокойный режим'; }
+  { const vs = S.pub?.settings?.vice || {}, vb = $('#viceBtn'), on = document.documentElement.classList.contains('vice'); let done = false; try { done = localStorage.getItem('mhc-vice-done') === '1'; } catch { }
+    // рейс одноразовый: после возвращения в Лос-Сантос кнопки нет; выключена в панели — видна только тем, кто ещё в Вайс-Сити
+    const staff = ['admin', 'mod'].includes(S.me?.role); // персоналу рейс доступен всегда — проверить, как выглядит тема
+    const show = on || staff || (vs.enabled !== false && !done); if (vb) { vb.hidden = !show; vb.previousElementSibling.hidden = !show; }
+    const sky = document.getElementById('viceSky'); if (sky) sky.style.setProperty('--vbg', vs.bg ? `url("${vs.bg.replace(/["\\]/g, '')}")` : 'none'); }
   $('#sndBtn').innerHTML = soundOn ? I.sound : I.mute; $('#sndBtn').setAttribute('aria-label', soundOn ? 'Выключить звук' : 'Включить звук');
   $('#dSnd').innerHTML = `${soundOn ? I.sound : I.mute}${soundOn ? 'Звук включён' : 'Звук выключен'}`; $('#dSnd').setAttribute('aria-pressed', soundOn);
   const u = S.me;
@@ -231,9 +245,9 @@ function renderHome() {
   const latest = p.issues[0];
   const heroHtml = `
   <section class="dive" id="dive"><div class="stick">
-    <div class="bg" style="background-image:url('${esc(m === 'day' ? s.heroDay : s.heroNight)}')"></div><canvas id="heroGl" aria-hidden="true"></canvas><canvas class="wxc" id="heroWx" aria-hidden="true"></canvas>
+    <div class="bg" style="background-image:url('${esc(heroUrl(s, m))}')"></div><canvas id="heroGl" aria-hidden="true"></canvas><canvas class="wxc" id="heroWx" aria-hidden="true"></canvas>
     <div class="wrap dv dv1" id="dv1"><img class="logo" id="heroLogo" src="img/logo.webp?v=3" alt="${esc(s.hotelName)}" width="500" height="300">
-      <h1>${nowrapHyphens(esc(s.tagline || 'Отель над Лос-Сантосом'))}. <span class="serif">${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</span></h1>
+      <h1>${isVice() ? `Отель над Вайс-Сити. <span class="serif">${m === 'day' ? 'Океан, пальмы и вечный закат.' : 'Неон только загорается.'}</span>` : `${nowrapHyphens(esc(s.tagline || 'Отель над Лос-Сантосом'))}. <span class="serif">${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</span>`}</h1>
       <div class="row"><a class="btn" href="#stay">Забронировать номер</a><a class="btn ghost" href="#leisure">Что сейчас открыто</a></div></div>
     <div class="wrap dv dv2" id="dv2"><span class="eyebrow">Вы в атриуме</span><h2>Сорок этажей стекла, латуни и неона</h2><p>Лифт поднимет в номера с 20 этажа, бассейны ждут на 38 и 40, Le Ciel на 30.</p><div class="row"><a class="btn" href="#stay">Выбрать номер</a><a class="btn ghost" href="#cigars">Сигарный клуб</a></div></div>
     <span class="hint" id="dvHint">Листайте, чтобы войти</span>
@@ -268,7 +282,7 @@ function renderHome() {
     <div class="stack"><span class="eyebrow">Discord</span><h3 style="font-size:clamp(1.4rem,3vw,2.2rem)">Всё главное на сайте. В Discord общаемся.</h3><p class="mut">Бронь, заявки, меню и журнал живут здесь. На сервере — анонсы, события и бот, который показывает свободные номера.</p>
       <div class="row">${s.discordInvite ? `<a class="btn discord" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} Зайти на сервер</a>` : ''}<a class="btn ghost" href="#contact">Оставить заявку</a></div></div>
   </div></div>`;
-  const key = m + '|' + (m === 'day' ? s.heroDay : s.heroNight) + '|' + s.tagline;
+  const key = m + '|' + heroUrl(s, m) + '|' + s.tagline + '|' + isVice();
   const v = view('home');
   if (v.dataset.key === key && $('#homeRest')) { $('#homeRest').innerHTML = restHtml; wireHome(); reveal(v); applyWeather(); return; }
   // старый атриум и его погода отдают GPU и обработчики до того, как появится новый
@@ -289,11 +303,16 @@ function renderHome() {
   if (document.documentElement.classList.contains('calm') || !hasWebGL()) goStatic();
   else import('./hero3d.js').then(mod => {
     if (!heroCanvas.isConnected || mods.hero) return; // пока модуль грузился, главную уже пересобрали
-    const h = mod.mountHero(heroCanvas, hero); if (!h) return goStatic(); mods.hero = h; const url = m === 'day' ? s.heroDay : s.heroNight; h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => { console.warn('hero', e); goStatic(); });
+    const h = mod.mountHero(heroCanvas, hero); if (!h) return goStatic(); mods.hero = h; const url = heroUrl(s, m); h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => { console.warn('hero', e); goStatic(); });
   applyWeather();
 }
 // предзагрузка слоёв главной картинки (те же правила, что в hero3d.layersFor)
-function heroLayers(url) { const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); return m ? Promise.all(['-far.webp', '-mask.webp'].map(x => preload('img/layers/' + m[1] + x))) : null; }
+function heroLayers(url) { const b = layerBase(url); return b ? Promise.all(['-far.webp', '-mask.webp'].map(x => preload(b + x))) : null; }
+// планы для параллакса есть у встроенных сцен: атриум отеля и отель в Майами (тема Вайс-Сити)
+function layerBase(url) { const a = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); if (a) return 'img/layers/' + a[1]; const v = /img\/vice\/(night|day)\.webp$/.exec(url || ''); return v ? 'img/vice/' + v[1] : null; }
+// первый экран: в теме Вайс-Сити — сцены Майами (или свои из панели), иначе атриум отеля
+const isVice = () => document.documentElement.classList.contains('vice');
+function heroUrl(s, m) { if (isVice()) { const v = s.vice || {}; return m === 'day' ? v.heroDay || 'img/vice/day.webp' : v.heroNight || 'img/vice/night.webp'; } return m === 'day' ? s.heroDay : s.heroNight; }
 // слова через дефис («Лос-Сантос») не разрываются переносом; на вход — уже экранированный текст
 const nowrapHyphens = html => html.replace(/[^\s<>]+-[^\s<>]+/g, w => `<span class="nw">${w}</span>`);
 const stars = n => `<span class="stars" aria-label="${n} из 5">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= n ? 'on' : ''}">★</i>`).join('')}</span>`;
@@ -308,7 +327,24 @@ function evCard(e) {
 /* ---------------- номера ---------------- */
 let selFloor = null, selRoom = null;
 const FLOOR_ANG = (fl, f) => { const a = [...fl].sort((x, y) => x - y), i = a.indexOf(f); return a.length < 2 ? 0 : -70 + (i / (a.length - 1)) * 140; };
+// «Номера» в Вайс-Сити: вместо башни и лифта — витрина отеля в Майами (модель из Blender). Номера бронируются только в Лос-Сантосе
+function renderStayVice() {
+  const v = view('stay'); if (v.querySelector('.vshow')) { mods.tower?.relight?.(); return; }
+  mods.tower?.active?.(false); mods.tower = null;
+  v.innerHTML = `<div class="wrap sec vshow">
+    <div class="head"><span class="eyebrow">Вайс-Сити</span><h2>Mile High Club на набережной</h2><p>Отель ар-деко у самого океана: пастельные этажи, неоновый пилон MILE HIGH и пальмы у входа. Покрутите здание — оно того стоит.</p></div>
+    <div class="vbox"><div class="vstage"><canvas id="vGl" aria-label="Отель Mile High Club в Вайс-Сити"></canvas><span class="vhint">Тяните, чтобы обойти отель</span></div>
+      <aside class="vnote"><span class="eyebrow">Бронь номеров</span><h3>Номера — в Лос-Сантосе</h3><p>В Вайс-Сити отель открыт только для экскурсий. Чтобы выбрать этаж и номер, вернитесь домой обратным рейсом — лифт и все номера ждут там.</p><button class="btn" id="vBack" data-sfx="">Обратный рейс в Лос-Сантос</button></aside></div>
+    <div class="vfacts">${[['Пентхаус', 'Вид на океан и вечный закат прямо из окна'], ['Неон', 'Вывеска MILE HIGH загорается с первой звездой'], ['Набережная', 'Пальмы, кабриолеты и музыка до утра']].map(([t, d]) => `<div class="vfact"><b>${t}</b><span>${d}</span></div>`).join('')}</div>
+  </div>`;
+  $('#vBack').onclick = () => import('./vice.js').then(m => m.open());
+  if (!hasWebGL()) { $('#vGl').replaceWith(Object.assign(document.createElement('img'), { className: 'vfallback', alt: '', src: heroUrl(S.pub.settings, mode()) })); return; }
+  import('./viceshow.js').then(m => { if (!$('#vGl')) return; mods.tower = m.mountShowcase($('#vGl')); mods.tower.active(current === 'stay'); })
+    .catch(e => { console.error(e); $('#vGl')?.replaceWith(Object.assign(document.createElement('img'), { className: 'vfallback', alt: '', src: heroUrl(S.pub.settings, mode()) })); });
+}
 async function renderStay() {
+  if (isVice()) return renderStayVice();
+  if (mods.tower?.isShowcase) { mods.tower.destroy(); mods.tower = null; }
   const p = S.pub, floors = [...new Set(p.rooms.map(r => r.floor))].sort((a, b) => b - a);
   if (selFloor === null || !floors.includes(selFloor)) selFloor = floors[0] ?? null;
   markFloor(selFloor);
@@ -902,8 +938,8 @@ function paintChat() {
   const col = $('#tChatCol'); if (!col) return;
   const mine = S.items.tickets; const t = mine.find(x => x.id === openTicketId && x.mode === 'site') || null;
   const focused = col.contains(document.activeElement); const draft = $('#chatIn')?.value || '';
-  col.innerHTML = `${t ? `<div class="chat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span></header><div class="msgs" id="msgs"><div class="msg sys">Обращение открыто ${when(t.createdAt)}</div>${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${oocTag(m)}${esc(m.text)}<small>${m.from === 'staff' ? esc(m.by || 'Управляющий') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? '<div class="compose note">Обращение закрыто.</div>' : (S.items.profile?.name ? `<form class="compose" id="chatF">${oocSwitch('t:' + t.id)}<input id="chatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение"><button class="btn sm" data-sfx="">Отправить</button></form>` : icNeedBox())}</div>` : ''}
-    <div class="card pad stack"><h3 style="font-size:1.05rem">Мои обращения</h3>${mine.length ? `<div class="list">${mine.map(x => `<div class="item"><div class="top"><b>${esc(x.topic)}</b><span class="chip ${x.status === 'open' ? 'ok' : x.status === 'checking' ? 'warn' : 'm'}">${TICKET_STATUS[x.status]}</span></div><span class="note">${x.mode === 'discord' ? 'Ведётся в Discord' : x.mode === 'site' ? 'Чат на сайте' : 'Ожидает выбора'} · ${when(x.createdAt)}${x.lastFrom === 'staff' && x.mode === 'site' ? ' · <b style="color:var(--pink)">новый ответ</b>' : ''}</span>${x.mode === 'site' ? `<div><button class="btn sm ghost" data-open="${esc(x.id)}">Открыть чат</button></div>` : ''}</div>`).join('')}</div>` : '<p class="note">Пока пусто.</p>'}</div>`;
+  col.innerHTML = `${t ? `<div class="chat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><div class="row" style="gap:.4rem;flex-wrap:nowrap"><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span>${t.status !== 'closed' ? `<button type="button" class="btn sm ghost" data-tclose="${esc(t.id)}">Закрыть</button>` : ''}</div></header><div class="msgs" id="msgs"><div class="msg sys">Обращение открыто ${when(t.createdAt)}</div>${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${oocTag(m)}${esc(m.text)}<small>${m.from === 'staff' ? esc(m.by || 'Управляющий') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? `<div class="compose note">Обращение закрыто${t.closedByGuest ? ' вами' : t.closedBy ? ': ' + esc(t.closedBy) : ''}. Если вопрос остался — откройте новое.</div>` : (S.items.profile?.name ? `<form class="compose" id="chatF">${oocSwitch('t:' + t.id)}<input id="chatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение"><button class="btn sm" data-sfx="">Отправить</button></form>` : icNeedBox())}</div>` : ''}
+    <div class="card pad stack"><h3 style="font-size:1.05rem">Мои обращения</h3>${mine.length ? `<div class="list">${mine.map(x => `<div class="item"><div class="top"><b>${esc(x.topic)}</b><span class="chip ${x.status === 'open' ? 'ok' : x.status === 'checking' ? 'warn' : 'm'}">${TICKET_STATUS[x.status]}</span></div><span class="note">${x.mode === 'discord' ? 'Ведётся в Discord' : x.mode === 'site' ? 'Чат на сайте' : 'Ожидает выбора'} · ${when(x.createdAt)}${x.lastFrom === 'staff' && x.mode === 'site' ? ' · <b style="color:var(--pink)">новый ответ</b>' : ''}</span><div class="row" style="gap:.4rem">${x.mode === 'site' ? `<button class="btn sm ghost" data-open="${esc(x.id)}">Открыть чат</button>` : ''}${x.status === 'open' ? `<button class="btn sm ghost" data-tclose="${esc(x.id)}">Закрыть</button>` : ''}</div></div>`).join('')}</div>` : '<p class="note">Пока пусто.</p>'}</div>`;
   if ($('#chatIn')) { $('#chatIn').value = draft; if (focused) $('#chatIn').focus(); }
   const ms = $('#msgs'); if (ms) ms.scrollTop = ms.scrollHeight;
   markRead(t);
@@ -965,7 +1001,7 @@ function tierBlock(st) {
     ${T.length ? `<ul class="tier-list">${T.map(t => `<li class="${cur?.name === t.name ? 'on' : ''}"><b>${esc(t.name)}</b><span>от ${t.nights} ${plural(t.nights, 'ночи', 'ночей', 'ночей')}${t.discount ? ` · скидка ${t.discount}%` : ''}${t.perk ? ' · ' + esc(t.perk) : ''}</span></li>`).join('')}</ul>` : ''}</div>`;
 }
 function meChat(t) {
-  return `<div class="chat mechat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span></header><div class="msgs" id="meMsgs">${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${oocTag(m)}${esc(m.text)}<small>${m.from === 'staff' ? esc(m.by || 'Управляющий') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? '<div class="compose note">Обращение закрыто.</div>' : (S.items.profile?.name ? `<form class="compose" id="meChatF">${oocSwitch('t:' + t.id)}<input id="meChatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение управляющим"><button class="btn sm" data-sfx="">Отправить</button></form>` : icNeedBox())}</div>`;
+  return `<div class="chat mechat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><div class="row" style="gap:.4rem;flex-wrap:nowrap"><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span>${t.status !== 'closed' ? `<button type="button" class="btn sm ghost" data-tclose="${esc(t.id)}">Закрыть</button>` : ''}</div></header><div class="msgs" id="meMsgs">${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${oocTag(m)}${esc(m.text)}<small>${m.from === 'staff' ? esc(m.by || 'Управляющий') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? `<div class="compose note">Обращение закрыто${t.closedByGuest ? ' вами' : t.closedBy ? ': ' + esc(t.closedBy) : ''}. Если вопрос остался — откройте новое.</div>` : (S.items.profile?.name ? `<form class="compose" id="meChatF">${oocSwitch('t:' + t.id)}<input id="meChatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение управляющим"><button class="btn sm" data-sfx="">Отправить</button></form>` : icNeedBox())}</div>`;
 }
 // LifeX: доступна, если на сервере заданы адреса приложения LifeX
 let lxOn = null, lxN = 0;
@@ -1173,7 +1209,7 @@ async function boot() {
   await withLoader(async set => {
     try { await Promise.all([loadPublic(), loadMe()]); } catch (e) { failed = e; return; }
     set(45);
-    const s = S.pub.settings, m = mode(), hero = m === 'day' ? s.heroDay : s.heroNight;
+    const s = S.pub.settings, m = mode(), hero = heroUrl(s, m);
     // логотип грузит заставка (<img> в index.html), атриум — CSS-фон и hero3d: отдельная предзагрузка только дублировала запросы
     let done = 0; const jobs = [document.fonts?.ready].map(p => Promise.resolve(p).catch(() => {}).then(() => set(95)));
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов

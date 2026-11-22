@@ -272,12 +272,12 @@ function fakeButton(channelId, userId = 'u1') {
   return i;
 }
 
-test('кнопку закрытия отклоняет гость и принимает администрация', async () => {
+test('кнопку закрытия отклоняет чужой гость и принимает администрация', async () => {
   let closed = 0; const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan1', closeTicketChannel: async () => { closed++; return [{ from: 'guest', by: 'Джон', text: 'Привет', at: 1 }, { from: 'bot', by: 'бот', text: 'карточка', at: 2 }]; } });
   const t = await ticket(core);
-  const guest = fakeButton('chan1'); await createInteractions({ core, resolveRole: async () => 'guest' })(guest);
+  const guest = fakeButton('chan1', 'stranger'); await createInteractions({ core, resolveRole: async () => 'guest' })(guest);
   assert.equal(closed, 0);
-  assert.match(guest.replies[0].content, /только администрация/);
+  assert.match(guest.replies[0].content, /автор или администрация/);
   await createInteractions({ core, resolveRole: async () => 'mod' })(fakeButton('chan1', 'staff1'));
   const doc = store.get('tickets', t.id);
   assert.equal(closed, 1);
@@ -373,6 +373,17 @@ test('гость отключил личные сообщения — бот п�
   await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'ответ' } });
   assert.deepEqual(got.find(x => x[0] === 'ticket_reply'), ['ticket_reply', true, 'u1']);
   assert.equal(store.get('profiles', 'd:u1').dm, false);
+});
+
+test('гость сам закрывает своё обращение, чужое — нет; персоналу уходит пометка без личного сообщения', async () => {
+  const sent = [], closed = [], { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan9', closeTicketChannel: async (t, by, byGuest) => { closed.push([by, byGuest]); return []; }, notify: async (k, d) => { sent.push([k, d.quiet]); } });
+  const t = await ticket(core);
+  await assert.rejects(core.handle('POST', `/tickets/${t.id}/close`, { user: { id: 'u2', username: 'other', role: 'guest' } }), /не найдено/);
+  await core.handle('POST', `/tickets/${t.id}/close`, { user: { id: 'u1', username: 'guest1', role: 'guest' } });
+  const after = store.get('tickets', t.id);
+  assert.equal(after.status, 'closed'); assert.equal(after.closedByGuest, true); assert.equal(after.closedBy, 'Джон');
+  assert.deepEqual(closed, [['Джон', true]], 'канал закрыт с пометкой «гость сам»');
+  assert.deepEqual(sent.find(x => x[0] === 'ticket_closed'), ['ticket_closed', true]);
 });
 
 test('снег только в новогодней теме', () => {

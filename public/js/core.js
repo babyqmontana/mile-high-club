@@ -36,7 +36,7 @@ const EDITABLE = {
 };
 // Отправители постов в Discord: имя и аватарка вебхука
 const DEFAULT_SENDERS = [['concierge', '🛎️ Консьерж MHC', '#F7B50A'], ['reception', '🔑 Ресепшен MHC', '#F0177A'], ['manager', '🥂 Управляющий MHC', '#EF5617'], ['journal', '📰 Журнал «Высота»', '#F4D9A0']].map(([id, name, color], order) => ({ id, name, color, avatar: `img/discord/${id}.png`, order }));
-const PUBLIC_SETTINGS = ['tiers', 'deckTracks', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer', 'special', 'widgets'];
+const PUBLIC_SETTINGS = ['tiers', 'deckTracks', 'weather', 'theme', 'hotelName', 'tagline', 'heroDay', 'heroNight', 'discordInvite', 'dayStart', 'nightStart', 'address', 'footer', 'special', 'widgets', 'vice'];
 
 export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const bad = m => { throw new HttpError(400, m); };
@@ -473,14 +473,25 @@ export function createCore(store, hooks = {}) {
     emit(['bookings', 'log']); roomsChanged(); notifyGuest('booking_status', b); return { booking: b };
   });
   on('POST', '/admin/orders/:id/status', ({ params, body, user }) => { need(user, 'mod'); const o = store.get('orders', params.id); if (!o) throw new HttpError(404, 'Заказ не найден'); const st = str(body.status, 20); if (!ORDER_STATUS[st]) bad('Неверный статус'); o.status = st; o.updatedAt = Date.now(); store.put('orders', o.id, o); { const ON = { cooking: `Заказ в номер ${o.room} готовится.`, delivering: `Заказ уже несут в номер ${o.room}.`, done: `Заказ доставлен в номер ${o.room}. Приятного аппетита!`, cancelled: `Заказ в номер ${o.room} отменён.` }; if (ON[st]) notice(o.owner, 'order', ON[st]); } emit(['orders']); notifyGuest('order_status', o); return { order: o }; });
-  on('POST', '/admin/tickets/:id/close', async ({ params, user }) => { need(user, 'mod'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения');
+  // закрыть обращение может и персонал, и сам гость: канал Discord уходит в архив с транскриптом, переписка остаётся на сайте
+  async function closeTicket(t, by, actor, byGuest) {
     if (t.status === 'closed') return { ticket: t };
     if (closing.has(t.id)) bad('Обращение уже закрывается'); closing.add(t.id);
     try {
-    if (t.channel && hooks.closeTicketChannel) { let history; try { history = await hooks.closeTicketChannel(t, user.username); } catch (e) { bad('Обращение не закрыто: ' + e.message); } if (history.length) t.messages = [{ from: 'guest', by: t.name || t.discord, text: t.text, at: t.createdAt }, ...history.filter(m => m.from !== 'bot')].slice(-300); t.channel = null; }
-    const fresh = store.get('tickets', t.id) || t; Object.assign(fresh, { messages: t.messages, channel: t.channel, status: 'closed', closedBy: user.username, lastAt: Date.now() });
-    store.put('tickets', fresh.id, fresh); log(`${user.username} закрыл обращение ${fresh.discord}`, 'ticket', user.username); emit(['tickets', 'log']); notice(fresh.owner, 'ticket', `Обращение «${fresh.topic}» закрыто.`); notifyGuest('ticket_closed', fresh); return { ticket: fresh };
-    } finally { closing.delete(t.id); } });
+    if (t.channel && hooks.closeTicketChannel) { let history; try { history = await hooks.closeTicketChannel(t, by, byGuest); } catch (e) { bad('Обращение не закрыто: ' + e.message); } if (history.length) t.messages = [{ from: 'guest', by: t.name || t.discord, text: t.text, at: t.createdAt }, ...history.filter(m => m.from !== 'bot')].slice(-300); t.channel = null; }
+    const fresh = store.get('tickets', t.id) || t; Object.assign(fresh, { messages: t.messages, channel: t.channel, status: 'closed', closedBy: by, closedByGuest: !!byGuest, lastAt: Date.now() });
+    store.put('tickets', fresh.id, fresh); log(byGuest ? `Гость ${by} закрыл своё обращение «${fresh.topic}»` : `${by} закрыл обращение ${fresh.discord}`, 'ticket', actor); emit(['tickets', 'log']);
+    // гость закрыл сам — личное сообщение ему не нужно, карточка персонала просто помечается закрытой
+    if (byGuest) call('notify', 'ticket_closed', { ...fresh, discordId: discordIdOf(fresh), quiet: true });
+    else { notice(fresh.owner, 'ticket', `Обращение «${fresh.topic}» закрыто.`); notifyGuest('ticket_closed', fresh); }
+    return { ticket: fresh };
+    } finally { closing.delete(t.id); }
+  }
+  on('POST', '/admin/tickets/:id/close', async ({ params, user }) => { need(user, 'mod'); const t = store.get('tickets', params.id); if (!t) throw new HttpError(404, 'Нет обращения');
+    return closeTicket(t, icName(user) || user.username, user.username, false); });
+  on('POST', '/tickets/:id/close', async ({ params, user, guestKey }) => {
+    const t = store.get('tickets', params.id); if (!t || !isOwner(t, user, guestKey)) throw new HttpError(404, 'Обращение не найдено');
+    return closeTicket(t, icName(user, guestKey) || t.name || t.discord || 'гость', user?.username || 'гость', true); });
 
   // события
   on('POST', '/admin/events/sync', async ({ user }) => { need(user, 'mod'); const r = await call('syncEvents'); emit(['events']); return { synced: r ?? 0, connected: !!hooks.syncEvents }; });
@@ -553,7 +564,9 @@ export function createCore(store, hooks = {}) {
     if (col === 'issues') { pick('title', S(80)); pick('desc', S(600)); pick('publisher', S(60)); pick('number', S(20)); pick('cover', U(400)); pick('date', N); pick('published', B); pick('accent', H); if ('pages' in b) o.pages = (Array.isArray(b.pages) ? b.pages : []).slice(0, 80).map(p => ({ kind: ['text', 'image', 'quote'].includes(p.kind) ? p.kind : 'text', title: str(p.title, 100), text: str(p.text, 3000), image: U(400)(p.image), cat: str(p.cat, 30) })); }
     if (col === 'events') { pick('name', S(100)); pick('desc', S(1000)); pick('start', N); pick('end', N); pick('location', S(100)); pick('venueId', S(40)); pick('image', U(400)); pick('status', v => ['scheduled', 'active', 'completed', 'cancelled'].includes(v) ? v : 'scheduled'); if (!('source' in o)) o.source = 'manual'; }
     if (col === 'senders') { pick('name', S(80)); pick('avatar', U(400)); pick('color', v => /^#[0-9a-f]{6}$/i.test(v || '') ? v : '#F0177A'); pick('order', N); }
-    if (col === 'settings') { if ('replyTemplates' in b) o.replyTemplates = (Array.isArray(b.replyTemplates) ? b.replyTemplates : []).slice(0, 20).map(t => ({ title: str(t?.title, 40), text: str(t?.text, 600) })).filter(t => t.title && t.text); if ('deckTracks' in b) o.deckTracks = (Array.isArray(b.deckTracks) ? b.deckTracks : []).slice(0, 30).map(t => ({ url: str(t?.url, 200), title: str(t?.title, 80) })).filter(t => /^\/uploads\/[a-f0-9]{16}\.(mp3|ogg|m4a)$/.test(t.url)); if ('tiers' in b) o.tiers = (Array.isArray(b.tiers) ? b.tiers : []).slice(0, 6).map(t => ({ name: str(t.name, 30), nights: Math.max(1, Math.round(num(t.nights, 1))), discount: Math.min(50, Math.max(0, Math.round(num(t.discount, 0)))), perk: str(t.perk, 120) })).filter(t => t.name); for (const k of ['hotelName', 'tagline', 'address', 'footer']) pick(k, S(400)); for (const k of ['heroDay', 'heroNight', 'discordInvite', 'deckUrl']) pick(k, U(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none'); if ('special' in b) { const sp = b.special || {}; const mode = ['auto', 'menu', 'custom'].includes(sp.mode) ? sp.mode : 'auto';
+    if (col === 'settings') { if ('replyTemplates' in b) o.replyTemplates = (Array.isArray(b.replyTemplates) ? b.replyTemplates : []).slice(0, 20).map(t => ({ title: str(t?.title, 40), text: str(t?.text, 600) })).filter(t => t.title && t.text); if ('deckTracks' in b) o.deckTracks = (Array.isArray(b.deckTracks) ? b.deckTracks : []).slice(0, 30).map(t => ({ url: str(t?.url, 200), title: str(t?.title, 80) })).filter(t => /^\/uploads\/[a-f0-9]{16}\.(mp3|ogg|m4a)$/.test(t.url)); if ('tiers' in b) o.tiers = (Array.isArray(b.tiers) ? b.tiers : []).slice(0, 6).map(t => ({ name: str(t.name, 30), nights: Math.max(1, Math.round(num(t.nights, 1))), discount: Math.min(50, Math.max(0, Math.round(num(t.discount, 0)))), perk: str(t.perk, 120) })).filter(t => t.name); for (const k of ['hotelName', 'tagline', 'address', 'footer']) pick(k, S(400)); for (const k of ['heroDay', 'heroNight', 'discordInvite', 'deckUrl']) pick(k, U(400)); pick('staffExtras', B); pick('dayStart', N); pick('nightStart', N); pick('weather', v => ['auto', 'clear', 'rain', 'fog', 'snow'].includes(v) ? v : 'auto'); pick('theme', v => v === 'newyear' ? 'newyear' : 'none');
+      // «Горячие туры»: кнопка рейса в Вайс-Сити и свои фоны темы (пусто — фоны отеля по умолчанию)
+      if ('vice' in b) { const v = b.vice || {}, u = U(400); o.vice = { enabled: v.enabled !== false, heroNight: u(v.heroNight), heroDay: u(v.heroDay), bg: u(v.bg) }; } if ('special' in b) { const sp = b.special || {}; const mode = ['auto', 'menu', 'custom'].includes(sp.mode) ? sp.mode : 'auto';
       o.special = mode === 'menu' ? { mode, menuId: str(sp.menuId, 40) } : mode === 'custom' ? { mode, name: str(sp.name, 60), desc: str(sp.desc, 200), price: Math.max(0, Math.round(num(sp.price, 0))) } : { mode: 'auto' }; }
       if ('widgets' in b) { const w = b.widgets && typeof b.widgets === 'object' ? b.widgets : {}; o.widgets = { weather: w.weather !== false, guests: w.guests !== false, free: w.free !== false }; }
       if ('lifex' in b) { const l = b.lifex && typeof b.lifex === 'object' ? b.lifex : {}; o.lifex = { enabled: l.enabled !== false }; }

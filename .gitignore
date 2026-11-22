@@ -8,3 +8,6 @@ promo-out/
 *.mp4
 __pycache__/
 /docs/roadmap/roadmap.png
+
+# рендеры Blender для темы «Горячие туры» (в сайт идут собранные public/img/vice/*.webp)
+brand/vice/out/

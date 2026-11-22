@@ -9,7 +9,7 @@ const SECTIONS = [
   ['Работа', [['bookings', 'Брони', 'mod'], ['board', 'Доска номеров', 'mod'], ['tickets', 'Обращения', 'mod'], ['orders', 'Заказы', 'mod'], ['reviews', 'Отзывы', 'mod']]],
   ['Контент', [['events', 'События', 'mod'], ['journal', 'Журнал', 'mod'], ['offers', 'Предложения', 'admin'], ['faq', 'Вопросы и ответы', 'admin'], ['jobs', 'Вакансии', 'admin'], ['media', 'Картинки', 'mod']]],
   ['Отель', [['structure', 'Этажи и номера', 'admin'], ['types', 'Типы и цены', 'admin'], ['venues', 'Площадки', 'admin'], ['menu', 'Меню Le Ciel', 'admin'], ['cigars', 'Сигары', 'admin'], ['team', 'Анкеты сотрудников', 'admin'], ['depts', 'Отделы', 'admin']]],
-  ['Система', [['discord', 'Discord', 'mod'], ['senders', 'Отправители', 'admin'], ['settings', 'Настройки', 'admin'], ['danger', 'Сброс данных', 'admin']]]
+  ['Система', [['discord', 'Discord', 'mod'], ['senders', 'Отправители', 'admin'], ['settings', 'Настройки', 'admin'], ['vice', 'Вайс-Сити', 'admin'], ['danger', 'Сброс данных', 'admin']]]
 ];
 // Иконки разделов панели: единый контурный стиль (без эмодзи), помогают быстро находить нужное.
 const SIP = 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
@@ -37,9 +37,10 @@ const SI = {
   discord: `<svg class="sic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18 18 0 0 0-5.6 0L8.6 3a19.6 19.6 0 0 0-4.9 1.4C.6 9.1-.3 13.6.2 18.1a19.8 19.8 0 0 0 6 3l1.3-2.1a12.8 12.8 0 0 1-2-1l.5-.4a14 14 0 0 0 12 0l.5.4c-.6.4-1.3.7-2 1l1.3 2.1a19.7 19.7 0 0 0 6-3c.5-5.2-.9-9.7-3.5-13.7ZM8 15.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.6 8 10.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg>`,
   senders: svg('<path d="M4.5 12 20 5l-6.5 15-2.6-6.4z"/><path d="M11 13.5 20 5"/>'),
   settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M3 12h3M18 12h3M5.3 5.3 7.4 7.4M16.6 16.6l2.1 2.1M18.7 5.3 16.6 7.4M7.4 16.6l-2.1 2.1"/>'),
+  vice: svg('<path d="M12 21c-.4-4.6-.8-9.2.6-14"/><path d="M12.6 7C10.4 4.8 7.2 4.6 5 6.6"/><path d="M12.6 7c.6-2.8 2.8-4.6 5.6-4.4"/><path d="M12.6 7c2.6-.6 5.2.6 6.4 3.2"/><path d="M12.6 7C10 7.4 8 9.4 7.6 12"/><path d="M3 21h18"/>'),
   danger: svg('<path d="M12 3 2.5 20h19z"/><path d="M12 9.5v4.5M12 17.2h.01"/>')
 };
-const BUILTIN_IMG = ['img/atrium-night.webp', 'img/atrium-day.webp', 'img/reception.webp', 'img/library.webp', ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => `img/journal/p${n}.webp`)];
+const BUILTIN_IMG = ['img/atrium-night.webp', 'img/atrium-day.webp', 'img/vice/night.webp', 'img/vice/day.webp', 'img/reception.webp', 'img/library.webp', ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => `img/journal/p${n}.webp`)];
 const BCHIP = { new: 'p', confirmed: 'ok', checkedin: 'v', done: 'm', cancelled: 'bad' };
 let A = null, root = null, sec = 'overview', ctx = {}, sel = {}, bFilter = 'active', bq = '', aTicket = null, bChat = null, bFocus = null;
 const bDraft = {};
@@ -147,7 +148,7 @@ function wireExport(m) {
 function head(title, actions = '', sub = '') { return `<div class="atop"><div class="stack" style="gap:.3rem"><h2>${title}</h2>${sub ? `<p class="note">${sub}</p>` : ''}</div><div class="row">${actions}</div></div>`; }
 function paint() {
   const m = $('#amain'); if (!m || !A) return;
-  try { ({ overview, bookings, board, tickets, orders, reviews, jobs, events, journal, media, structure, types, venues, menu, cigars, depts, team, offers, faq, discord, senders, settings, danger }[sec] || overview)(m); }
+  try { ({ overview, bookings, board, tickets, orders, reviews, jobs, events, journal, media, structure, types, venues, menu, cigars, depts, team, offers, faq, discord, senders, settings, vice, danger }[sec] || overview)(m); }
   catch (e) { console.error(e); m.innerHTML = `<div class="empty">Ошибка раздела: ${esc(e.message)}</div>`; }
   wireExport(m);
   // пометка «есть несохранённое»: фоновое обновление такую форму не перерисует; при отправке пометка снимается
@@ -303,7 +304,7 @@ function paintChat(force) {
   const msgs = t.mode === 'site' ? t.messages : t.status === 'closed' && t.messages[0]?.text === t.text ? t.messages : [{ from: 'guest', text: t.text, at: t.createdAt }, ...t.messages];
   el.innerHTML = `<div class="chat"><header><div><b>${esc(t.discord)} · ${esc(t.topic)}</b><div class="note">${esc(t.name || 'Без имени')} · ${t.mode === 'discord' ? (t.channel ? 'тикет-канал создан в Discord' : 'тикет в Discord') : 'чат на сайте'}</div></div>${t.status !== 'closed' ? `<button class="btn sm ghost" id="acClose">Закрыть</button>` : `<div class="row"><span class="chip m">Закрыто</span>${isAdmin() ? `<button class="btn sm ghost" id="acDel">${I.trash} Удалить</button>` : ''}</div>`}</header>
     <div class="msgs" id="acMsgs">${msgs.map(x => `<div class="msg ${x.from === 'staff' ? 'me' : ''}${x.ooc ? ' ooc' : ''}">${oocTag(x)}${esc(x.text)}<small>${x.from === 'staff' ? esc(x.by || 'Персонал') : esc(x.by || 'Гость')} · ${when(x.at)}</small></div>`).join('')}</div>
-    ${(t.mode === 'site' || t.channel) && t.status !== 'closed' ? (A.me?.ic ? `<form class="compose" id="acF">${tplSelect('acTpl')}${oocSwitch('t:' + t.id)}<input id="acIn" placeholder="Ответ гостю от ${esc(A.me.ic)}" autocomplete="off" aria-label="Ответ гостю"><button class="btn sm" data-sfx="">Ответить</button></form>` : icNeedBox('вашего персонажа')) : `<div class="compose note">${t.status === 'closed' ? `Обращение закрыто${t.closedBy ? ': ' + esc(t.closedBy) : ''}. Выше сохранённая история.` : 'Гостя нет на сервере, ответить здесь нельзя.'}</div>`}</div>`;
+    ${(t.mode === 'site' || t.channel) && t.status !== 'closed' ? (A.me?.ic ? `<form class="compose" id="acF">${tplSelect('acTpl')}${oocSwitch('t:' + t.id)}<input id="acIn" placeholder="Ответ гостю от ${esc(A.me.ic)}" autocomplete="off" aria-label="Ответ гостю"><button class="btn sm" data-sfx="">Ответить</button></form>` : icNeedBox('вашего персонажа')) : `<div class="compose note">${t.status === 'closed' ? `Обращение закрыто${t.closedBy ? ': ' + esc(t.closedBy) + (t.closedByGuest ? ' (гость)' : '') : ''}. Выше сохранённая история.` : 'Гостя нет на сервере, ответить здесь нельзя.'}</div>`}</div>`;
   if ($('#acIn')) { $('#acIn').value = draft; if (focused || force) $('#acIn').focus(); }
   wireTpl('acTpl', '#acIn', t.name || t.discord);
   $('#acMsgs').scrollTop = 1e6;
@@ -651,6 +652,22 @@ function settings(m) {
     const got = (r || []).filter(x => /\.(mp3|ogg|m4a)$/i.test(x.url)); if (!got.length) return toast('Не получилось загрузить. Нужны mp3, ogg или m4a до 10 МБ', 'err');
     got.forEach(x => tracks.push({ url: x.url, title: String(x.name || '').replace(/\.[^.]+$/, '') })); paintTracks(); $('#sF').dataset.dirty = '1'; toast(`Загружено треков: ${got.length}. Не забудьте сохранить настройки`); };
   $('#sF').onsubmit = async e => { e.preventDefault(); const body = { ...readFields(F), replyTemplates: tpls.filter(t => t.title.trim() && t.text.trim()), deckTracks: tracks, special: (() => { const mv = $('#spMode').value; return mv === 'menu' ? { mode: 'menu', menuId: $('#spMenu').value } : mv === 'custom' ? { mode: 'custom', name: $('#spName').value, desc: $('#spDesc').value, price: +$('#spPrice').value || 0 } : { mode: 'auto' }; })(), widgets: { weather: $('#wgWeather').checked, guests: $('#wgGuests').checked, free: $('#wgFree').checked }, lifex: { enabled: $('#lxEn').checked }, tiers: $$('#tiersBox .tier-row').map(r => Object.fromEntries([...r.querySelectorAll('[data-t]')].map(i => [i.dataset.t, i.value]))).filter(t => t.name.trim()) }; if (await run(() => api('PUT', '/admin/settings/main', body), 'Настройки сохранены')) { await load(); ctx.reloadPublic?.(); } };
+}
+// «Горячие туры» — пасхалка с рейсом в Вайс-Сити: кнопку в подвале можно выключить, фоны темы — заменить своими
+function vice(m) {
+  const v = A.settingsFull?.vice || {};
+  const F = [{ k: 'heroNight', label: 'Первый экран ночью', type: 'image' }, { k: 'heroDay', label: 'Первый экран днём', type: 'image' }, { k: 'bg', label: 'Фон страниц (за карточками)', type: 'image' }];
+  m.innerHTML = head('Вайс-Сити', '', 'Пасхалка «Горячие туры»: гость покупает рейс в подвале сайта, улетает в Вайс-Сити и получает секрет «Горячий тур». Рейс одноразовый — после возвращения в Лос-Сантос кнопка у гостя пропадает.') + `<form class="card pad stack" id="vF">
+    <div class="row" style="gap:.6rem;flex-wrap:wrap;align-items:center"><button type="button" class="btn sm" id="vGo">${document.documentElement.classList.contains('vice') ? 'Вернуться в Лос-Сантос' : 'Перенестись в Вайс-Сити'}</button><span class="note">Для персонала рейс доступен всегда — и здесь, и кнопкой в подвале сайта.</span></div>
+    <label class="check"><input type="checkbox" id="vEn"> Показывать кнопку «Горячие туры» гостям в подвале сайта</label>
+    <p class="note" style="margin:0">Выключено — новые гости кнопку не видят. Кто уже в Вайс-Сити, сможет вернуться: кнопка обратного рейса у них останется.</p>
+    <div class="stack" style="gap:.5rem"><span class="lbl">Фоны темы</span><p class="note" style="margin:0">Свои картинки вместо стандартных сцен Вайс-Сити. Пусто — используются сцены отеля в Майами. Лучше всего — горизонтальные, от 1920 px.</p>
+      <div class="g2">${F.map(f => field(f, v[f.k] || '')).join('')}</div></div>
+    <div><button class="btn">Сохранить</button></div></form>`;
+  wirePickers($('#vF')); $('#vEn').checked = v.enabled !== false;
+  $('#vGo').onclick = () => import('./vice.js').then(mm => mm.open()).then(() => { const b = $('#vGo'); if (b) b.textContent = document.documentElement.classList.contains('vice') ? 'Вернуться в Лос-Сантос' : 'Перенестись в Вайс-Сити'; });
+  $('#vF').onsubmit = async e => { e.preventDefault(); const body = { vice: { enabled: $('#vEn').checked, ...readFields(F) } };
+    if (await run(() => api('PUT', '/admin/settings/main', body), 'Сохранено')) { delete $('#vF').dataset.dirty; await load(); ctx.reloadPublic?.(); } };
 }
 function danger(m) {
   m.innerHTML = head('Сброс данных', '', 'Используйте, чтобы начать с чистого листа: например, после тестов.') + `<div class="danger"><h3 style="font-size:1.05rem;color:var(--bad)">Сбросить статистику</h3>
