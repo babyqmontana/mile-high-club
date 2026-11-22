@@ -43,7 +43,7 @@ export function mountLift(host, { onPick }) {
     const moving = cur !== null && !first; cur = sel; first = false;
     needle.style.transform = `rotate(${ang(sel)}deg)`;
     clearTimeout(timer);
-    if (!moving || matchMedia('(prefers-reduced-motion: reduce)').matches) { paintView(); doors.classList.add('open'); return; }
+    if (!moving || document.documentElement.classList.contains('calm')) { paintView(); doors.classList.add('open'); return; }
     doors.classList.remove('open'); play('whoosh');
     timer = setTimeout(() => { paintView(); doors.classList.add('open'); play('ding'); }, 750);
   }

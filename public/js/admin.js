@@ -1,4 +1,4 @@
-import { S, $, $$, esc, money, when, plural, I, bg, toast, fail, modal, confirmBox } from './ui.js';
+import { S, $, $$, esc, money, when, plural, I, bg, toast, fail, modal, confirmBox, oocSwitch, wireOoc, oocTag, icNeedBox, ic } from './ui.js';
 import { api, upload, DEMO } from './api.js';
 import { play } from './sound.js';
 import { discordPreview } from './dcpreview.js';
@@ -60,18 +60,25 @@ async function load() { try { A = await api('GET', '/admin/all'); } catch (e) { 
 export async function refresh(cols) {
   if (!root || !document.body.contains(root)) return;
   await load(); paintAside();
-  const m = $('#amain'); if (m && m.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { if (sec === 'tickets') paintChat(); return; }
+  const m = $('#amain');
+  // новая картинка или трек в медиатеке нужны только самой медиатеке: остальные разделы не перерисовываем
+  if (cols.every(c => c === 'media') && sec !== 'media') return;
+  // несохранённая форма (поля, загруженные треки) не стирается фоновым обновлением — раньше трек «загружался и пропадал»
+  if (m?.querySelector('form[data-dirty="1"]')) { if (sec === 'tickets') paintChat(); return; } if (m && m.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { if (sec === 'tickets') paintChat(); return; }
   if (sec === 'tickets' && cols.every(c => c === 'tickets')) { paintTicketList(); paintChat(); return; }
   paint();
 }
 function badges() { if (!A) return {}; return { bookings: A.bookings.filter(b => b.status === 'new' || b.staffUnread > 0).length, tickets: A.tickets.filter(t => t.status === 'open' && t.mode === 'site' && t.lastFrom === 'guest').length, orders: A.orders.filter(o => ['new', 'cooking'].includes(o.status)).length, reviews: (A.reviews || []).filter(r => r.status === 'pending').length }; }
 function paintAside() {
   const b = badges(), u = S.me;
-  $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}${APP_VER ? ` · <span class="ver num">${APP_VER}</span>` : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div><div class="asearch"><input class="inp" id="aSq" type="search" placeholder="Поиск: код, ник, имя, номер" autocomplete="off" aria-label="Поиск по броням, заказам, обращениям и отзывам"><div class="ares" id="aRes" hidden></div></div><div class="anav" id="anav">` +
+  $('#aside').innerHTML = `<div class="who">${u.avatar ? `<img class="avatar" src="${esc(u.avatar)}" alt="">` : `<span class="avatar">${esc(u.username[0])}</span>`}<div class="grow"><b style="font-size:.88rem">${esc(u.username)}</b><div class="note">${u.role === 'admin' ? 'Администратор' : 'Модератор'}${u.demo ? ' · демо' : ''}${APP_VER ? ` · <span class="ver num">${APP_VER}</span>` : ''}</div></div><button class="ibtn" id="aOut" aria-label="Выйти">${I.out}</button></div><form class="aic${A.me?.ic ? '' : ' need'}" id="aIc"><label for="aIcIn">Игровое имя <span class="note">— им подписаны ответы гостям</span></label><div class="row"><input class="inp" id="aIcIn" maxlength="60" placeholder="Имя Фамилия персонажа" value="${esc(A.me?.ic || '')}" autocomplete="off"><button class="btn sm">${A.me?.ic ? 'Сохранить' : 'Указать'}</button></div></form><div class="asearch"><input class="inp" id="aSq" type="search" placeholder="Поиск: код, ник, имя, номер" autocomplete="off" aria-label="Поиск по броням, заказам, обращениям и отзывам"><div class="ares" id="aRes" hidden></div></div><div class="anav" id="anav">` +
     SECTIONS.map(([g, items]) => { const vis = items.filter(([, , r]) => can(r)); return vis.length ? (g ? `<span class="grp">${g}</span>` : '') + vis.map(([k, n]) => `<button data-s="${k}" aria-pressed="${k === sec}" data-sfx="soft"><span class="nl">${SI[k] || ''}<span>${n}</span></span>${b[k] ? `<span class="badge">${b[k]}</span>` : ''}</button>`).join('') : ''; }).join('') + '</div>';
   if (innerWidth <= 900) { const on = $('#anav [aria-pressed="true"]'), as = $('#anav'); if (on && as) as.scrollTo({ left: on.offsetLeft - as.clientWidth / 2 + on.offsetWidth / 2, behavior: 'smooth' }); }
   $$('#aside [data-s]').forEach(x => x.onclick = () => { sec = x.dataset.s; try { sessionStorage.setItem('mhc-sec', sec); } catch { } paintAside(); paint(); scrollTo({ top: 0 }); });
   $('#aOut').onclick = () => ctx.logout();
+  ic.admin = () => { const i = $('#aIcIn'); if (!i) return; i.scrollIntoView({ block: 'center', behavior: 'smooth' }); i.focus({ preventScroll: true }); $('#aIc').classList.add('flash'); };
+  $('#aIc').onsubmit = async e => { e.preventDefault(); const name = $('#aIcIn').value.trim(); if (!name) return fail({ message: 'Впишите имя персонажа' });
+    if (await run(() => api('PUT', '/me/profile', { name }), 'Игровое имя сохранено')) { await load(); paintAside(); paint(); } };
   wireSearch();
 }
 // Общий поиск: брони, заказы, обращения и отзывы — по коду, нику Discord, имени, номеру комнаты
@@ -143,6 +150,8 @@ function paint() {
   try { ({ overview, bookings, board, tickets, orders, reviews, jobs, events, journal, media, structure, types, venues, menu, cigars, depts, team, offers, faq, discord, senders, settings, danger }[sec] || overview)(m); }
   catch (e) { console.error(e); m.innerHTML = `<div class="empty">Ошибка раздела: ${esc(e.message)}</div>`; }
   wireExport(m);
+  // пометка «есть несохранённое»: фоновое обновление такую форму не перерисует; при отправке пометка снимается
+  m.querySelectorAll('form').forEach(f => { f.addEventListener('input', () => { f.dataset.dirty = '1'; }); f.addEventListener('submit', () => { delete f.dataset.dirty; }, true); });
   if (flashId) { const el = m.querySelector(`[data-flash="${CSS.escape(flashId)}"]`); flashId = null; if (el) { el.classList.add('flash'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => el.classList.remove('flash'), 2400); } }
 }
 const run = async (fn, ok) => { try { const r = await fn(); if (ok) { toast(ok); play('success'); } return r; } catch (e) { fail(e); return null; } };
@@ -177,10 +186,10 @@ function bookings(m) {
     if (bDraft[bChat]) ta.value = bDraft[bChat]; ta.oninput = () => { bDraft[bChat] = ta.value; };
     // список перерисовывается при новых сообщениях: курсор остаётся в поле ответа
     if (bFocus === bChat) ta.focus({ preventScroll: true }); ta.onfocus = () => { bFocus = bChat; }; ta.onblur = () => { setTimeout(() => { if (document.activeElement !== $('#bcIn')) bFocus = null; }, 0); };
-    wireTpl('bcTpl', ta, b?.name);
+    wireTpl('bcTpl', ta, b?.name); const isOoc = wireOoc($('#bcF'), 'b:' + bChat);
     ta.onkeydown = e => { if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return; e.preventDefault(); if (e.isComposing || e.keyCode === 229) return; if (!e.repeat) $('#bcF').requestSubmit(); };
-    $('#bcF').onsubmit = async e => { e.preventDefault(); const text = ta.value.trim(); if (!text) return; const btn = $('#bcF button'); btn.disabled = true;
-      const r = await run(() => api('POST', `/admin/bookings/${bChat}/messages`, { text })); btn.disabled = false;
+    $('#bcF').onsubmit = async e => { e.preventDefault(); const text = ta.value.trim(); if (!text) return; const btn = $('#bcF button.btn'); btn.disabled = true;
+      const r = await run(() => api('POST', `/admin/bookings/${bChat}/messages`, { text, ooc: isOoc() })); btn.disabled = false;
       if (r) { bDraft[bChat] = ''; play('soft'); const i = A.bookings.findIndex(q => q.id === r.booking.id); if (i >= 0) A.bookings[i] = r.booking; paint(); $('#bcIn')?.focus({ preventScroll: true }); } }; }
   $('#bq').oninput = e => { bq = e.target.value; clearTimeout(bookings.t); bookings.t = setTimeout(() => { paint(); $('#bq').focus(); $('#bq').setSelectionRange(bq.length, bq.length); }, 250); };
   $$('#amain .acts').forEach(a => a.querySelectorAll('[data-a]').forEach(btn => btn.onclick = async () => {
@@ -193,8 +202,8 @@ function bookings(m) {
 function bookingChat(b) {
   const ms = b.messages || [];
   return `<div class="bchat"><div class="msgs" id="bcMsgs" role="log" aria-label="Переписка по брони ${esc(b.code)}">${ms.map(m => m.from === 'system' ? `<div class="msg sys">${esc(m.text)} <small>${when(m.at)}</small></div>`
-      : `<div class="msg ${m.from === 'staff' ? 'me' : ''}">${m.from === 'guest' ? `<b class="who">${esc(b.name)}</b>` : `<b class="who">${esc(m.by || 'Отель')}</b>`}${esc(m.text)}<small>${when(m.at)}</small></div>`).join('') || '<div class="msg sys">Сообщений пока нет — напишите гостю первым</div>'}</div>
-    <form class="compose" id="bcF">${tplSelect('bcTpl')}<textarea id="bcIn" rows="1" maxlength="1000" placeholder="Ответ гостю ${esc(b.name)}…" aria-label="Ответ гостю"></textarea><button class="btn sm">Отправить</button></form>
+      : `<div class="msg ${m.from === 'staff' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${m.from === 'guest' ? `<b class="who">${esc(b.name)}</b>` : `<b class="who">${esc(m.by || 'Отель')}</b>`}${oocTag(m)}${esc(m.text)}<small>${when(m.at)}</small></div>`).join('') || '<div class="msg sys">Сообщений пока нет — напишите гостю первым</div>'}</div>
+    ${A.me?.ic ? `<form class="compose" id="bcF">${tplSelect('bcTpl')}${oocSwitch('b:' + b.id)}<textarea id="bcIn" rows="1" maxlength="1000" placeholder="Ответ гостю ${esc(b.name)}…" aria-label="Ответ гостю"></textarea><button class="btn sm">Отправить</button></form>` : icNeedBox('вашего персонажа')}
     <p class="note" style="margin:0">Гость увидит ответ в кабинете и в колокольчике${b.discord ? `, бот продублирует в личные сообщения Discord (${esc(b.discord)})` : ''}.</p></div>`;
 }
 /* ---------- доска номеров ---------- */
@@ -293,12 +302,13 @@ function paintChat(force) {
   const draft = $('#acIn')?.value || '', focused = el.contains(document.activeElement);
   const msgs = t.mode === 'site' ? t.messages : t.status === 'closed' && t.messages[0]?.text === t.text ? t.messages : [{ from: 'guest', text: t.text, at: t.createdAt }, ...t.messages];
   el.innerHTML = `<div class="chat"><header><div><b>${esc(t.discord)} · ${esc(t.topic)}</b><div class="note">${esc(t.name || 'Без имени')} · ${t.mode === 'discord' ? (t.channel ? 'тикет-канал создан в Discord' : 'тикет в Discord') : 'чат на сайте'}</div></div>${t.status !== 'closed' ? `<button class="btn sm ghost" id="acClose">Закрыть</button>` : `<div class="row"><span class="chip m">Закрыто</span>${isAdmin() ? `<button class="btn sm ghost" id="acDel">${I.trash} Удалить</button>` : ''}</div>`}</header>
-    <div class="msgs" id="acMsgs">${msgs.map(x => `<div class="msg ${x.from === 'staff' ? 'me' : ''}">${esc(x.text)}<small>${x.from === 'staff' ? esc(x.by || 'Персонал') : esc(x.by || 'Гость')} · ${when(x.at)}</small></div>`).join('')}</div>
-    ${(t.mode === 'site' || t.channel) && t.status !== 'closed' ? `<form class="compose" id="acF">${tplSelect('acTpl')}<input id="acIn" placeholder="Ответ гостю" autocomplete="off" aria-label="Ответ гостю"><button class="btn sm" data-sfx="">Ответить</button></form>` : `<div class="compose note">${t.status === 'closed' ? `Обращение закрыто${t.closedBy ? ': ' + esc(t.closedBy) : ''}. Выше сохранённая история.` : 'Гостя нет на сервере, ответить здесь нельзя.'}</div>`}</div>`;
+    <div class="msgs" id="acMsgs">${msgs.map(x => `<div class="msg ${x.from === 'staff' ? 'me' : ''}${x.ooc ? ' ooc' : ''}">${oocTag(x)}${esc(x.text)}<small>${x.from === 'staff' ? esc(x.by || 'Персонал') : esc(x.by || 'Гость')} · ${when(x.at)}</small></div>`).join('')}</div>
+    ${(t.mode === 'site' || t.channel) && t.status !== 'closed' ? (A.me?.ic ? `<form class="compose" id="acF">${tplSelect('acTpl')}${oocSwitch('t:' + t.id)}<input id="acIn" placeholder="Ответ гостю от ${esc(A.me.ic)}" autocomplete="off" aria-label="Ответ гостю"><button class="btn sm" data-sfx="">Ответить</button></form>` : icNeedBox('вашего персонажа')) : `<div class="compose note">${t.status === 'closed' ? `Обращение закрыто${t.closedBy ? ': ' + esc(t.closedBy) : ''}. Выше сохранённая история.` : 'Гостя нет на сервере, ответить здесь нельзя.'}</div>`}</div>`;
   if ($('#acIn')) { $('#acIn').value = draft; if (focused || force) $('#acIn').focus(); }
   wireTpl('acTpl', '#acIn', t.name || t.discord);
   $('#acMsgs').scrollTop = 1e6;
-  $('#acF') && ($('#acF').onsubmit = async e => { e.preventDefault(); const inp = $('#acIn'), text = inp.value.trim(); if (!text) return; inp.value = ''; const r = await run(() => api('POST', `/tickets/${t.id}/messages`, { text })); if (r) { play('soft'); await load(); paintTicketList(); paintChat(true); } else inp.value = text; });
+  const isOoc = wireOoc($('#acF'), 't:' + t.id);
+  $('#acF') && ($('#acF').onsubmit = async e => { e.preventDefault(); const inp = $('#acIn'), text = inp.value.trim(); if (!text) return; inp.value = ''; const r = await run(() => api('POST', `/tickets/${t.id}/messages`, { text, ooc: isOoc() })); if (r) { play('soft'); await load(); paintTicketList(); paintChat(true); } else inp.value = text; });
   $('#acDel') && ($('#acDel').onclick = async () => { if (!await confirmBox('Удалить обращение?', 'Переписка исчезнет с сайта. Транскрипт в Discord останется.', 'Удалить', true)) return; if (await run(() => api('DELETE', `/admin/tickets/${t.id}`), 'Обращение удалено')) { aTicket = null; await load(); paintTicketList(); paintChat(); } });
   $('#acClose') && ($('#acClose').onclick = async () => { if (await run(() => api('POST', `/admin/tickets/${t.id}/close`), 'Обращение закрыто')) { await load(); paintTicketList(); paintChat(); } });
 }
@@ -635,11 +645,11 @@ function settings(m) {
   let tracks = (s.deckTracks || []).map(t => ({ ...t }));
   const paintTracks = () => { $('#trkBox').innerHTML = tracks.length ? tracks.map((t, i) => `<div class="row trk" style="flex-wrap:nowrap"><span class="note num" style="width:1.5rem">${i + 1}</span><input class="inp grow" data-ti="${i}" value="${esc(t.title)}" placeholder="Название трека"><audio src="${esc(t.url)}" controls preload="none" style="height:2rem;max-width:12rem"></audio><button type="button" class="btn sm ghost" data-td="${i}" aria-label="Убрать трек">${I.trash}</button></div>`).join('') : '<span class="note">Треков нет, вертушка на сайте скрыта.</span>';
     $$('#trkBox [data-ti]').forEach(x => x.oninput = () => { tracks[+x.dataset.ti].title = x.value; });
-    $$('#trkBox [data-td]').forEach(x => x.onclick = () => { tracks.splice(+x.dataset.td, 1); paintTracks(); }); };
+    $$('#trkBox [data-td]').forEach(x => x.onclick = () => { tracks.splice(+x.dataset.td, 1); paintTracks(); $('#sF').dataset.dirty = '1'; }); };
   paintTracks();
   $('#trkUp').onchange = async e => { const files = [...e.target.files]; if (!files.length) return; const r = await run(() => upload(files)); e.target.value = '';
     const got = (r || []).filter(x => /\.(mp3|ogg|m4a)$/i.test(x.url)); if (!got.length) return toast('Не получилось загрузить. Нужны mp3, ogg или m4a до 10 МБ', 'err');
-    got.forEach(x => tracks.push({ url: x.url, title: String(x.name || '').replace(/\.[^.]+$/, '') })); paintTracks(); toast(`Загружено треков: ${got.length}. Не забудьте сохранить настройки`); };
+    got.forEach(x => tracks.push({ url: x.url, title: String(x.name || '').replace(/\.[^.]+$/, '') })); paintTracks(); $('#sF').dataset.dirty = '1'; toast(`Загружено треков: ${got.length}. Не забудьте сохранить настройки`); };
   $('#sF').onsubmit = async e => { e.preventDefault(); const body = { ...readFields(F), replyTemplates: tpls.filter(t => t.title.trim() && t.text.trim()), deckTracks: tracks, special: (() => { const mv = $('#spMode').value; return mv === 'menu' ? { mode: 'menu', menuId: $('#spMenu').value } : mv === 'custom' ? { mode: 'custom', name: $('#spName').value, desc: $('#spDesc').value, price: +$('#spPrice').value || 0 } : { mode: 'auto' }; })(), widgets: { weather: $('#wgWeather').checked, guests: $('#wgGuests').checked, free: $('#wgFree').checked }, lifex: { enabled: $('#lxEn').checked }, tiers: $$('#tiersBox .tier-row').map(r => Object.fromEntries([...r.querySelectorAll('[data-t]')].map(i => [i.dataset.t, i.value]))).filter(t => t.name.trim()) }; if (await run(() => api('PUT', '/admin/settings/main', body), 'Настройки сохранены')) { await load(); ctx.reloadPublic?.(); } };
 }
 function danger(m) {

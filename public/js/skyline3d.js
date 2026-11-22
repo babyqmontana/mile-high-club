@@ -649,7 +649,7 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
   el.addEventListener('pointerleave', () => { if (hover !== null) onHoverFloor?.(null); hover = null; if (tip) tip.style.opacity = 0; });
 
   let active = false, visible = true, raf = 0, last = performance.now(), camY = 0, first = true, travelling = false, arriveAt = 0;
-  const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const RM = document.documentElement.classList.contains('calm');
   new IntersectionObserver(([en]) => { visible = en.isIntersecting; kick(); }).observe(host);
   function size() { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); kick(); }
   new ResizeObserver(size).observe(host);

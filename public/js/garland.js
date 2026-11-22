@@ -13,7 +13,7 @@ function sprite(rgb) {
 
 export function mountGarland(host) {
   const cv = document.createElement('canvas'); cv.className = 'garland'; cv.setAttribute('aria-hidden', 'true'); host.append(cv);
-  const g = cv.getContext('2d'), still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const g = cv.getContext('2d'), still = document.documentElement.classList.contains('calm');
   const glow = [sprite(WARM), sprite(GOLD), sprite(ROSE)];
   let W = 0, dpr = 1, lamps = [], spans = 1, span = SPAN, raf = 0, t0 = 0, last = 0, mx = -999, swing = 0, swingV = 0, lastY = scrollY, alive = true;
 

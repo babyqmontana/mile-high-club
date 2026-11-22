@@ -88,8 +88,11 @@ export async function startBot({ core, store, env, hooks }) {
   }
   const textOf = m => [m.content, ...m.embeds.map(e => [e.title, e.description].filter(Boolean).join(': '))].filter(Boolean).join('\n');
   // сообщения, которые бот продублировал с сайта: ответ персонала и реплика гостя — размечены, чтобы архив не путал авторов
-  const relayStaff = m => m.author.id === client.user.id && /^\*\*(.+?)\*\* \((?:с сайта|из панели)\): ([\s\S]*)$/.exec(m.content);
-  const relayGuest = m => m.author.id === client.user.id && /^💬 \*\*(.+?)\*\* \(с сайта\): ([\s\S]*)$/.exec(m.content);
+  const relayStaff = m => m.author.id === client.user.id && /^\*\*(.+?)\*\* \((?:с сайта|из панели)\): (?:\[OOC\] )?([\s\S]*)$/.exec(m.content);
+  const relayGuest = m => m.author.id === client.user.id && /^💬 \*\*(.+?)\*\* \(с сайта\): (?:\[OOC\] )?([\s\S]*)$/.exec(m.content);
+  // OOC в Discord: «[OOC] …», «OOC: …» или реплика в двойных скобках «(( … ))»
+  const OOC_RE = /^\s*(?:\[ooc\]|ooc\s*[:\-]|\(\()/i;
+  const oocTag = ooc => (ooc ? '[OOC] ' : '');
   const fromSite = m => relayStaff(m) || relayGuest(m);
   const authorKind = (t, m) => (relayGuest(m) ? 'guest' : relayStaff(m) ? 'staff' : m.author.bot ? 'bot' : m.author.id === t.discordId ? 'guest' : 'staff');
   // Закрытие: сначала архив, потом удаление канала. Не сохранился транскрипт — канал остаётся.
@@ -104,7 +107,7 @@ export async function startBot({ core, store, env, hooks }) {
     return log;
   };
   // ответ из панели сайта уходит в тикет-канал
-  hooks.ticketReply = async (t, text, by) => { const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) throw new Error('канал тикета не найден'); await c.send({ content: `**${by}** (с сайта): ${text}`, allowedMentions: { parse: [] } }); };
+  hooks.ticketReply = async (t, text, by, ooc) => { const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) throw new Error('канал тикета не найден'); await c.send({ content: `**${by}** (с сайта): ${oocTag(ooc)}${text}`, allowedMentions: { parse: [] } }); };
   // --- Канал-мост беседы в Discord (бронь или заявка с сайта) ---
   // Персонал видит и отвечает прямо из Discord — сайт открывать не нужно. Гость пишет на сайте, бот дублирует сюда;
   // сотрудник пишет в канал — попадает гостю на сайт и в ЛС. Канал только для персонала (гость взаимодействует на сайте).
@@ -125,14 +128,14 @@ export async function startBot({ core, store, env, hooks }) {
     convIdx = null; return ch;
   }
   // продублировать строку беседы в канал-мост (сообщение гостя, ответ из панели или системную строку)
-  async function bridgeLine(kind, d, from, text, by) {
+  async function bridgeLine(kind, d, from, text, by, ooc) {
     try { const ch = await ensureBridge(kind, d); if (!ch) return;
-      const line = from === 'system' ? `— ${text}` : from === 'guest' ? `💬 **${d.name || d.discord || 'Гость'}** (с сайта): ${text}` : `**${by || 'Отель'}** (из панели): ${text}`;
+      const line = from === 'system' ? `— ${text}` : from === 'guest' ? `💬 **${by || d.name || d.discord || 'Гость'}** (с сайта): ${oocTag(ooc)}${text}` : `**${by || 'Отель'}** (из панели): ${oocTag(ooc)}${text}`;
       await ch.send({ content: line.slice(0, 1900), allowedMentions: { parse: [] } });
     } catch (e) { console.error('Discord bridge:', e.message); }
   }
   // core вызывает мост для заявок с сайта (брони бот дублирует сам в notify)
-  hooks.bridge = ({ kind, doc, from, text, by }) => bridgeLine(kind, doc, from, text, by);
+  hooks.bridge = ({ kind, doc, from, text, by, ooc }) => bridgeLine(kind, doc, from, text, by, ooc);
   // канал → открытая бронь или тикет; пересобирается, только когда брони/тикеты менялись
   let convIdx = null, convRev = -1;
   const convByChannel = ch => {
@@ -146,9 +149,9 @@ export async function startBot({ core, store, env, hooks }) {
   client.on(Events.MessageCreate, m => {
     if (m.guildId !== env.GUILD_ID || m.author.bot || m.system) return;
     const c = convByChannel(m.channelId); if (!c) return;
-    const text = textOf(m) || 'вложение', by = m.member?.displayName || m.author.username;
-    if (c.kind === 'ticket') core.ticketMessage(c.doc.id, { from: authorKind(c.doc, m), by, text, at: m.createdTimestamp });
-    else core.bookingMessage(c.doc.id, { by, text, at: m.createdTimestamp }); // в канале брони пишут только сотрудники
+    const text = textOf(m) || 'вложение', by = core.icOf?.(m.author.id) || m.member?.displayName || m.author.username, ooc = OOC_RE.test(text);
+    if (c.kind === 'ticket') core.ticketMessage(c.doc.id, { from: authorKind(c.doc, m), by, text, ooc, at: m.createdTimestamp });
+    else core.bookingMessage(c.doc.id, { by, text, ooc, at: m.createdTimestamp }); // в канале брони пишут только сотрудники
   });
 
   // уведомления персоналу: одна лента. Гость на сервере — кликабельный профиль, иначе только имя
@@ -185,9 +188,9 @@ export async function startBot({ core, store, env, hooks }) {
   hooks.notify = async (kind, d) => {
     if (kind === 'booking' || kind === 'booking_status' || kind === 'booking_message') card('b:' + d.id, 'booking', d);
     // гость написал по брони — дублируем в канал-мост, где персонал ответит прямо из Discord
-    if (kind === 'booking_message' && d.guestText) await bridgeLine('booking', d, 'guest', d.guestText);
+    if (kind === 'booking_message' && d.guestText) await bridgeLine('booking', d, 'guest', d.guestText, undefined, d.ooc);
     // ответ из панели сайта — тоже в канал (кроме ответа, который сам пришёл из этого канала)
-    if (kind === 'booking_message' && d.replyText && !d.fromDiscord) await bridgeLine('booking', d, 'staff', d.replyText, d.by);
+    if (kind === 'booking_message' && d.replyText && !d.fromDiscord) await bridgeLine('booking', d, 'staff', d.replyText, d.by, d.ooc);
     if (kind === 'order' || kind === 'order_status') card('o:' + d.id, 'order', d);
     if (kind.startsWith('ticket')) card('t:' + d.id, 'ticket', d);
     // новый отзыв и отклик на вакансию: отдельное сообщение в ленту с отметкой выбранной роли
@@ -246,9 +249,9 @@ export async function startBot({ core, store, env, hooks }) {
   // панель обращений: одно сообщение, правится только при изменении
   async function publishHelpdesk() {
     const payload = helpdeskBoard(), hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex'), rec = S().helpdeskBoard;
-    if (rec?.hash === hash) return;
     const c = await channel('helpdesk'); if (!c) return;
-    if (rec?.id) { const m = await c.messages.fetch(rec.id).catch(() => null); if (m) { await m.edit(payload); save({ helpdeskBoard: { id: m.id, hash } }); return; } }
+    // сообщение с кнопками могли удалить (чистка канала): раньше при том же тексте бот его не восстанавливал — «бот умер в ветке»
+    if (rec?.id) { const m = await c.messages.fetch(rec.id).catch(() => null); if (m) { if (rec.hash !== hash) await m.edit(payload); save({ helpdeskBoard: { id: m.id, hash } }); return; } }
     const old = S().boards?.helpdesk; // карточка прошлой версии: её отправлял вебхук, им и удаляем
     if (old?.id) { const h = (await c.fetchWebhooks().catch(() => null))?.find(w => w.owner?.id === client.user.id); await h?.deleteMessage(old.id).catch(() => {}); }
     const m = await c.send(payload);
