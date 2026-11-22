@@ -4,7 +4,7 @@
 // Под передними планами дорисован фон, поэтому при сдвиге не открываются дыры.
 const VS = `attribute vec2 p;varying vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0.,1.);}`;
 const FS = `precision highp float;
-uniform sampler2D uFar,uImg,uMask;uniform vec2 uRes,uImgRes,uMouse,uDrift;uniform float uP,uT,uDay,uFade,uLayers,uRain,uFog,uSnow;varying vec2 v;
+uniform sampler2D uFar,uImg,uMask;uniform vec2 uRes,uImgRes,uMouse,uDrift;uniform float uP,uT,uDay,uFade,uLayers,uRain,uFog,uSnow,uVice;varying vec2 v;
 vec2 cover(vec2 uv){float ra=uRes.x/uRes.y,ri=uImgRes.x/uImgRes.y;vec2 s=ra>ri?vec2(1.,ri/ra):vec2(ra/ri,1.);return (uv-.5)*s+.5;}
 const vec2 F=vec2(.53,.47);
 vec2 lay(vec2 uv,float z,float m){return clamp(F+(uv-F)/z+(uMouse+uDrift)*m,.0005,.9995);}
@@ -16,7 +16,7 @@ void main(){
   if(uLayers>.5){
     vec2 a=lay(uv,z,-.004), b=lay(uv,z*(1.+p*.03),.005), n=lay(uv,z*(1.+p*.08),.014);
     // туман гуще на дальнем плане и почти не трогает перила — так видна глубина атриума
-    vec3 haze=mix(vec3(.24,.16,.17),vec3(.86,.8,.72),uDay);
+    vec3 haze=mix(mix(vec3(.24,.16,.17),vec3(.86,.8,.72),uDay),mix(vec3(.2,.07,.3),vec3(.95,.6,.66),uDay),uVice);
     c=mix(texture2D(uFar,a).rgb,haze,uFog*.42);
     vec4 mb=texture2D(uMask,b);
     // средний план: под перилами берём уже дорисованный фон, чтобы перила не двоились
@@ -31,16 +31,17 @@ void main(){
   float warm=smoothstep(.55,.95,lum)*smoothstep(-.05,.15,c.r-c.b);
   c+=c*warm*(.06+.06*sin(uT*1.1+uv.x*7.))*(1.-uDay*.6);
   // тёплая подгонка под палитру логотипа: тени в бордо, света в крем
-  c=mix(c,c*vec3(1.07,.97,.94),.65);
-  c+=vec3(.035,.0,.012)*(1.-smoothstep(0.,.35,lum));
+  // в теме Вайс-Сити свои цвета сцены не перекрашиваем
+  c=mix(c,c*vec3(1.07,.97,.94),.65*(1.-uVice));
+  c+=vec3(.035,.0,.012)*(1.-smoothstep(0.,.35,lum))*(1.-uVice);
   float vg=smoothstep(1.3,.32,length((v-.5)*vec2(1.2,1.)));
   c*=mix(.55,1.,vg);
   gl_FragColor=vec4(c*uFade,1.);
 }`;
 
 export function layersFor(url) {
-  const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || '');
-  if (!m) return null; const b = 'img/layers/' + m[1];
+  const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''), v = /img\/vice\/(night|day)\.webp$/.exec(url || '');
+  const b = m ? 'img/layers/' + m[1] : v ? 'img/vice/' + v[1] : null; if (!b) return null;
   return { far: b + '-far.webp', mask: b + '-mask.webp' };
 }
 
@@ -54,7 +55,7 @@ export function mountHero(canvas, section) {
   const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(pr); gl.useProgram(pr);
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  const U = n => gl.getUniformLocation(pr, n), uRes = U('uRes'), uImgRes = U('uImgRes'), uMouse = U('uMouse'), uDrift = U('uDrift'), uP = U('uP'), uT = U('uT'), uDay = U('uDay'), uFade = U('uFade'), uLayers = U('uLayers'), uRain = U('uRain'), uFog = U('uFog'), uSnow = U('uSnow');
+  const U = n => gl.getUniformLocation(pr, n), uRes = U('uRes'), uImgRes = U('uImgRes'), uMouse = U('uMouse'), uDrift = U('uDrift'), uP = U('uP'), uT = U('uT'), uDay = U('uDay'), uVice = U('uVice'), uFade = U('uFade'), uLayers = U('uLayers'), uRain = U('uRain'), uFog = U('uFog'), uSnow = U('uSnow');
   ['uFar', 'uImg', 'uMask'].forEach((n, i) => gl.uniform1i(U(n), i));
   const texs = [0, 1, 2].map(() => gl.createTexture());
   const load = (unit, url, mip = true) => new Promise((res, rej) => {
@@ -71,9 +72,9 @@ export function mountHero(canvas, section) {
       res(im);
     }; im.onerror = rej; im.src = url;
   });
-  let wx = [0, 0, 0], wxT = [0, 0, 0], ready = false, layered = 0, imgW = 16, imgH = 9, mouse = [0, 0], mt = [0, 0], p = 0, fade = 0, day = 0, visible = true, raf = 0, srcKey = '';
+  let wx = [0, 0, 0], wxT = [0, 0, 0], ready = false, layered = 0, imgW = 16, imgH = 9, mouse = [0, 0], mt = [0, 0], p = 0, fade = 0, day = 0, vice = 0, visible = true, raf = 0, srcKey = '';
   async function setImage(url, isDay) {
-    day = isDay ? 1 : 0; if (url === srcKey) return; srcKey = url; fade = 0;
+    day = isDay ? 1 : 0; vice = document.documentElement.classList.contains('vice') ? 1 : 0; if (url === srcKey) return; srcKey = url; fade = 0;
     const L = layersFor(url);
     try {
       if (L) { const [, im] = await Promise.all([load(0, L.far), load(1, url), load(2, L.mask, false)]); imgW = im.naturalWidth; imgH = im.naturalHeight; layered = 1; }
@@ -105,7 +106,7 @@ export function mountHero(canvas, section) {
     const target = progress(); p += (target - p) * kp; mouse[0] += (mt[0] - mouse[0]) * km; mouse[1] += (mt[1] - mouse[1]) * km; fade = Math.min(1, fade + dt * 2.2);
     const s = t / 1000;
     gl.uniform2f(uRes, canvas.width, canvas.height); gl.uniform2f(uImgRes, imgW, imgH); gl.uniform2f(uMouse, mouse[0], -mouse[1]); gl.uniform2f(uDrift, Math.sin(s * .13) * .15, Math.cos(s * .11) * .12);
-    gl.uniform1f(uP, p); gl.uniform1f(uT, s); gl.uniform1f(uDay, day); gl.uniform1f(uFade, fade); gl.uniform1f(uLayers, layered); for (let i = 0; i < 3; i++) wx[i] += (wxT[i] - wx[i]) * (1 - Math.exp(-dt * 1.5)); gl.uniform1f(uRain, wx[0]); gl.uniform1f(uFog, wx[1]); gl.uniform1f(uSnow, wx[2]);
+    gl.uniform1f(uP, p); gl.uniform1f(uT, s); gl.uniform1f(uDay, day); gl.uniform1f(uVice, vice); gl.uniform1f(uFade, fade); gl.uniform1f(uLayers, layered); for (let i = 0; i < 3; i++) wx[i] += (wxT[i] - wx[i]) * (1 - Math.exp(-dt * 1.5)); gl.uniform1f(uRain, wx[0]); gl.uniform1f(uFog, wx[1]); gl.uniform1f(uSnow, wx[2]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); onProgress?.(p);
     if (visible) raf = requestAnimationFrame(frame); else last = 0;
   }

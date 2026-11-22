@@ -176,6 +176,17 @@ test('переписка по брони: гость пишет только в 
   s.close();
 });
 
+test('«Горячие туры»: кнопку можно выключить, свои фоны темы проходят проверку ссылок', async () => {
+  const s = openStore(path.join(dir, 'vc-' + Date.now() + '.sqlite')); seed(s); const core = createCore(s, {});
+  const admin = { id: 'a', username: 'A', role: 'admin' };
+  assert.equal(core.publicData().settings.vice, undefined, 'по умолчанию кнопка включена (настройки нет)');
+  await core.handle('PUT', '/admin/settings/main', { body: { vice: { enabled: false, heroNight: 'img/vice/night.webp', heroDay: 'javascript:alert(1)', bg: '/uploads/abcdef0123456789.webp' } }, user: admin });
+  const v = core.publicData().settings.vice;
+  assert.equal(v.enabled, false); assert.equal(v.heroNight, 'img/vice/night.webp'); assert.equal(v.heroDay, '', 'опасная ссылка отброшена'); assert.equal(v.bg, '/uploads/abcdef0123456789.webp');
+  await assert.rejects(core.handle('PUT', '/admin/settings/main', { body: { vice: { enabled: true } }, user: { id: 'm', username: 'M', role: 'mod' } }), /прав|доступ/i);
+  s.close();
+});
+
 test('блюдо дня: режимы авто/из меню/своё сохраняются и отдаются на сайт', async () => {
   const s = openStore(path.join(dir, 'sp-' + Date.now() + '.sqlite')); seed(s); const core = createCore(s, {});
   const menuId = s.all('menu')[0].id;

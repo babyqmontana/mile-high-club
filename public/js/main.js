@@ -33,7 +33,7 @@ function shell() {
   </div></header>
   <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button><button type="button" class="btn ghost" id="dCalm" data-sfx=""></button></div></nav>
   <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['jobs'], ['privacy'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
-  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span>·</span><button class="secrets" id="calmBtn" data-sfx="" aria-pressed="false">Спокойный режим</button><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana${APP_VER ? `<span class="ver num" title="Версия сайта">${APP_VER}</span>` : ''}</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
+  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span>·</span><button class="secrets vice-t" id="viceBtn" data-sfx="" aria-pressed="false">Горячие туры</button><span>·</span><button class="secrets" id="calmBtn" data-sfx="" aria-pressed="false">Спокойный режим</button><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana${APP_VER ? `<span class="ver num" title="Версия сайта">${APP_VER}</span>` : ''}</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
   const drawer = $('#drawer'), closeDrawer = () => { if (!drawer.classList.contains('on')) return; drawer.classList.remove('on'); popLayer(drawer); $('#burger').setAttribute('aria-expanded', 'false'); };
   $('#burger').setAttribute('aria-controls', 'drawer'); $('#burger').setAttribute('aria-expanded', 'false');
@@ -52,6 +52,11 @@ function shell() {
   // логотип: с каждым кликом подрагивает сильнее — намёк, что что-то будет
   { let n = 0, tmr = 0; $('.brand').addEventListener('click', () => { clearTimeout(tmr); tmr = setTimeout(() => { n = 0; $('.brand').style.removeProperty('--wob'); }, 2500); n++; const b = $('.brand'); b.style.setProperty('--wob', Math.min(n, 7)); b.classList.remove('wob'); void b.offsetWidth; b.classList.add('wob'); if (n >= 7) { n = 0; unlock('logo'); } }); }
   $('#achBtn').onclick = () => openCabinet();
+  // «Горячие туры»: пасхалка с рейсом в Вайс-Сити, модуль грузится только по клику (или если тема уже включена)
+  $('#viceBtn').onclick = () => import('./vice.js').then(m => m.open());
+  if (document.documentElement.classList.contains('vice')) import('./vice.js').then(m => m.mount());
+  // тема сменилась (вылет или возвращение): перерисовываем экран — фон первого экрана и сцены другие
+  document.addEventListener('mhc-vice', () => { mods.tower?.setVice?.(isVice()); paintNav(); render(); });
   const paintAch = () => { $('#achN').textContent = `${achCount()}/${ACH.length}`; }; paintAch(); onAch(paintAch);
   $('#fab').onclick = openCart; magnet($('#fab'));
   setupApp();
@@ -75,6 +80,10 @@ function fitNav() {
 const fitNavSoon = () => { cancelAnimationFrame(fitNav.raf); fitNav.raf = requestAnimationFrame(fitNav); };
 function paintNav() {
   { const calm = document.documentElement.classList.contains('calm'); $('#dCalm').textContent = calm ? 'Спокойный режим: вкл' : 'Спокойный режим: выкл'; $('#dCalm').setAttribute('aria-pressed', calm); $('#calmBtn').setAttribute('aria-pressed', calm); $('#calmBtn').textContent = calm ? 'Спокойный режим · вкл' : 'Спокойный режим'; }
+  { const vs = S.pub?.settings?.vice || {}, vb = $('#viceBtn'), on = document.documentElement.classList.contains('vice'); let done = false; try { done = localStorage.getItem('mhc-vice-done') === '1'; } catch { }
+    // рейс одноразовый: после возвращения в Лос-Сантос кнопки нет; выключена в панели — видна только тем, кто ещё в Вайс-Сити
+    const show = on || (vs.enabled !== false && !done); if (vb) { vb.hidden = !show; vb.previousElementSibling.hidden = !show; }
+    const sky = document.getElementById('viceSky'); if (sky) sky.style.setProperty('--vbg', vs.bg ? `url("${vs.bg.replace(/["\\]/g, '')}")` : 'none'); }
   $('#sndBtn').innerHTML = soundOn ? I.sound : I.mute; $('#sndBtn').setAttribute('aria-label', soundOn ? 'Выключить звук' : 'Включить звук');
   $('#dSnd').innerHTML = `${soundOn ? I.sound : I.mute}${soundOn ? 'Звук включён' : 'Звук выключен'}`; $('#dSnd').setAttribute('aria-pressed', soundOn);
   const u = S.me;
@@ -231,9 +240,9 @@ function renderHome() {
   const latest = p.issues[0];
   const heroHtml = `
   <section class="dive" id="dive"><div class="stick">
-    <div class="bg" style="background-image:url('${esc(m === 'day' ? s.heroDay : s.heroNight)}')"></div><canvas id="heroGl" aria-hidden="true"></canvas><canvas class="wxc" id="heroWx" aria-hidden="true"></canvas>
+    <div class="bg" style="background-image:url('${esc(heroUrl(s, m))}')"></div><canvas id="heroGl" aria-hidden="true"></canvas><canvas class="wxc" id="heroWx" aria-hidden="true"></canvas>
     <div class="wrap dv dv1" id="dv1"><img class="logo" id="heroLogo" src="img/logo.webp?v=3" alt="${esc(s.hotelName)}" width="500" height="300">
-      <h1>${nowrapHyphens(esc(s.tagline || 'Отель над Лос-Сантосом'))}. <span class="serif">${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</span></h1>
+      <h1>${isVice() ? `Отель над Вайс-Сити. <span class="serif">${m === 'day' ? 'Океан, пальмы и вечный закат.' : 'Неон только загорается.'}</span>` : `${nowrapHyphens(esc(s.tagline || 'Отель над Лос-Сантосом'))}. <span class="serif">${m === 'day' ? 'Бассейн, диджей и обед на высоте.' : 'Ночь только начинается.'}</span>`}</h1>
       <div class="row"><a class="btn" href="#stay">Забронировать номер</a><a class="btn ghost" href="#leisure">Что сейчас открыто</a></div></div>
     <div class="wrap dv dv2" id="dv2"><span class="eyebrow">Вы в атриуме</span><h2>Сорок этажей стекла, латуни и неона</h2><p>Лифт поднимет в номера с 20 этажа, бассейны ждут на 38 и 40, Le Ciel на 30.</p><div class="row"><a class="btn" href="#stay">Выбрать номер</a><a class="btn ghost" href="#cigars">Сигарный клуб</a></div></div>
     <span class="hint" id="dvHint">Листайте, чтобы войти</span>
@@ -268,7 +277,7 @@ function renderHome() {
     <div class="stack"><span class="eyebrow">Discord</span><h3 style="font-size:clamp(1.4rem,3vw,2.2rem)">Всё главное на сайте. В Discord общаемся.</h3><p class="mut">Бронь, заявки, меню и журнал живут здесь. На сервере — анонсы, события и бот, который показывает свободные номера.</p>
       <div class="row">${s.discordInvite ? `<a class="btn discord" href="${esc(s.discordInvite)}" target="_blank" rel="noopener">${I.discord} Зайти на сервер</a>` : ''}<a class="btn ghost" href="#contact">Оставить заявку</a></div></div>
   </div></div>`;
-  const key = m + '|' + (m === 'day' ? s.heroDay : s.heroNight) + '|' + s.tagline;
+  const key = m + '|' + heroUrl(s, m) + '|' + s.tagline + '|' + isVice();
   const v = view('home');
   if (v.dataset.key === key && $('#homeRest')) { $('#homeRest').innerHTML = restHtml; wireHome(); reveal(v); applyWeather(); return; }
   // старый атриум и его погода отдают GPU и обработчики до того, как появится новый
@@ -289,11 +298,16 @@ function renderHome() {
   if (document.documentElement.classList.contains('calm') || !hasWebGL()) goStatic();
   else import('./hero3d.js').then(mod => {
     if (!heroCanvas.isConnected || mods.hero) return; // пока модуль грузился, главную уже пересобрали
-    const h = mod.mountHero(heroCanvas, hero); if (!h) return goStatic(); mods.hero = h; const url = m === 'day' ? s.heroDay : s.heroNight; h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => { console.warn('hero', e); goStatic(); });
+    const h = mod.mountHero(heroCanvas, hero); if (!h) return goStatic(); mods.hero = h; const url = heroUrl(s, m); h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => { console.warn('hero', e); goStatic(); });
   applyWeather();
 }
 // предзагрузка слоёв главной картинки (те же правила, что в hero3d.layersFor)
-function heroLayers(url) { const m = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); return m ? Promise.all(['-far.webp', '-mask.webp'].map(x => preload('img/layers/' + m[1] + x))) : null; }
+function heroLayers(url) { const b = layerBase(url); return b ? Promise.all(['-far.webp', '-mask.webp'].map(x => preload(b + x))) : null; }
+// планы для параллакса есть у встроенных сцен: атриум отеля и отель в Майами (тема Вайс-Сити)
+function layerBase(url) { const a = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); if (a) return 'img/layers/' + a[1]; const v = /img\/vice\/(night|day)\.webp$/.exec(url || ''); return v ? 'img/vice/' + v[1] : null; }
+// первый экран: в теме Вайс-Сити — сцены Майами (или свои из панели), иначе атриум отеля
+const isVice = () => document.documentElement.classList.contains('vice');
+function heroUrl(s, m) { if (isVice()) { const v = s.vice || {}; return m === 'day' ? v.heroDay || 'img/vice/day.webp' : v.heroNight || 'img/vice/night.webp'; } return m === 'day' ? s.heroDay : s.heroNight; }
 // слова через дефис («Лос-Сантос») не разрываются переносом; на вход — уже экранированный текст
 const nowrapHyphens = html => html.replace(/[^\s<>]+-[^\s<>]+/g, w => `<span class="nw">${w}</span>`);
 const stars = n => `<span class="stars" aria-label="${n} из 5">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= n ? 'on' : ''}">★</i>`).join('')}</span>`;
@@ -1173,7 +1187,7 @@ async function boot() {
   await withLoader(async set => {
     try { await Promise.all([loadPublic(), loadMe()]); } catch (e) { failed = e; return; }
     set(45);
-    const s = S.pub.settings, m = mode(), hero = m === 'day' ? s.heroDay : s.heroNight;
+    const s = S.pub.settings, m = mode(), hero = heroUrl(s, m);
     // логотип грузит заставка (<img> в index.html), атриум — CSS-фон и hero3d: отдельная предзагрузка только дублировала запросы
     let done = 0; const jobs = [document.fonts?.ready].map(p => Promise.resolve(p).catch(() => {}).then(() => set(95)));
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов

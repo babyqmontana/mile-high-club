@@ -63,6 +63,43 @@ function glassAtlas() {
   const tex = c => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; return t; };
   return { glass: tex(gc), lit: tex(lc) };
 }
+
+// тема Вайс-Сити: пастельная штукатурка ар-деко вместо стекла — ленточные окна, белые «брови» над ними, пилястры.
+// Та же сетка, что у стеклянного атласа (ROWS этажей × COLS/4 колонн), поэтому геометрия этажей не меняется
+const VICE_TINT = { cream: '#efd6b8', mint: '#93dcc6', pink: '#f0a2bd', lav: '#bfaaee', peach: '#ffb98c' };
+const viceCache = {};
+function viceAtlas(tint) {
+  if (viceCache[tint]) return viceCache[tint];
+  const mk = () => { const c = document.createElement('canvas'); c.width = 1024; c.height = 64 * ROWS; return c; };
+  const gc = mk(), lc = mk(), g = gc.getContext('2d'), l = lc.getContext('2d'), cols = COLS / 4, cw = 1024 / cols, base = VICE_TINT[tint] || VICE_TINT.cream;
+  l.fillStyle = '#000'; l.fillRect(0, 0, 1024, 64 * ROWS); seedN = 31 + tint.length;
+  const LIT = ['#ffcf9a', '#ffcf9a', '#ffd9b0', '#ff9ad0', '#8ff0ff'];
+  for (let r = 0; r < ROWS; r++) {
+    const y = r * 64;
+    g.fillStyle = base; g.fillRect(0, y, 1024, 64);
+    l.fillStyle = base; l.globalAlpha = .62; l.fillRect(0, y, 1024, 64); l.fillStyle = '#fffaf2'; l.globalAlpha = .8; l.fillRect(0, y + 7, 1024, 5); l.globalAlpha = 1; // фасад подсвечен снизу, как отели на набережной
+    const sh = g.createLinearGradient(0, y, 0, y + 64); sh.addColorStop(0, 'rgba(255,255,255,.18)'); sh.addColorStop(.6, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.08)'); g.fillStyle = sh; g.fillRect(0, y, 1024, 64);
+    for (let i = 0; i < cols; i++) {
+      const x = i * cw, pil = i % 4 === 0;
+      if (pil) { g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(x, y, 6, 64); g.fillStyle = 'rgba(0,0,0,.08)'; g.fillRect(x + 6, y, 2, 64); continue; }
+      const gr = g.createLinearGradient(x, y + 18, x, y + 48); gr.addColorStop(0, '#5fb6c8'); gr.addColorStop(1, '#2a6f86'); g.fillStyle = gr; g.fillRect(x + 3, y + 18, cw - 6, 28);
+      g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x + 3, y + 18, cw - 6, 3);
+      if (rnd() < .3) { l.fillStyle = LIT[(rnd() * LIT.length) | 0]; l.globalAlpha = .75 + rnd() * .25; l.fillRect(x + 4, y + 19, cw - 8, 26); l.globalAlpha = 1; } else { l.fillStyle = '#000'; l.fillRect(x + 3, y + 18, cw - 6, 28); }
+    }
+    g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(0, y + 12, 1024, 5);   // тень от «брови»
+    g.fillStyle = '#fffaf2'; g.fillRect(0, y + 7, 1024, 5);
+    g.fillStyle = 'rgba(0,0,0,.1)'; g.fillRect(0, y + 58, 1024, 6);
+  }
+  const tex = c => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; return t; };
+  return (viceCache[tint] = { glass: tex(gc), lit: tex(lc) });
+}
+// пальма для набережной у отеля: ствол и девять листьев одной геометрией с цветами вершин
+function palmGeo() {
+  const parts = [], paint = (g, hex) => { const c = new THREE.Color(hex), n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) c.toArray(a, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
+  const trunk = new THREE.CylinderGeometry(.03, .05, 1.5, 6); trunk.translate(0, .75, 0); parts.push(paint(trunk, 0x6b4f3a));
+  for (let k = 0; k < 9; k++) { const f = new THREE.BoxGeometry(.62, .012, .11); f.translate(.31, 0, 0); f.rotateZ(-.45 - (k % 3) * .12); f.rotateY(k / 9 * Math.PI * 2); f.translate(0, 1.5, 0); parts.push(paint(f, k % 2 ? 0x2f7a52 : 0x3c8f5f)); }
+  return mergeGeos(parts.map(g => { g.deleteAttribute('uv'); return g; }));
+}
 function paintBake(g, l) {
   if (BAKE['fac-glass'] && BAKE['fac-lit']) { g.drawImage(BAKE['fac-glass'], 0, 0, 1024, 64 * ROWS); l.drawImage(BAKE['fac-lit'], 0, 0, 1024, 64 * ROWS); l.globalAlpha = .16; l.globalCompositeOperation = 'lighter'; l.drawImage(BAKE['fac-glass'], 0, 0, 1024, 64 * ROWS); l.globalAlpha = 1; l.globalCompositeOperation = 'source-over'; } // тусклый дежурный свет: жалюзи и перегородки видны и в тёмных окнах
 }
@@ -111,9 +148,12 @@ function loadBake() {
 
 // --- окна этажа: для этажей отеля — по номерам, для остальных — офисные ---
 let seedN = 1; const rnd = () => (seedN = seedN * 16807 % 2147483647) / 2147483647;
+// тема Вайс-Сити: этажи отеля — пастельная штукатурка с подсветкой фасада вместо тёмного стекла
+let VICE = false;
+const FC = () => VICE ? { bg: '#c77f9b', edge: '#e09ab5', mull: '#e7aec3', band: '#f6e6d6' } : { bg: '#0a0f15', edge: '#1d242c', mull: '#2c3540', band: '#141b22' };
 function floorCanvas(rooms, mode, hi = null, hov = null, dim = null) { // dim — номера, не прошедшие фильтр: окна гаснут
-  const c = document.createElement('canvas'); c.width = 2048; c.height = 64; const g = c.getContext('2d');
-  g.fillStyle = '#0a0f15'; g.fillRect(0, 0, 2048, 64);
+  const c = document.createElement('canvas'); c.width = 2048; c.height = 64; const g = c.getContext('2d'), P = FC();
+  g.fillStyle = P.bg; g.fillRect(0, 0, 2048, 64);
   const cw = 2048 / COLS;
   for (let i = 0; i < COLS; i++) {
     let col, a = 1;
@@ -123,7 +163,7 @@ function floorCanvas(rooms, mode, hi = null, hov = null, dim = null) { // dim �
       if (dim && room && dim.has(room.id) && room.id !== hi) a = .14;
       if (room && (room.id === hi || room.id === hov)) { g.fillStyle = room.id === hi ? '#f9edc7' : 'rgba(249,237,199,.55)'; g.fillRect(i * cw, 0, cw, 7); g.fillRect(i * cw, 57, cw, 7); if (room.id === hi) col = '#fff4d8'; }
       const edge = Math.floor((ri + 1) * COLS / n) - 1 === i; // простенок между номерами
-      if (edge && n > 1) { g.fillStyle = '#1d242c'; g.fillRect(i * cw + cw - 5, 6, 5, 52); }
+      if (edge && n > 1) { g.fillStyle = P.edge; g.fillRect(i * cw + cw - 5, 6, 5, 52); }
     } else {
       seedN = (seedN + i * 31) % 2147483646 + 1; const r = rnd();
       col = r < mode ? (rnd() < 0.75 ? '#e8c27c' : '#f4ead0') : (rnd() < .5 ? '#1a2633' : '#121b25'); a = r < mode ? 0.55 + rnd() * 0.45 : 1; // тёмное синее стекло, часть окон светится
@@ -136,11 +176,11 @@ function floorCanvas(rooms, mode, hi = null, hov = null, dim = null) { // dim �
       g.globalCompositeOperation = 'multiply'; g.drawImage(BAKE.room, v * 128 + 6, 6, 116, 231, i * cw + 5, 8, cw - 11, 48); g.globalCompositeOperation = 'source-over';
     }
     g.globalAlpha = 1;
-    g.fillStyle = '#2c3540'; g.fillRect(i * cw, 0, 2, 64); // стальной импост
+    g.fillStyle = P.mull; g.fillRect(i * cw, 0, 2, 64); // стальной импост
     g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(i * cw + 3, 8, (cw - 8) * 0.35, 48);
     g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(i * cw + 3, 30, cw - 8, 1.5); // импост
   }
-  g.fillStyle = '#141b22'; g.fillRect(0, 0, 2048, 6); g.fillRect(0, 58, 2048, 6);
+  g.fillStyle = P.band; g.fillRect(0, 0, 2048, 6); g.fillRect(0, 58, 2048, 6);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
 }
 function shade(hex, k) { const c = new THREE.Color(hex); c.offsetHSL(0, 0, k * 0.5); return '#' + c.getHexString(); }
@@ -225,6 +265,7 @@ function beamMat(color, k, fall = 1.8) {
 function beamGeo(r0, r1, h) { const g = new THREE.CylinderGeometry(r1, r0, h, 24, 1, true); g.translate(0, h / 2, 0); return g; }
 
 export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) {
+  let vice = document.documentElement.classList.contains('vice'); VICE = vice; // тема «Горячие туры»: отель в стиле Майами
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   // чёткость: на телефонах сразу ниже, дальше подстраивается под реальную скорость кадров (только вниз, без скачков)
   const coarse = matchMedia('(pointer: coarse)').matches; let dpr = Math.min(devicePixelRatio, coarse ? 1.25 : 1.5);
@@ -241,10 +282,10 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
   // ночное небо: глубокий сине-фиолетовый градиент, мерцающие звёзды, луна с ореолом, тонкие перистые облака
   // и засветка большого города у горизонта в фиолетово-розовых тонах
   const MOON = new THREE.Vector3(-.62, .2, -.76).normalize();
-  const skyU = { uDay: { value: 0 }, uFog: { value: new THREE.Color() }, uTime: { value: 0 }, uMoon: { value: MOON } };
+  const skyU = { uVice: { value: vice ? 1 : 0 }, uDay: { value: 0 }, uFog: { value: new THREE.Color() }, uTime: { value: 0 }, uMoon: { value: MOON } };
   const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 48, 24), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: skyU,
     vertexShader: 'varying vec3 vP;void main(){vP=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-    fragmentShader: `uniform float uDay,uTime;uniform vec3 uFog,uMoon;varying vec3 vP;
+    fragmentShader: `uniform float uDay,uTime,uVice;uniform vec3 uFog,uMoon;varying vec3 vP;
       float h31(vec3 p){p=fract(p*vec3(.1031,.1030,.0973));p+=dot(p,p.yxz+33.33);return fract((p.x+p.y)*p.z);}
       float n3(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
         return mix(mix(mix(h31(i),h31(i+vec3(1,0,0)),f.x),mix(h31(i+vec3(0,1,0)),h31(i+vec3(1,1,0)),f.x),f.y),
@@ -273,6 +314,16 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
         c=mix(c,mix(vec3(.16,.07,.2),vec3(.35,.14,.3),lp*2.),cl*.75);
         c+=vec3(.6,.5,.8)*cl*pow(max(md,0.),25.)*.3;
         c=mix(pow(uFog,vec3(1./2.2)),c,smoothstep(-.02,.1,h)); // у горизонта небо = цвет дымки, город растворяется без границы
+        // Вайс-Сити: закатное небо (днём — персик и розовый, ночью — фиолетовый неон) и ретро-солнце в полоску
+        if(uVice>0.){
+          vec3 vz=mix(vec3(.07,.03,.18),vec3(.26,.15,.52),uDay), vm=mix(vec3(.32,.07,.38),vec3(.9,.34,.56),uDay), vh=mix(vec3(.96,.24,.56),vec3(1.,.64,.38),uDay);
+          vec3 v=mix(vh,vm,smoothstep(0.,.12,h)); v=mix(v,vz,smoothstep(.1,.55,h));
+          vec3 sd=normalize(vec3(uMoon.x,.07,uMoon.z)); float s=dot(d,sd), disc=smoothstep(.9962,.997,s);
+          float band=step(.5,fract((d.y-sd.y)*150.))*step(d.y,sd.y);
+          v=mix(v,mix(vec3(1.,.22,.55),vec3(1.,.82,.42),smoothstep(sd.y-.07,sd.y+.07,d.y)),disc*(1.-band*.92)*mix(.75,1.,uDay));
+          v+=vec3(1.,.38,.6)*pow(max(s,0.),70.)*.4+vec3(.85,.88,1.)*star*.7*(1.-uDay);
+          c=mix(c,mix(pow(uFog,vec3(1./2.2)),v,smoothstep(-.02,.1,h)),uVice);
+        }
         gl_FragColor=vec4(c,1.);}` }));
   scene.add(sky);
 
@@ -422,19 +473,21 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     topY = n * FH;
     const roofM0 = new THREE.MeshStandardMaterial({ color: 0x161b21, metalness: .3, roughness: .8 });
     const atlas = glassAtlas(), steel = new THREE.MeshStandardMaterial({ color: 0x2a323b, metalness: .85, roughness: .32 });
-    const glassM = () => { const m = new THREE.MeshStandardMaterial({ map: atlas.glass, emissiveMap: atlas.lit, emissive: 0xffffff, emissiveIntensity: .9, metalness: .85, roughness: .09, envMapIntensity: 1.3 }); officeMats.push(m); return m; };
+    const glassM = tint => { const a = vice ? viceAtlas(tint) : atlas; const m = new THREE.MeshStandardMaterial(vice ? { map: a.glass, emissiveMap: a.lit, emissive: 0xffffff, emissiveIntensity: .9, metalness: .02, roughness: .78, envMapIntensity: .6 } : { map: a.glass, emissiveMap: a.lit, emissive: 0xffffff, emissiveIntensity: .9, metalness: .85, roughness: .09, envMapIntensity: 1.3 }); officeMats.push(m); return m; };
+    const trimM = new THREE.MeshStandardMaterial({ color: 0xfff6ec, roughness: .6, metalness: 0 }), slabMat = vice ? trimM : steel;
+    const grow = (pts, k) => { const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cz = pts.reduce((s, p) => s + p[1], 0) / pts.length; return pts.map(([x, z]) => [cx + (x - cx) * k, cz + (z - cz) * k]); };
     // офисные этажи объёма: одна сетка, у каждого этажа свой ряд атласа
-    const officeBlock = (pts, from, to, skip) => {
+    const officeBlock = (pts, from, to, skip, tint = 'cream') => {
       const geos = [], slabs = [];
-      for (let i = from; i < to; i++) { if (skip?.(i)) continue; geos.push(ringGeoAtlas(pts, FH * .86, i * FH, (i * 5 + (pts[0][0] * 3 | 0)) & 7)); slabs.push(slabRing(pts, i * FH + FH * .86, FH * .14)); }
-      if (geos.length) root.add(new THREE.Mesh(mergeGeos(geos), glassM()), new THREE.Mesh(mergeGeos(slabs), steel));
+      for (let i = from; i < to; i++) { if (skip?.(i)) continue; geos.push(ringGeoAtlas(pts, FH * .86, i * FH, (i * 5 + (pts[0][0] * 3 | 0)) & 7)); slabs.push(slabRing(vice ? grow(pts, 1.045) : pts, i * FH + FH * .86, FH * .14)); }
+      if (geos.length) root.add(new THREE.Mesh(mergeGeos(geos), glassM(tint)), new THREE.Mesh(mergeGeos(slabs), slabMat));
     };
     // A: номера отеля — отдельные этажи с подсветкой по статусам, остальные в общей сетке
     for (let i = podH; i < n; i++) {
       const f = i + 1; if (!hF.includes(f)) continue;
       const m = new THREE.Mesh(ringGeo(hotelPath(), FH * .86, 0, true), emis(floorCanvas(rooms.filter(r => r.floor === f), 0, null, null, dim), 1)); m.position.y = i * FH; m.userData = { floor: f, hotel: true, s: 1 };
       root.add(m); floors.push(m); hotel.push(m);
-      const sl = new THREE.Mesh(slabRing(outline(1), 0, FH * .14), steel); sl.position.y = i * FH + FH * .86; root.add(sl); m.userData.slab = sl;
+      const sl = new THREE.Mesh(slabRing(outline(vice ? 1.045 : 1), 0, FH * .14), slabMat); sl.position.y = i * FH + FH * .86; root.add(sl); m.userData.slab = sl;
     }
     officeBlock(outline(1), podH, n, i => hF.includes(i + 1) || venues.some(v => v.floor === i + 1 && v.floor > podH));
     // этажи площадок: свой свет и цвет, наведение и клик ведут на страницу площадки
@@ -457,7 +510,7 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     });
 
     const nB = n - VOL.B.drop, nC = Math.round(n * VOL.C.k), topB = nB * FH, topC = nC * FH;
-    officeBlock(volPts(VOL.B), podH, nB); officeBlock(volPts(VOL.C), podH, nC);
+    officeBlock(volPts(VOL.B), podH, nB, null, 'mint'); officeBlock(volPts(VOL.C), podH, nC, null, 'pink');
 
     // верхушка как в игре: две колонны с просветом и мост с вертолётной площадкой
     const crownN = 5, crownTop = topY + crownN * FH;
@@ -466,14 +519,14 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     const bridge = new THREE.Mesh(slabGeo(outline(1.01), .3), roofM0); bridge.position.y = crownTop; root.add(bridge);
     // пристройки у правой башни: L-корпус с вырезом и низкий каменный блок с витринами
     const E1 = rect(VOL.C.x + VOL.C.w / 2 + 1.7, -1, 3.4, 3.4), E2 = rect(VOL.C.x + VOL.C.w / 2 + 1.1, 2.1, 2.2, 2.8), nE = 14, stoneH = 5;
-    officeBlock(E1, 0, nE); officeBlock(E2, 0, Math.round(nE * .6));
+    officeBlock(E1, 0, nE, null, 'lav'); officeBlock(E2, 0, Math.round(nE * .6), null, 'peach');
     const notch = new THREE.Mesh(new THREE.BoxGeometry(1.2, nE * FH * .45, .9), new THREE.MeshStandardMaterial({ color: 0x0e1318, roughness: .6 })); notch.position.set(E1[0][0] + .62, nE * FH * .5, E1[0][1] - .4); root.add(notch);
     const stoneTex = (() => { const c = document.createElement('canvas'); c.width = 64; c.height = 64; const g = c.getContext('2d'); g.fillStyle = '#4a4045'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#332b2f'; g.fillRect(0, 60, 64, 4); g.fillStyle = 'rgba(0,0,0,.06)'; g.fillRect(31, 0, 2, 60); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.repeat.set(10, stoneH); return t; })();
-    const SB = rect(-W / 2 - 2.4, 1.2, 3.6, 3.2), sbM = new THREE.MeshStandardMaterial({ map: stoneTex, roughness: .9, color: 0x9a8f96 });
+    const SB = rect(-W / 2 - 2.4, 1.2, 3.6, 3.2), sbM = new THREE.MeshStandardMaterial({ map: stoneTex, roughness: .9, color: vice ? 0xbfe9dc : 0x9a8f96 });
     const sb = new THREE.Mesh(slabGeo(SB, stoneH * FH * 1.3), sbM); root.add(sb);
     const sbRoof = new THREE.Mesh(new THREE.BoxGeometry(1.2, .4, .9), roofM0); sbRoof.position.set(SB[0][0] + 1, stoneH * FH * 1.3 + .2, SB[0][1] - 1); root.add(sbRoof);
     const fins = [...finsFor(outline(1.004), podH * FH, topY), ...finsFor(volPts(VOL.B, 1.004), podH * FH, topB), ...finsFor(volPts(VOL.C, 1.004), podH * FH, topC), ...finsFor(rect(E1[0][0] + 1.7, -1, 3.4 * 1.004, 3.4 * 1.004), 0, nE * FH)];
-    root.add(new THREE.Mesh(mergeGeos(fins), new THREE.MeshStandardMaterial({ color: 0x3b454f, metalness: .9, roughness: .3 })));
+    if (!vice) root.add(new THREE.Mesh(mergeGeos(fins), new THREE.MeshStandardMaterial({ color: 0x3b454f, metalness: .9, roughness: .3 })));
     // крыши: тёмный парапет с белым пунктиром по кромке, вертолётная площадка, техэтажи, антенна
     const roofM = roofM0;
     [[outline(1.012), topY], [volPts(VOL.B, 1.012), topB], [volPts(VOL.C, 1.012), topC], [rect(VOL.C.x + VOL.C.w / 2 + 1.7, -1, 3.45, 3.45), 14 * FH], [rect(VOL.C.x + VOL.C.w / 2 + 1.1, 2.1, 2.25, 2.85), Math.round(14 * .6) * FH]].forEach(([P, y]) => { const r = new THREE.Mesh(slabGeo(P, .26), roofM); r.position.y = y; root.add(r); });
@@ -482,11 +535,20 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     root.add(new THREE.Points(dashG, new THREE.PointsMaterial({ map: dotTex, color: 0xf3e6cc, size: .18, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })));
     const padTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); g.fillStyle = '#9ea4aa'; g.beginPath(); g.arc(128, 128, 126, 0, 7); g.fill(); g.strokeStyle = '#3a4048'; g.lineWidth = 14; g.beginPath(); g.arc(128, 128, 104, 0, 7); g.stroke(); g.fillStyle = '#3a4048'; g.font = '700 120px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('H', 128, 134); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
     const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, .08, 40), [new THREE.MeshStandardMaterial({ color: 0x6d737a, roughness: .7 }), new THREE.MeshStandardMaterial({ map: padTex, roughness: .7 }), new THREE.MeshStandardMaterial({ color: 0x6d737a })]);
-    pad.position.set(-.3, crownTop + .62, .1); root.add(pad);
+    pad.position.set(-.3, crownTop + .62, .1); if (!vice) root.add(pad);
     const struts = new THREE.InstancedMesh(new THREE.CylinderGeometry(.04, .04, .36, 6), steel, 6);
-    for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; M.compose(V.set(-.3 + Math.cos(a) * .9, crownTop + .42, .1 + Math.sin(a) * .9), Q.identity(), Sc.set(1, 1, 1)); struts.setMatrixAt(k, M); } root.add(struts);
-    const mech = new THREE.Mesh(new THREE.BoxGeometry(1.3, .55, 1.1), roofM); mech.position.set(1.3, crownTop + .52, -.7); root.add(mech);
-    const mastA = new THREE.Mesh(new THREE.CylinderGeometry(.03, .07, 2.6, 6), steel); mastA.position.set(1.6, crownTop + 1.6, -.9); root.add(mastA);
+    for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; M.compose(V.set(-.3 + Math.cos(a) * .9, crownTop + .42, .1 + Math.sin(a) * .9), Q.identity(), Sc.set(1, 1, 1)); struts.setMatrixAt(k, M); } if (!vice) root.add(struts);
+    const mech = new THREE.Mesh(new THREE.BoxGeometry(1.3, .55, 1.1), roofM); mech.position.set(1.3, crownTop + .52, -.7);
+    const mastA = new THREE.Mesh(new THREE.CylinderGeometry(.03, .07, 2.6, 6), steel); mastA.position.set(1.6, crownTop + 1.6, -.9);
+    if (!vice) root.add(mech, mastA);
+    else { // корона ар-деко: ступени пастельных цветов с неоновой кромкой и хромированный шпиль вместо вертолётной площадки
+      const tierM = [trimM, new THREE.MeshStandardMaterial({ color: 0xf5c3d2, roughness: .7 }), trimM, new THREE.MeshStandardMaterial({ color: 0xbfe9dc, roughness: .7 })];
+      const neonP = neon(0xff2d95), neonC = neon(0x3ef2e0); let z = crownTop + .3;
+      [[.92, .62], [.72, .55], [.52, .5], [.34, .45]].forEach(([k, hgt], i) => { const t = new THREE.Mesh(new THREE.BoxGeometry(W * k, hgt, D * k), tierM[i]); t.position.set(-.1, z + hgt / 2, 0); root.add(t);
+        const e = new THREE.Mesh(new THREE.BoxGeometry(W * k + .02, .035, D * k + .02), i % 2 ? neonC : neonP); e.position.set(-.1, z + hgt, 0); root.add(e); z += hgt; });
+      const spire = new THREE.Mesh(new THREE.CylinderGeometry(.015, .08, 2.4, 8), new THREE.MeshStandardMaterial({ color: 0xeeeef5, metalness: 1, roughness: .15 })); spire.position.set(-.1, z + 1.2, 0); root.add(spire);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(.07, 12, 8), neonP); tip.position.set(-.1, z + 2.45, 0); root.add(tip);
+    }
     const mechC = new THREE.Mesh(new THREE.BoxGeometry(1.2, .45, 1), roofM); mechC.position.set(VOL.C.x - .3, topC + .47, VOL.C.z - .4);
     if (KIT) { // детали отеля из Blender: техэтаж с жалюзи, градирни и гондола мойки фасада, вентиляция и бак на пристройках
       const add = (k, x, y, z, s = 1, ry = 0) => { const m = new THREE.Mesh(KIT[k], KIT.mat); m.position.set(x, y, z); m.scale.setScalar(s); m.rotation.y = ry; root.add(m); };
@@ -523,9 +585,16 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
     const banner = new THREE.Mesh(new THREE.PlaneGeometry(bW, bH), bannerM); banner.position.set(bX, bY, bZ); root.add(banner);
     const frame = new THREE.Mesh(new THREE.BoxGeometry(bW + .12, bH + .12, .04), steel); frame.position.set(bX, bY, bZ - .03); root.add(frame);
     // подиум: светлый камень, витрины, изогнутый белый козырёк, табличка у входа
-    const podM = new THREE.MeshStandardMaterial({ color: 0x3a3135, metalness: .05, roughness: .85 });
+    const podM = new THREE.MeshStandardMaterial({ color: vice ? 0xf6e2d2 : 0x3a3135, metalness: .05, roughness: .85 });
     const podPts = [[-W / 2 - .25, D / 2 + .2], [VOL.C.x + VOL.C.w / 2 + .2, D / 2 + .2], [VOL.C.x + VOL.C.w / 2 + .2, VOL.B.z - VOL.B.d / 2 - .2], [-W / 2 - .25, -D / 2 - .25]];
     const pod = new THREE.Mesh(slabGeo(podPts, podH * FH - .02), podM); root.add(pod);
+    if (vice) { // набережная: ряд пальм вдоль фасада и сбоку
+      const spots = []; for (let x = -W / 2 - 1.6; x <= VOL.C.x + VOL.C.w / 2 + 1.2; x += 1.25) spots.push([x, D / 2 + 1.05]);
+      for (let z = D / 2 - .4; z >= -D / 2 - 1; z -= 1.3) spots.push([-W / 2 - 1.15, z]);
+      const pm = new THREE.InstancedMesh(palmGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), spots.length);
+      spots.forEach(([x, z], i) => { M.compose(V.set(x, 0, z), Q.setFromEuler(new THREE.Euler(0, i * 1.7, (i % 3 - 1) * .05)), Sc.setScalar(.9 + (i * 37 % 10) / 25)); pm.setMatrixAt(i, M); });
+      root.add(pm);
+    }
     const shopTex = (() => { const c = document.createElement('canvas'); c.width = 512; c.height = 32; const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 512, 32); for (let i = 0; i < 32; i++) { g.fillStyle = i % 5 === 2 ? '#3a2a1c' : '#ffd9a0'; g.fillRect(i * 16 + 2, 4, 12, 24); } const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; return t; })();
     shopTex.repeat.x = 6;
     shopM = new THREE.MeshBasicMaterial({ map: shopTex, transparent: true, opacity: .55, toneMapped: false, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -741,18 +810,20 @@ export function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFloor }) 
   function relight() {
     const day = document.documentElement.dataset.mode === 'day' ? 1 : 0;
     skyU.uDay.value = day; ground.material.uniforms.uDay.value = day; cityM.userData.uniforms.uDay.value = day; cityM.userData.uniforms.uLit.value = day ? .12 : .42;
-    fogCol.set(day ? 0xd9c49a : 0x1d1430); skyU.uFog.value.copy(fogCol); scene.fog.color.copy(fogCol); scene.background.copy(fogCol); scene.fog.density = (day ? .012 : .016) * ({ fog: 2.3, rain: 1.45, snow: 1.6 }[wx?.kind] || 1);
+    fogCol.set(vice ? (day ? 0xe7a1b2 : 0x2a1240) : day ? 0xd9c49a : 0x1d1430); skyU.uFog.value.copy(fogCol); scene.fog.color.copy(fogCol); scene.background.copy(fogCol); scene.fog.density = (day ? .012 : .016) * ({ fog: 2.3, rain: 1.45, snow: 1.6 }[wx?.kind] || 1);
     if (wx?.kind === 'rain' || wx?.kind === 'fog') { fogCol.lerp(new THREE.Color(day ? 0x9a948c : 0x2e2427), .55); skyU.uFog.value.copy(fogCol); scene.fog.color.copy(fogCol); scene.background.copy(fogCol); }
     if (wx?.kind === 'snow') { fogCol.lerp(new THREE.Color(day ? 0xe6e1d8 : 0x463a3d), .5); skyU.uFog.value.copy(fogCol); scene.fog.color.copy(fogCol); scene.background.copy(fogCol); }
     rain.material.color.set(day ? 0x8f8a84 : 0xd8d2c8);
     const cityEnv = envBake ? (day ? envBake.day : envBake.night) : null;
     world.traverse(o => { if (o.isMesh || o.isInstancedMesh) [].concat(o.material).forEach(m => { if (m?.isMeshStandardMaterial) { m.userData.env0 ??= m.envMapIntensity; m.envMapIntensity = m.userData.env0 * (day ? 1 : .25); } }); });
-    hemi.intensity = day ? 1.6 : .42; hemi.color.set(day ? 0xf2e2c8 : 0x6a58b0); hemi.groundColor.set(day ? 0x1a120a : 0x120a10); key.intensity = day ? 2.8 : .75; cityM.roughness = day ? .55 : .9; cityM.metalness = day ? .35 : .1; stone.roughness = day ? .6 : .9; key.color.set(day ? 0xfff0d8 : 0xaab6ff); if (!day) key.position.copy(MOON).multiplyScalar(30);
-    cityM.color.set(day ? 0x6a5f5c : 0x1f1517); hills.material.color.set(day ? 0x6a5a52 : 0x0c0814);
+    hemi.intensity = day ? 1.6 : .42; hemi.color.set(vice ? (day ? 0xffd9e4 : 0x8a5cd0) : day ? 0xf2e2c8 : 0x6a58b0); hemi.groundColor.set(day ? 0x1a120a : 0x120a10); key.intensity = day ? 2.8 : .75; cityM.roughness = day ? .55 : .9; cityM.metalness = day ? .35 : .1; stone.roughness = day ? .6 : .9; key.color.set(day ? 0xfff0d8 : 0xaab6ff); if (!day) key.position.copy(MOON).multiplyScalar(30);
+    cityM.color.set(vice ? (day ? 0xb99bab : 0x241333) : day ? 0x6a5f5c : 0x1f1517); hills.material.color.set(day ? 0x6a5a52 : 0x0c0814);
     cloudMats.forEach(m => m.color.set(day ? 0xfff3dc : 0x4a3460)); lamps.visible = carPts.visible = true; lamps.material.opacity = day ? .25 : 1; carPts.material.opacity = day ? .4 : 1;
-    rim.intensity = day ? 6 : 34; officeK = day ? .16 : .6; ledM?.color.set(day ? 0x39c6e6 : 0xb766ff); if (crownLit) crownLit.material.emissiveIntensity = day ? 0 : 1.1; landmarkMats.forEach(m => { m.emissiveIntensity = day ? .04 : .85; m.color.set(day ? 0xffffff : 0x353b4a); }); if (shadowM) shadowM.material.opacity = day ? .62 : .38; KIT?.mat.color.set(day ? 0xffffff : 0x5a5560); officeMats.forEach(m => { m.emissiveIntensity = day ? .04 : .9; m.color.set(day ? 0xffffff : 0x4a5562); m.metalness = day ? .45 : .85; m.envMapIntensity = day ? 1.6 : cityEnv ? 1.2 : .5; if (m.envMap !== cityEnv) { m.envMap = cityEnv; m.needsUpdate = true; } }); hotel.forEach(f => { if (f.material.envMap !== cityEnv) { f.material.envMap = cityEnv; f.material.needsUpdate = true; } }); if (bannerM) bannerM.emissiveIntensity = day ? .1 : .42; if (shopM) shopM.opacity = day ? .12 : .55; if (screenM) screenM.emissiveIntensity = day ? .12 : .45; kick();
+    rim.intensity = day ? 6 : 34; officeK = day ? .16 : .6; ledM?.color.set(vice ? (day ? 0xff4fa8 : 0x3ef2e0) : day ? 0x39c6e6 : 0xb766ff); if (crownLit) crownLit.material.emissiveIntensity = day ? 0 : 1.1; landmarkMats.forEach(m => { m.emissiveIntensity = day ? .04 : .85; m.color.set(day ? 0xffffff : 0x353b4a); }); if (shadowM) shadowM.material.opacity = day ? .62 : .38; KIT?.mat.color.set(day ? 0xffffff : 0x5a5560); officeMats.forEach(m => { m.emissiveIntensity = day ? .04 : .9; m.color.set(day ? 0xffffff : 0x4a5562); m.metalness = day ? .45 : .85; m.envMapIntensity = day ? 1.6 : cityEnv ? 1.2 : .5; if (m.envMap !== cityEnv) { m.envMap = cityEnv; m.needsUpdate = true; } }); hotel.forEach(f => { if (f.material.envMap !== cityEnv) { f.material.envMap = cityEnv; f.material.needsUpdate = true; } }); if (bannerM) bannerM.emissiveIntensity = day ? .1 : .42; if (shopM) shopM.opacity = day ? .12 : .55; if (screenM) screenM.emissiveIntensity = day ? .12 : .45; kick();
   }
   relight(); size();
   function setVenues(list) { const before = venueKey(); venues = list || []; if (venueKey() !== before && curRooms.length) { build(curRooms); update(curRooms, sel); } else venueMeshes.forEach(m => { const nv = venues.find(x => x.id === m.userData.venue.id); if (nv) m.userData.venue = nv; }); kick(); }
-  return { setVenues, setWeather(w) { if (!w || (w.kind === wx.kind && w.newyear === wx.newyear)) return; wx = { kind: w.kind, newyear: w.newyear }; applyWx(); }, update, focusRoom, hoverRoom, setFilter(ids) { const next = ids ? new Set(curRooms.filter(r => !ids.has(r.id)).map(r => r.id)) : null; if (String([...(next || [])]) === String([...(dim || [])])) return; dim = next; retexture(curRooms); kick(); }, hoverFloor(f) { if (f !== hover) { hover = f; kick(); } }, active(on) { active = on; if (on) { size(); kick(); } }, relight };
+  // тема Вайс-Сити: отель пересобирается в ар-деко Майами, небо — закат с ретро-солнцем
+  function setVice(on) { if (vice === !!on) return; vice = VICE = !!on; skyU.uVice.value = vice ? 1 : 0; if (curRooms.length) { build(curRooms); update(curRooms, sel); } relight(); kick(); }
+  return { setVenues, setVice, setWeather(w) { if (!w || (w.kind === wx.kind && w.newyear === wx.newyear)) return; wx = { kind: w.kind, newyear: w.newyear }; applyWx(); }, update, focusRoom, hoverRoom, setFilter(ids) { const next = ids ? new Set(curRooms.filter(r => !ids.has(r.id)).map(r => r.id)) : null; if (String([...(next || [])]) === String([...(dim || [])])) return; dim = next; retexture(curRooms); kick(); }, hoverFloor(f) { if (f !== hover) { hover = f; kick(); } }, active(on) { active = on; if (on) { size(); kick(); } }, relight };
 }
