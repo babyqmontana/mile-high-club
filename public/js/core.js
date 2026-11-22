@@ -86,6 +86,11 @@ export function createCore(store, hooks = {}) {
   }
   // кабинет гостя: профиль хранится по владельцу (Discord-аккаунт или ключ устройства)
   const profileOf = owner => (owner && store.get('profiles', owner)) || null;
+  // игровое (IC) имя: персонал и гости подписываются им, а не ником Discord. Задаётся в профиле
+  const icName = (user, guestKey) => String(profileOf(ownerOf(user, guestKey))?.name || '').trim();
+  const staffName = user => icName(user) || user.username;
+  // 428: без игрового имени писать в переписку нельзя — сайт покажет уведомление с кнопкой «Открыть профиль»
+  const needIc = () => { throw new HttpError(428, 'Укажите имя персонажа в профиле — без него писать в обращениях нельзя'); };
   const tiers = () => { const t = settings().tiers; return (Array.isArray(t) && t.length ? t : DEFAULT_TIERS).slice().sort((a, b) => a.nights - b.nights); };
   // статус гостя: по завершённым проживаниям; любимый тип и номер — по всем броням, кроме отменённых
   function guestStats(owner) {
@@ -222,16 +227,18 @@ export function createCore(store, hooks = {}) {
   on('POST', '/me/bookings/:id/messages', ({ params, body, user, guestKey }) => {
     const b = myBooking(params.id, user, guestKey), text = str(body.text, 1000).trim(); if (!text) bad('Напишите сообщение');
     const recent = (b.messages || []).filter(m => m.from === 'guest' && Date.now() - m.at < 60000).length; if (recent >= 6) bad('Слишком часто. Подождите минуту');
-    pushMsg(b, { from: 'guest', text }); b.staffUnread = (b.staffUnread || 0) + 1; store.put('bookings', b.id, b);
-    log(`Гость написал по брони ${b.code}`, 'booking'); emit(['bookings', 'log']); call('notify', 'booking_message', { ...b, guestText: text });
+    const ooc = !!body.ooc;
+    pushMsg(b, { from: 'guest', text, ooc }); b.staffUnread = (b.staffUnread || 0) + 1; store.put('bookings', b.id, b);
+    log(`Гость написал по брони ${b.code}`, 'booking'); emit(['bookings', 'log']); call('notify', 'booking_message', { ...b, guestText: text, ooc });
     return { booking: b };
   });
   on('POST', '/admin/bookings/:id/messages', ({ params, body, user }) => {
     need(user, 'mod'); const b = store.get('bookings', params.id); if (!b) throw new HttpError(404, 'Бронь не найдена');
     const text = str(body.text, 1000).trim(); if (!text) bad('Напишите ответ');
-    pushMsg(b, { from: 'staff', text, by: user.username }); b.staffUnread = 0; store.put('bookings', b.id, b);
-    log(`${user.username} ответил по брони ${b.code}`, 'booking', user.username); emit(['bookings', 'log']);
-    notice(b.owner, 'booking', `Отель ответил по брони ${b.code}: ${text.slice(0, 160)}`); notifyGuest('booking_message', { ...b, replyText: text, by: user.username });
+    const by = icName(user); if (!by) needIc(); const ooc = !!body.ooc;
+    pushMsg(b, { from: 'staff', text, by, ooc }); b.staffUnread = 0; store.put('bookings', b.id, b);
+    log(`${by} ответил по брони ${b.code}`, 'booking', user.username); emit(['bookings', 'log']);
+    notice(b.owner, 'booking', `Отель ответил по брони ${b.code}: ${text.slice(0, 160)}`); notifyGuest('booking_message', { ...b, replyText: text, by, ooc });
     return { booking: b };
   });
   on('POST', '/admin/bookings/:id/read', ({ params, user }) => {
@@ -241,7 +248,7 @@ export function createCore(store, hooks = {}) {
   // ответ персонала, написанный прямо в канале брони в Discord: попадает в переписку на сайте и гостю
   function bookingMessage(id, m) {
     const b = store.get('bookings', id); if (!b) return;
-    pushMsg(b, { from: 'staff', text: str(m.text, 1000), by: str(m.by, 40) }); b.staffUnread = 0; store.put('bookings', b.id, b);
+    pushMsg(b, { from: 'staff', text: str(m.text, 1000), by: str(m.by, 40), ooc: !!m.ooc }); b.staffUnread = 0; store.put('bookings', b.id, b);
     log(`${m.by || 'Персонал'} ответил по брони ${b.code} из Discord`, 'booking'); emit(['bookings', 'log']);
     notice(b.owner, 'booking', `Отель ответил по брони ${b.code}: ${str(m.text, 160)}`);
     notifyGuest('booking_message', { ...b, replyText: m.text, fromDiscord: true }); // fromDiscord: боту в канал дублировать не нужно
@@ -313,6 +320,8 @@ export function createCore(store, hooks = {}) {
     if (!discord || !text) bad('Укажите Discord и опишите вопрос');
     const ot = ownerOf(user, guestKey); if (ot && store.all('tickets').filter(x => x.owner === ot && x.status !== 'closed').length >= LIMITS.tickets) bad(`У вас уже ${LIMITS.tickets} открытые заявки. Продолжите разговор в них — ссылки в кабинете`);
     const t = { id: uid('t'), discord, name: str(body.name, 60), topic: str(body.topic, 60) || 'Другое', text, status: 'checking', mode: null, owner: ownerOf(user, guestKey), discordId: user?.id || null, messages: [], createdAt: Date.now(), lastAt: Date.now(), lastFrom: 'guest' };
+    // имя персонажа из формы заполняет пустой профиль: дальше переписка идёт от него
+    if (t.name && t.owner && !icName(user, guestKey)) { const pr = profileOf(t.owner) || { id: t.owner, dm: true, achievements: [] }; store.put('profiles', t.owner, { ...pr, name: t.name, updatedAt: Date.now() }); }
     store.put('tickets', t.id, t); emit(['tickets']);
     const member = await call('checkMember', discord, user?.id);
     return { ticket: t, member: member === null ? null : !!member };
@@ -341,12 +350,14 @@ export function createCore(store, hooks = {}) {
     const t = myTicket(params.id, user, guestKey); const text = str(body.text, 2000); if (!text) bad('Пустое сообщение');
     if (t.status === 'closed') bad('Обращение закрыто');
     const staff = !isOwner(t, user, guestKey) && user && ROLES[user.role] >= 1;
-    t.messages.push({ from: staff ? 'staff' : 'guest', text, at: Date.now(), by: staff ? user.username : undefined });
+    const by = icName(user, guestKey); if (!by) needIc();
+    const ooc = !!body.ooc; // OOC — разговор игроков вне роли, на сайте и в Discord помечается отдельно
+    t.messages.push({ from: staff ? 'staff' : 'guest', text, at: Date.now(), by, ooc });
     if (t.messages.length > 300) t.messages = t.messages.slice(-300);
     t.lastAt = Date.now(); t.lastFrom = staff ? 'staff' : 'guest'; store.put('tickets', t.id, t); emit(['tickets']);
-    if (staff && t.mode === 'discord' && t.channel) call('ticketReply', t, text, user.username);
+    if (staff && t.mode === 'discord' && t.channel) call('ticketReply', t, text, by, ooc);
     // заявка-чат на сайте: реплики гостя и ответы персонала зеркалим в канал Discord
-    if (t.mode === 'site') call('bridge', { kind: 'ticket', doc: t, from: staff ? 'staff' : 'guest', text, by: staff ? user.username : undefined });
+    if (t.mode === 'site') call('bridge', { kind: 'ticket', doc: t, from: staff ? 'staff' : 'guest', text, by, ooc });
     if (staff) notice(t.owner, 'ticket', `Ответ управляющего по «${t.topic}»: ${text.slice(0, 160)}`);
     if (staff && t.mode === 'site') notifyGuest('ticket_reply', { ...t, replyText: text }); else call('notify', 'ticket_update', t);
     return { ticket: t };
@@ -356,7 +367,7 @@ export function createCore(store, hooks = {}) {
   on('GET', '/admin/all', ({ user }) => {
     need(user, 'mod');
     const s = settings();
-    return { ...publicData(), venues: sort(store.all('venues')), team: store.all('team').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), offers: store.all('offers').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), settingsFull: user.role === 'admin' ? s : null, rooms: roomsSorted(), issues: store.all('issues').sort((a, b) => (b.date || 0) - (a.date || 0)), events: store.all('events').sort((a, b) => b.start - a.start).slice(0, 100),
+    return { ...publicData(), me: { ic: icName(user) }, venues: sort(store.all('venues')), team: store.all('team').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), offers: store.all('offers').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), settingsFull: user.role === 'admin' ? s : null, rooms: roomsSorted(), issues: store.all('issues').sort((a, b) => (b.date || 0) - (a.date || 0)), events: store.all('events').sort((a, b) => b.start - a.start).slice(0, 100),
       bookings: store.all('bookings').sort((a, b) => b.createdAt - a.createdAt).slice(0, 500), reviews: store.all('reviews').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300).map(({ owner, ...r }) => r), jobsAll: sort(store.all('jobs')), replyTemplates: s.replyTemplates || null, tickets: store.all('tickets').sort((a, b) => b.lastAt - a.lastAt).slice(0, 300), orders: store.all('orders').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300), log: store.all('log').sort((a, b) => b.at - a.at).slice(0, 120), summary: freeSummary(), discord: hooks.status ? hooks.status() : { connected: false }, senders: senders(), posts: store.all('posts').sort((a, b) => b.at - a.at).slice(0, 30), lifex: { envOk: hooks.lifexEnvOk?.() ?? false, on: hooks.lifexOn?.() ?? false } };
   });
   // отзывы: опубликовать, скрыть, ответить от имени отеля, удалить
@@ -575,7 +586,9 @@ export function createCore(store, hooks = {}) {
   function ticketMessage(id, m) { const t = store.get('tickets', id); if (!t) return; if (m.from === 'staff') notice(t.owner, 'ticket', `Ответ управляющего по «${t.topic}»: ${String(m.text || '').slice(0, 160)}`); t.messages.push(m); if (t.messages.length > 300) t.messages = t.messages.slice(-300); t.lastAt = m.at; t.lastFrom = m.from; store.put('tickets', t.id, t); emit(['tickets']); call('notify', 'ticket_update', t); }
   function removeEvent(id) { if (!store.get('events', id)) return; store.del('events', id); emit(['events']); }
 
-  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, bookingMessage, matchVenue, settings, log, store, linkLifex };
+  // имя сотрудника, написавшего прямо в Discord: игровое из профиля, если задано
+  const icOf = discordId => String(profileOf('d:' + discordId)?.name || '').trim();
+  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, bookingMessage, matchVenue, settings, log, store, linkLifex, icOf };
 }
 
 /* ---------- стартовые данные ---------- */

@@ -295,12 +295,20 @@ test('если транскрипт не сохранился, обращени�
 });
 
 test('сообщения тикета видны в панели, ответ из панели уходит в канал', async () => {
-  const sent = [], { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan1', ticketReply: async (t, text) => { sent.push(text); } });
+  const sent = [], { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan1', ticketReply: async (t, text, by, ooc) => { sent.push([text, by, ooc]); } });
   const t = await ticket(core);
   core.ticketMessage(t.id, { from: 'guest', by: 'Джон', text: 'Есть кто?', at: 5 });
+  // без игрового имени сотрудник писать не может: 428 — сайт ведёт в профиль
+  await assert.rejects(core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'Да, слушаю' } }), e => e.status === 428);
+  await core.handle('PUT', '/me/profile', { user: mod, body: { name: 'Лиам Картер' } });
   await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'Да, слушаю' } });
-  assert.deepEqual(store.get('tickets', t.id).messages.map(m => m.text), ['Есть кто?', 'Да, слушаю']);
-  assert.deepEqual(sent, ['Да, слушаю']);
+  await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'сорри, лагнуло', ooc: true } });
+  const ms = store.get('tickets', t.id).messages;
+  assert.deepEqual(ms.map(m => m.text), ['Есть кто?', 'Да, слушаю', 'сорри, лагнуло']);
+  assert.equal(ms[1].by, 'Лиам Картер', 'подпись — игровое имя, не ник Discord');
+  assert.deepEqual(ms.map(m => !!m.ooc), [false, false, true]);
+  assert.deepEqual(sent, [['Да, слушаю', 'Лиам Картер', false], ['сорри, лагнуло', 'Лиам Картер', true]]);
+  assert.equal(core.icOf('m1'), 'Лиам Картер');
 });
 
 test('удалить можно только закрытые обращения и только администратору', async () => {
@@ -349,6 +357,7 @@ test('переписка и закрытие обновляют одну кар�
   const kinds = [], { core } = makeCore({ checkMember: async () => true, createTicketChannel: async () => null, notify: async k => { kinds.push(k); } });
   const t = await ticket(core);
   await core.handle('POST', `/tickets/${t.id}/messages`, { user: { id: 'u1', username: 'guest1', role: 'guest' }, body: { text: 'ещё вопрос' } });
+  await core.handle('PUT', '/me/profile', { user: mod, body: { name: 'Лиам Картер' } });
   await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'ответ' } });
   await core.handle('POST', `/admin/tickets/${t.id}/close`, { user: mod });
   // все виды «ticket*» правят одну карточку; ответ персонала и закрытие дополнительно пишут гостю в личку
@@ -360,6 +369,7 @@ test('гость отключил личные сообщения — бот п�
   const g = { id: 'u1', username: 'guest1', role: 'guest' };
   await core.handle('PUT', '/me/profile', { user: g, body: { dm: false } });
   const t = await ticket(core);
+  await core.handle('PUT', '/me/profile', { user: mod, body: { name: 'Лиам Картер' } });
   await core.handle('POST', `/tickets/${t.id}/messages`, { user: mod, body: { text: 'ответ' } });
   assert.deepEqual(got.find(x => x[0] === 'ticket_reply'), ['ticket_reply', true, 'u1']);
   assert.equal(store.get('profiles', 'd:u1').dm, false);

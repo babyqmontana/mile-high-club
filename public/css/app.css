@@ -184,7 +184,7 @@ main{view-transition-name:floor}
 .dv1 .logo{width:min(62vw,26rem);filter:drop-shadow(0 1.125rem 1.875rem rgba(0,0,0,.5));transform:perspective(50rem) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transition:transform .3s ease-out}
 .dv1 h1{font-size:clamp(1.9rem,4.6vw,3.8rem);max-width:15ch;color:#F9EDC7;text-shadow:0 2px 1.875rem rgba(0,0,0,.5)}
 .dv1 h1 .serif{display:block;font-size:.9em;background:linear-gradient(100deg,#f7b50a,#ef6a2a,#f0177a,#f7b50a) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:flow 10s linear infinite;text-shadow:none;filter:drop-shadow(0 2px 1.125rem rgba(0,0,0,.45))}
-.dv2{opacity:0;max-width:none}
+.dv2{opacity:0}
 .dv2 h2{font-size:clamp(1.8rem,4.6vw,3.4rem);max-width:16ch;color:#F9EDC7;text-shadow:0 2px 1.875rem rgba(0,0,0,.6)}
 .dv2 p{color:#e3e6dc;max-width:46ch;text-shadow:0 1px 0.75rem rgba(0,0,0,.6)}
 .dv .btn.ghost{color:#F9EDC7;box-shadow:inset 0 0 0 1px rgba(249,237,199,.4)}
@@ -548,7 +548,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
 .danger{border:1px solid color-mix(in srgb,var(--bad) 45%,transparent);border-radius:var(--r);padding:1.2rem;display:grid;gap:1rem;background:color-mix(in srgb,var(--bad) 6%,var(--card))}
 .gate{max-width:32.5rem;margin:5rem auto;text-align:center;display:grid;gap:1rem;justify-items:center;padding:0 var(--gr) 0 var(--gl)}
 
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}.js .reveal{opacity:1;transform:none}}
+:root.calm *,:root.calm *::before,:root.calm *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}:root.calm.js .reveal{opacity:1;transform:none}
 
 /* загрузчик в стиле «логотип заполняется, потом раскрывает сайт» */
 @keyframes pulse2{50%{transform:scale(1.08);opacity:.7}}
@@ -744,7 +744,7 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 :root[data-theme="newyear"] .btn:not(.ghost):not(.danger){position:relative;overflow:hidden}
 :root[data-theme="newyear"] .btn:not(.ghost):not(.danger)::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(105deg,transparent 40%,rgba(255,244,214,.5) 50%,transparent 60%) -160% 0/220% 100% no-repeat;animation:frost 7s ease-in-out infinite}
 @keyframes frost{0%,72%{background-position:-160% 0}100%{background-position:260% 0}}
-@media(prefers-reduced-motion:reduce){:root[data-theme="newyear"] .btn:not(.ghost):not(.danger)::after{animation:none;background:none}}
+:root.calm[data-theme="newyear"] .btn:not(.ghost):not(.danger)::after{animation:none;background:none}
 :root[data-theme="newyear"] .eyebrow{background:linear-gradient(100deg,#f9edc7,#f7b50a 40%,#f0177a 70%,#f9edc7) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 
 /* ---------- интерактивные предметы ---------- */
@@ -871,7 +871,7 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 .loader.out .ld-door.l{transform:translateX(-101%);transition-delay:.25s}
 .loader.out .ld-door.r{transform:translateX(101%);transition-delay:.25s}
 .loader.gone{display:none}
-@media(prefers-reduced-motion:reduce){.loader.out{opacity:0;transition:opacity .3s}.ld-logo{animation:none}}
+:root.calm .loader.out{opacity:0;transition:opacity .3s}:root.calm .ld-logo{animation:none}
 .dc{grid-template-columns:1fr;background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20400%20240%22%20preserveAspectRatio%3D%22xMidYMax%20slice%22%3E%3Cpath%20d%3D%22M200%20236L-194%20167%20M200%20236L-185%20126%20M200%20236L-171%2086%20M200%20236L-153%2048%20M200%20236L-132%2012%20M200%20236L-106%20-21%20M200%20236L-78%20-52%20M200%20236L-46%20-79%20M200%20236L-12%20-103%20M200%20236L25%20-124%20M200%20236L63%20-140%20M200%20236L103%20-152%20M200%20236L144%20-160%20M200%20236L186%20-164%20M200%20236L228%20-163%20M200%20236L269%20-158%20M200%20236L310%20-149%20M200%20236L350%20-135%20M200%20236L388%20-117%20M200%20236L424%20-96%20M200%20236L457%20-70%20M200%20236L488%20-42%20M200%20236L515%20-10%20M200%20236L539%2024%20M200%20236L560%2061%20M200%20236L576%2099%20M200%20236L588%20139%22%20stroke%3D%22%23f7d696%22%20stroke-opacity%3D%22.09%22%20stroke-width%3D%222%22%20fill%3D%22none%22/%3E%3C/svg%3E") right bottom/60% auto no-repeat,radial-gradient(120% 140% at 0% 0%,rgba(89,22,30,.5),transparent 55%),var(--card)}
 .js .reveal:nth-child(2){transition-delay:.06s}.js .reveal:nth-child(3){transition-delay:.12s}.js .reveal:nth-child(4){transition-delay:.18s}.js .reveal:nth-child(n+5){transition-delay:.22s}
 /* круги на воде по клику */
@@ -1127,7 +1127,7 @@ footer .credits .ver{margin-left:.35rem;padding-left:.8rem;border-left:1px solid
 .bkchat .compose textarea:focus{outline:none;border-color:var(--pink)}
 .msg .who{display:block;font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);margin-bottom:.15rem}
 @media(max-width:560px){.keycard{width:100%;max-width:18rem}}
-@media(prefers-reduced-motion:reduce){.keycard::after,.bk-pulse,.bk.moved,.bk.moved .bk-steps li.now::before{animation:none}}
+:root.calm .keycard::after,:root.calm .bk-pulse,:root.calm .bk.moved,:root.calm .bk.moved .bk-steps li.now::before{animation:none}
 .danger-t{color:var(--bad)}
 .tier-bar{height:.45rem;border-radius:1rem;background:var(--line2);overflow:hidden}
 .tier-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--pink));border-radius:inherit}
@@ -1325,7 +1325,7 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
 .achfx i{position:absolute;top:-1rem;width:var(--w);height:calc(var(--w) * 1.6);background:var(--c);border-radius:2px;opacity:.95;animation:achFall var(--t) var(--d) cubic-bezier(.3,.6,.5,1) forwards}
 .achfx i:nth-child(3n){border-radius:50%;height:var(--w)}
 @keyframes achFall{0%{transform:translate(0,0) rotate(0)}100%{transform:translate(var(--x),105vh) rotate(var(--r));opacity:.2}}
-@media(prefers-reduced-motion:reduce){.ach .rays,.ach .burst,.achfx{display:none}.xbar>i::after,.xbar.go>i{animation:none}}
+:root.calm .ach .rays,:root.calm .ach .burst,:root.calm .achfx{display:none}:root.calm .xbar>i::after,:root.calm .xbar.go>i{animation:none}
 .xbar[aria-valuenow="0"]>i{visibility:hidden}
 
 /* --- v5.6 полировка: единый фокус, живые строки меню и карточки-списки (без изменения структуры) --- */
@@ -1340,4 +1340,31 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
 .item{transition:border-color var(--d-hover,.2s) ease,transform var(--d-hover,.2s) ease,box-shadow var(--d-hover,.2s) ease}
 .item:hover{border-color:var(--line2);transform:translateY(-1px);box-shadow:0 .7rem 1.4rem -1rem rgba(0,0,0,.6)}
 .offer:hover,.tcard:hover{box-shadow:0 1.4rem 2.4rem -1.2rem rgba(0,0,0,.7),0 0 0 1px color-mix(in srgb,var(--ac,var(--gold)) 30%,transparent)}
-@media(prefers-reduced-motion:reduce){.dish,.dish .add,.item{transition:none}.dish:hover{padding-left:0}.item:hover{transform:none}}
+:root.calm .dish,:root.calm .dish .add,:root.calm .item{transition:none}:root.calm .dish:hover{padding-left:0}:root.calm .item:hover{transform:none}
+
+/* Шапка подстраивается под ширину (main.js fitNav): compact — без подписей у чипов, tight — разделы в меню-бургер */
+.nav.compact .pill .t,.nav.compact .wxp .t{display:none}
+.nav.tight .wrap{grid-template-columns:1fr auto}.nav.tight .links{display:none}.nav.tight .burger{display:grid}
+.links{min-width:0}
+
+/* обращения: IC / OOC и игровое имя */
+.oocsw{flex:0 0 auto;min-width:3.1rem;min-height:2.625rem;padding:0 .7rem;border-radius:62.4375rem;border:1px solid var(--line2);background:var(--bg2);color:var(--fg);font:800 .72rem/1 var(--mono,ui-monospace,monospace);letter-spacing:.08em;cursor:pointer;transition:background .2s,color .2s,border-color .2s}
+.oocsw[aria-pressed="true"]{background:color-mix(in srgb,var(--fg) 12%,transparent);border-color:var(--fg);color:var(--fg)}
+.compose.ooc input,.compose.ooc textarea{border-style:dashed}
+.msg.ooc{opacity:.82;font-style:italic;background:transparent!important;border:1px dashed var(--line2)}
+.ooctag{display:inline-block;margin-right:.4rem;padding:.05rem .4rem;border-radius:.35rem;border:1px solid currentColor;font:800 .62rem/1.4 var(--mono,ui-monospace,monospace);font-style:normal;letter-spacing:.08em;opacity:.8;vertical-align:.1em}
+.compose.icneed{align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:.88rem;color:var(--fg2,var(--fg))}
+.compose.icneed span{flex:1 1 14rem}
+.toast.act{display:flex;align-items:center;gap:.8rem;pointer-events:auto}
+.toast .tact{flex:0 0 auto;padding:.45rem .8rem;border-radius:62.4375rem;border:0;background:#fff;color:#111;font-weight:800;cursor:pointer}
+.aic{display:grid;gap:.35rem;margin:.6rem 0;padding:.6rem;border-radius:.75rem;border:1px solid var(--line)}
+.aic label{font-size:.78rem;font-weight:700;line-height:1.3}.aic .row{gap:.4rem;flex-wrap:wrap}.aic .inp{min-width:0;flex:1 1 100%}.aic .btn{flex:1 1 100%}
+.aic.need{border-color:var(--pink)}
+.flash{animation:icflash 1.2s ease 2}
+@keyframes icflash{50%{box-shadow:0 0 0 3px color-mix(in srgb,var(--pink) 55%,transparent)}}
+
+/* шапка: разделы по центру свободного места, когда справа много индикаторов */
+.nav.shift .wrap{grid-template-columns:auto minmax(0,1fr) auto}
+.nav.shift.tight .wrap{grid-template-columns:minmax(0,1fr) auto}
+.nav.tiny .brand b{display:none}
+.navr{min-width:0}

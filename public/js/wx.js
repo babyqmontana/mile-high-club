@@ -2,7 +2,7 @@
 // Лёгкий 2D-канвас, частиц немного, анимация на паузе, когда вкладка скрыта или блок не виден.
 export function mountWeather(canvas, { strength = 1, wind = 0.25 } = {}) {
   const g = canvas.getContext('2d'); if (!g) return { set() {}, destroy() {} };
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduce = document.documentElement.classList.contains('calm');
   let W = 0, H = 0, dpr = 1, kind = 'clear', day = 1, P = [], raf = 0, last = 0, visible = true, fogT = 0;
   const rnd = (a, b) => a + Math.random() * (b - a);
   function size() { dpr = Math.min(devicePixelRatio || 1, 1.5); W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); seed(); kick(); }

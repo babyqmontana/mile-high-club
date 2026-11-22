@@ -67,7 +67,7 @@ function next() {
   setTimeout(() => { el.classList.remove('in'); el.classList.add('out'); setTimeout(() => { el.remove(); showing = false; next(); }, 450); }, 5600);
 }
 // ---------- эффекты ----------
-const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reduce = () => document.documentElement.classList.contains('calm');
 const rnd = (a, b) => a + Math.random() * (b - a);
 function sparks(n) {
   return Array.from({ length: n }, (_, i) => { const t = (i / n) * Math.PI * 2 + rnd(-.25, .25), d = rnd(52, 96);

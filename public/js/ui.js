@@ -39,17 +39,38 @@ export function bg(url, label = '', accent = '#F0177A', accent2 = '#F7B50A', cls
   return `class="${cls} ph" data-label="${esc(label)}" style="--a:${esc(accent)};--a2:${esc(accent2)}"`;
 }
 
-export function toast(text, kind = '') {
+export function toast(text, kind = '', act) {
   const el = document.createElement('div'); el.className = 'toast ' + kind; el.textContent = text; $('#toasts').append(el);
+  // тост с действием: кнопка ведёт туда, где проблему можно исправить
+  if (act) { const b = document.createElement('button'); b.type = 'button'; b.className = 'tact'; b.textContent = act.label; b.onclick = () => { el.remove(); act.fn(); }; el.classList.add('act'); el.append(b); }
   play(kind === 'err' ? 'error' : 'soft');
-  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, 3000);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, act ? 8000 : 3000);
 }
-export const fail = e => toast(e?.message || 'Что-то пошло не так', 'err');
+// Игровое имя: без него писать в обращениях нельзя. В панели — поле в боковой колонке, на сайте — профиль в кабинете
+export const ic = { admin: null };
+export function fixIc() {
+  if (location.hash.startsWith('#admin') && ic.admin) return ic.admin();
+  if (!location.hash.startsWith('#me')) location.hash = '#me';
+  let n = 0; const go = () => { const i = document.getElementById('pfName'); if (i) { i.scrollIntoView({ block: 'center', behavior: 'smooth' }); i.focus({ preventScroll: true }); i.closest('.field')?.classList.add('flash'); } else if (n++ < 20) setTimeout(go, 150); }; go();
+}
+export const icNeedBox = (who = 'персонажа') => `<div class="compose icneed"><span>Чтобы писать, укажите имя ${who} — им подписываются сообщения.</span><button type="button" class="btn sm" data-icfix>Указать имя</button></div>`;
+document.addEventListener('click', e => { if (e.target.closest?.('[data-icfix]')) fixIc(); });
+export const fail = e => (e?.status === 428 ? toast(e.message, 'err', { label: 'Открыть профиль', fn: fixIc }) : toast(e?.message || 'Что-то пошло не так', 'err'));
+// IC / OOC: IC — от лица персонажа, OOC — разговор игроков вне роли. Выбор помнится, пока страница открыта
+const oocState = {};
+export const oocSwitch = key => `<button type="button" class="oocsw" aria-pressed="${!!oocState[key]}" title="IC — от лица персонажа · OOC — вне роли" aria-label="Режим сообщения">${oocState[key] ? 'OOC' : 'IC'}</button>`;
+export function wireOoc(f, key) {
+  const b = f?.querySelector('.oocsw'); if (!b) return () => false;
+  f.classList.toggle('ooc', !!oocState[key]);
+  b.onclick = () => { oocState[key] = !oocState[key]; b.setAttribute('aria-pressed', oocState[key]); b.textContent = oocState[key] ? 'OOC' : 'IC'; f.classList.toggle('ooc', oocState[key]); f.querySelector('input,textarea')?.focus(); };
+  return () => !!oocState[key];
+}
+export const oocTag = m => (m.ooc ? '<span class="ooctag">OOC</span>' : '');
 
 // «Магнитная» кнопка: под курсором слегка тянется к нему (до max px). Только мышь и без «меньше анимации».
 // Двигаем через CSS-свойство translate, чтобы не мешать transform, которым кнопки уже анимируются.
 export function magnet(el, max = 6) {
-  if (!el || el._mag || !matchMedia('(hover: hover) and (pointer: fine)').matches || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!el || el._mag || !matchMedia('(hover: hover) and (pointer: fine)').matches || document.documentElement.classList.contains('calm')) return;
   el._mag = true; el.classList.add('mag');
   el.addEventListener('pointermove', e => { const r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5; el.style.translate = `${(x * 2 * max).toFixed(1)}px ${(y * 2 * max).toFixed(1)}px`; });
   el.addEventListener('pointerleave', () => { el.style.translate = ''; });

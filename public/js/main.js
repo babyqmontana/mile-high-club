@@ -1,4 +1,4 @@
-import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, confirmBox, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL, magnet } from './ui.js';
+import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, confirmBox, oocSwitch, wireOoc, oocTag, icNeedBox, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL, magnet } from './ui.js';
 import { api, subscribe, authConfig, login, logout, DEMO, pref, guestKey, demoLifex } from './api.js';
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
@@ -31,9 +31,9 @@ function shell() {
       <button class="ibtn burger" id="burger" aria-label="Меню" data-sfx="open">${I.menu}</button>
     </div>
   </div></header>
-  <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button></div></nav>
+  <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button><button type="button" class="btn ghost" id="dCalm" data-sfx=""></button></div></nav>
   <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['jobs'], ['privacy'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
-  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana${APP_VER ? `<span class="ver num" title="Версия сайта">${APP_VER}</span>` : ''}</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
+  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span>·</span><button class="secrets" id="calmBtn" data-sfx="" aria-pressed="false">Спокойный режим</button><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana${APP_VER ? `<span class="ver num" title="Версия сайта">${APP_VER}</span>` : ''}</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
   const drawer = $('#drawer'), closeDrawer = () => { if (!drawer.classList.contains('on')) return; drawer.classList.remove('on'); popLayer(drawer); $('#burger').setAttribute('aria-expanded', 'false'); };
   $('#burger').setAttribute('aria-controls', 'drawer'); $('#burger').setAttribute('aria-expanded', 'false');
@@ -42,6 +42,13 @@ function shell() {
   $$('#drawer a').forEach(a => a.addEventListener('click', closeDrawer));
   // звук и день/ночь: в шапке, а на узких экранах — в меню (те же действия)
   $('#sndBtn').onclick = $('#dSnd').onclick = () => { setSound(!soundOn); paintNav(); mods.deck?.sound(); burst('dj', 8, 20000); };
+  // «Спокойный режим»: меньше движения по желанию гостя. Системную настройку Windows не берём — её часто выключают
+  // твикеры ради скорости, и сайт терял атриум, лифт и анимации у тех, кто об этом не просил
+  $('#calmBtn').onclick = $('#dCalm').onclick = () => { const on = !document.documentElement.classList.contains('calm'); document.documentElement.classList.toggle('calm', on); try { localStorage.setItem('mhc-calm', on ? '1' : '0'); } catch { } paintNav(); render(); };
+  addEventListener('resize', fitNavSoon);
+  // индикатор появился, исчез или сменил текст — шапка пересчитывается сама, без перезагрузки
+  { const mo = new MutationObserver(fitNavSoon); ['.navr', '.links', '.brand'].forEach(q => $(q) && mo.observe($(q), { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'class', 'style'] })); }
+  document.fonts?.ready.then(fitNav);
   // логотип: с каждым кликом подрагивает сильнее — намёк, что что-то будет
   { let n = 0, tmr = 0; $('.brand').addEventListener('click', () => { clearTimeout(tmr); tmr = setTimeout(() => { n = 0; $('.brand').style.removeProperty('--wob'); }, 2500); n++; const b = $('.brand'); b.style.setProperty('--wob', Math.min(n, 7)); b.classList.remove('wob'); void b.offsetWidth; b.classList.add('wob'); if (n >= 7) { n = 0; unlock('logo'); } }); }
   $('#achBtn').onclick = () => openCabinet();
@@ -51,7 +58,23 @@ function shell() {
   $$('.kon [data-k]').forEach(b => b.addEventListener('click', () => achFeed(b.dataset.k)));
   addEventListener('scroll', onScroll, { passive: true });
 }
+// шапка подстраивается под ширину: сначала без подписей у чипов, затем разделы уходят в меню-бургер
+// Шапка подстраивается под содержимое: появились индикаторы (гости в отеле, погода, колокольчик) — сначала
+// разделы центрируются между логотипом и правой частью, потом у индикаторов прячутся подписи, потом разделы уходят в меню
+function fitNav() {
+  const nav = $('.nav'), links = $('.links'), right = $('.navr'), brand = $('.brand'); if (!nav || !links || !right || !brand) return;
+  nav.classList.remove('shift', 'compact', 'tight', 'tiny');
+  const vis = el => [...el.children].filter(x => x.offsetParent && !x.classList.contains('burger'));
+  const fits = () => {
+    const r = vis(right), rL = r.length ? Math.min(...r.map(x => x.getBoundingClientRect().left)) : right.getBoundingClientRect().left, bR = brand.getBoundingClientRect().right;
+    const a = links.offsetParent ? vis(links) : []; if (!a.length) return bR + 8 <= rL;
+    return a.at(-1).getBoundingClientRect().right + 10 <= rL && bR + 10 <= a[0].getBoundingClientRect().left;
+  };
+  for (const c of innerWidth > 1120 ? ['shift', 'compact', 'tight', 'tiny'] : ['compact', 'tiny']) { if (fits()) return; nav.classList.add(c); }
+}
+const fitNavSoon = () => { cancelAnimationFrame(fitNav.raf); fitNav.raf = requestAnimationFrame(fitNav); };
 function paintNav() {
+  { const calm = document.documentElement.classList.contains('calm'); $('#dCalm').textContent = calm ? 'Спокойный режим: вкл' : 'Спокойный режим: выкл'; $('#dCalm').setAttribute('aria-pressed', calm); $('#calmBtn').setAttribute('aria-pressed', calm); $('#calmBtn').textContent = calm ? 'Спокойный режим · вкл' : 'Спокойный режим'; }
   $('#sndBtn').innerHTML = soundOn ? I.sound : I.mute; $('#sndBtn').setAttribute('aria-label', soundOn ? 'Выключить звук' : 'Включить звук');
   $('#dSnd').innerHTML = `${soundOn ? I.sound : I.mute}${soundOn ? 'Звук включён' : 'Звук выключен'}`; $('#dSnd').setAttribute('aria-pressed', soundOn);
   const u = S.me;
@@ -60,6 +83,7 @@ function paintNav() {
   // клик по аватару открывает личный профиль/кабинет (а не сразу панель) — в кабинете у персонала есть кнопка «Панель персонала»
   $('#userBtn').onclick = () => location.hash = '#me';
   if (S.pub) { const f = S.pub.rooms.filter(r => r.status === 'free').length; { const nf = $('#navFree'), fp = nf.closest('.pill'); if (fp) fp.hidden = !wOn('free'); const val = `${f}/${S.pub.rooms.length}`; if (nf.textContent !== val) { const had = nf.textContent !== '—'; nf.textContent = val; if (had) { nf.classList.remove('tick'); void nf.offsetWidth; nf.classList.add('tick'); } } } $('#foot').textContent = S.pub.settings.footer || ''; paintGuests(); }
+  fitNav();
 }
 // сайт всегда в ночной теме: тёмный интерфейс, ночной отель и ночное небо
 function mode() { return 'night'; }
@@ -101,7 +125,7 @@ function route() {
   const next = viewOf(location.hash);
   if (itemsDirty && (next === 'contact' || next === 'me')) loadItems();
   if (next === 'contact' && current !== 'contact' && ticketStep === 3) { ticketStep = 1; curTicket = null; } // вернулись после отправки: снова чистая форма
-  const animate = VT && booted && next !== current && document.visibilityState === 'visible' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const animate = VT && booted && next !== current && document.visibilityState === 'visible' && !document.documentElement.classList.contains('calm');
   if (!animate) return doRoute();
   vtRunning?.skipTransition();
   const root = document.documentElement;
@@ -164,7 +188,8 @@ const RANK = { event: 0, live: 1, open: 2, calm: 3, soon: 4, closed: 5 };
 const FLAP_WORD = { live: 'LIVE', open: 'ОТКРЫТО', calm: 'ТИХО', closed: 'ЗАКРЫТО', event: 'СОБЫТИЕ', soon: 'СКОРО' };
 const flapPrev = new Map();
 // «Гостей в отеле»: сколько человек сейчас в отеле и сколько в гостевой книге. Источник — онлайн сервера отеля (IC-подача)
-function guestNote(g) { return `${g.total} ${plural(g.total, 'участник', 'участника', 'участников')} в Discord · ${g.online} онлайн`; }
+// IC-подача: без упоминания Discord — «в отеле сейчас» и «в гостевой книге»
+function guestNote(g) { return `в гостевой книге ${g.total} ${plural(g.total, 'имя', 'имени', 'имён')}`; }
 function paintGuests() {
   const g = S.pub?.guests, pill = $('#navGuests'); if (pill) pill.hidden = !g || !wOn('guests'); if (!g || !wOn('guests')) return;
   const n = $('#navG'), val = String(g.online); if (n && n.textContent !== val) { const had = n.textContent !== '—'; n.textContent = val; if (had) { n.classList.remove('tick'); void n.offsetWidth; n.classList.add('tick'); } }
@@ -261,7 +286,7 @@ function renderHome() {
   // Без 3D (меньше анимации, нет WebGL, сцена не создалась) атриум статичен и оба его экрана видны сразу.
   // Раньше второй экран показывал только 3D-модуль, и без него текст с кнопками оставался невидимым.
   const goStatic = () => { if (!hero.isConnected) return; hero.classList.add('static'); [dv1, dv2, hint].forEach(d => d.removeAttribute('style')); };
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !hasWebGL()) goStatic();
+  if (document.documentElement.classList.contains('calm') || !hasWebGL()) goStatic();
   else import('./hero3d.js').then(mod => {
     if (!heroCanvas.isConnected || mods.hero) return; // пока модуль грузился, главную уже пересобрали
     const h = mod.mountHero(heroCanvas, hero); if (!h) return goStatic(); mods.hero = h; const url = m === 'day' ? s.heroDay : s.heroNight; h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => { console.warn('hero', e); goStatic(); });
@@ -362,7 +387,7 @@ function goFloor(f) {
   const from = selFloor; selFloor = f; selRoom = null;
   mods.tower?.setVenues?.(towerVenues()); mods.tower?.update(S.pub.rooms, selFloor, S.pub.types); mods.tower?.focusRoom(null);
   paintLift(); $('#roomBox').innerHTML = '';
-  const d = $('#lfDoors'), reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const d = $('#lfDoors'), reduce = document.documentElement.classList.contains('calm');
   clearTimeout(liftTimer);
   if (reduce) { paintFloorPlan(); return; }
   d.classList.remove('open'); play('whoosh');
@@ -404,7 +429,7 @@ function paintStay() {
     const on = cmpSel.includes(t.id);
     return `<div class="typew reveal${on ? ' cmp-on' : ''}"><button class="type" data-t="${esc(t.id)}"><div ${bg(t.image, t.name, '#F7B50A', '#F0177A')}></div><div class="body"><div class="row" style="justify-content:space-between"><h4>${esc(t.name)}</h4><span class="pr">${money(t.price)}<small class="mut" style="font:600 .7rem var(--body)"> / ночь</small></span></div><p class="note">${esc(t.desc)}</p><div class="feat">${(t.features || []).map(x => `<span>${esc(x)}</span>`).join('')}${t.capacity ? `<span>до ${t.capacity} гостей</span>` : ''}</div><span class="chip ${f ? 'ok' : 'bad'}">${f ? `Свободно ${f} из ${fr.length}` : 'Всё занято'}</span></div></button><button type="button" class="cmpb" data-cmp="${esc(t.id)}" aria-pressed="${on}" aria-label="Сравнить: ${esc(t.name)}">${on ? I.check : I.plus}<span>Сравнить</span></button></div>`; }).join('');
   $$('#types [data-t]').forEach(b => b.onclick = () => openBooking(b.dataset.t));
-  $$('#types [data-cmp]').forEach(b => b.onclick = () => { const id = b.dataset.cmp; cmpSel = cmpSel.includes(id) ? cmpSel.filter(x => x !== id) : [...cmpSel, id].slice(-3); paintStay(); if (cmpSel.length >= 2 && cmpSel.includes(id)) $('#cmpBox')?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
+  $$('#types [data-cmp]').forEach(b => b.onclick = () => { const id = b.dataset.cmp; cmpSel = cmpSel.includes(id) ? cmpSel.filter(x => x !== id) : [...cmpSel, id].slice(-3); paintStay(); if (cmpSel.length >= 2 && cmpSel.includes(id)) $('#cmpBox')?.scrollIntoView({ block: 'nearest', behavior: document.documentElement.classList.contains('calm') ? 'auto' : 'smooth' }); });
   paintCompare();
   paintRoomFilter();
   reveal(view('stay'));
@@ -445,7 +470,7 @@ function wireKeyCard() {
 // «Забронировать»: ключ-карта вставляется в замок (уезжает вниз и гаснет), затем открывается бронь
 function insertKey(then) {
   const k = $('#keyCard');
-  if (!k || matchMedia('(prefers-reduced-motion: reduce)').matches) return then();
+  if (!k || document.documentElement.classList.contains('calm')) return then();
   k.style.setProperty('--ry', '0deg'); k.style.setProperty('--rx', '0deg');
   const a = k.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateY(-6%) rotateX(8deg)', offset: .3 }, { transform: 'translateY(38%) scaleY(.6)', opacity: 0 }], { duration: 420, easing: 'cubic-bezier(.5,0,.75,0)' });
   let done = false; play('soft');
@@ -548,14 +573,14 @@ function paintDay() {
 }
 function focusVenueCard(id) {
   const el = [...($('#venuesList')?.children || [])].find(x => x.dataset.venue === id); if (!el) return;
-  el.classList.add('in', 'hl'); el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  el.classList.add('in', 'hl'); el.scrollIntoView({ block: 'center', behavior: document.documentElement.classList.contains('calm') ? 'auto' : 'smooth' });
   setTimeout(() => el.classList.remove('hl'), 2200);
 }
 function renderLeisure() {
   const p = S.pub, m = mskMinutes();
   const lv = view('leisure');
   if (!lv.querySelector('#venuesList')) {
-    lv.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Отдых</span><h2>Что сейчас открыто</h2><p>Статусы обновляются по расписанию и по событиям из Discord. Днём работает Sky Pool, ночью Night Pool и The Hot Times.</p></div>
+    lv.innerHTML = `<div class="wrap sec"><div class="head"><span class="eyebrow">Отдых</span><h2>Что сейчас открыто</h2><p>Статусы обновляются по расписанию и по событиям отеля. Днём работает Sky Pool, ночью Night Pool и The Hot Times.</p></div>
       <div id="deckHost" class="reveal"></div><section class="hday reveal" id="hday" aria-label="Сутки отеля"></section><div class="venues" id="venuesList"></div></div>`;
     import('./deck.js').then(d => { mods.deck = d.mountDeck($('#deckHost'), S.pub.settings.deckTracks || [], { staff: !!S.me && S.me.role !== 'guest' }); mods.deck.active(current === 'leisure'); });
   }
@@ -675,7 +700,7 @@ function paintDishes() {
 const itemById = id => S.pub.menu.find(i => i.id === id) || (() => { const c = S.pub.cigars.find(x => x.id === id); return c && { ...c, name: 'Сигара ' + c.name }; })();
 // добавленная позиция «летит» по дуге от кнопки к счётчику корзины — видно, куда ушёл заказ
 function flyToCart(from) {
-  const fab = $('#fab'); if (!fab || !from?.isConnected || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const fab = $('#fab'); if (!fab || !from?.isConnected || document.documentElement.classList.contains('calm')) return;
   const a = from.getBoundingClientRect(); if (!a.width) return;
   const f = fab.getBoundingClientRect(), dy = new DOMMatrix(getComputedStyle(fab).transform).m42; // FAB может ещё выезжать
   const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2, tx = f.left + 22 - x0, ty = f.top - dy + f.height / 2 - y0;
@@ -877,14 +902,15 @@ function paintChat() {
   const col = $('#tChatCol'); if (!col) return;
   const mine = S.items.tickets; const t = mine.find(x => x.id === openTicketId && x.mode === 'site') || null;
   const focused = col.contains(document.activeElement); const draft = $('#chatIn')?.value || '';
-  col.innerHTML = `${t ? `<div class="chat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span></header><div class="msgs" id="msgs"><div class="msg sys">Обращение открыто ${when(t.createdAt)}</div>${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}">${esc(m.text)}<small>${m.from === 'staff' ? 'Управляющий' + (m.by ? ' · ' + esc(m.by) : '') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? '<div class="compose note">Обращение закрыто.</div>' : `<form class="compose" id="chatF"><input id="chatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение"><button class="btn sm" data-sfx="">Отправить</button></form>`}</div>` : ''}
+  col.innerHTML = `${t ? `<div class="chat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span></header><div class="msgs" id="msgs"><div class="msg sys">Обращение открыто ${when(t.createdAt)}</div>${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${oocTag(m)}${esc(m.text)}<small>${m.from === 'staff' ? esc(m.by || 'Управляющий') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? '<div class="compose note">Обращение закрыто.</div>' : (S.items.profile?.name ? `<form class="compose" id="chatF">${oocSwitch('t:' + t.id)}<input id="chatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение"><button class="btn sm" data-sfx="">Отправить</button></form>` : icNeedBox())}</div>` : ''}
     <div class="card pad stack"><h3 style="font-size:1.05rem">Мои обращения</h3>${mine.length ? `<div class="list">${mine.map(x => `<div class="item"><div class="top"><b>${esc(x.topic)}</b><span class="chip ${x.status === 'open' ? 'ok' : x.status === 'checking' ? 'warn' : 'm'}">${TICKET_STATUS[x.status]}</span></div><span class="note">${x.mode === 'discord' ? 'Ведётся в Discord' : x.mode === 'site' ? 'Чат на сайте' : 'Ожидает выбора'} · ${when(x.createdAt)}${x.lastFrom === 'staff' && x.mode === 'site' ? ' · <b style="color:var(--pink)">новый ответ</b>' : ''}</span>${x.mode === 'site' ? `<div><button class="btn sm ghost" data-open="${esc(x.id)}">Открыть чат</button></div>` : ''}</div>`).join('')}</div>` : '<p class="note">Пока пусто.</p>'}</div>`;
   if ($('#chatIn')) { $('#chatIn').value = draft; if (focused) $('#chatIn').focus(); }
   const ms = $('#msgs'); if (ms) ms.scrollTop = ms.scrollHeight;
   markRead(t);
   $$('#tChatCol [data-open]').forEach(b => b.onclick = () => { openTicketId = b.dataset.open; paintChat(); });
+  const isOoc = wireOoc($('#chatF'), 't:' + t?.id);
   $('#chatF') && ($('#chatF').onsubmit = async e => { e.preventDefault(); const inp = $('#chatIn'), text = inp.value.trim(); if (!text) return; inp.value = '';
-    try { await api('POST', `/tickets/${t.id}/messages`, { text }); play('soft'); await loadItems(); } catch (err) { fail(err); inp.value = text; } });
+    try { await api('POST', `/tickets/${t.id}/messages`, { text, ooc: isOoc() }); play('soft'); await loadItems(); } catch (err) { fail(err); inp.value = text; } });
 }
 
 /* ---------------- кабинет ---------------- */
@@ -921,8 +947,8 @@ function bkStage(b, room) {
 function bkChat(b) {
   const ms = b.messages || [], closed = ['done', 'cancelled'].includes(b.status);
   return `<div class="chat mechat bkchat" id="bkc-${esc(b.id)}"><div class="msgs" id="bkMsgs-${esc(b.id)}" role="log" aria-label="Переписка по брони ${esc(b.code)}">${ms.map(m => m.from === 'system' ? `<div class="msg sys">${esc(m.text)} <small>${when(m.at)}</small></div>`
-      : `<div class="msg ${m.from === 'guest' ? 'me' : ''}">${m.from === 'staff' ? `<b class="who">${esc(m.by ? 'Управляющий' : 'Отель')}</b>` : ''}${esc(m.text)}<small>${when(m.at)}</small></div>`).join('') || '<div class="msg sys">Напишите отелю — ответ придёт сюда</div>'}</div>
-    ${closed ? '<p class="note" style="margin:.4rem 0 0">Бронь закрыта. Если остался вопрос — напишите, управляющие увидят.</p>' : ''}<form class="compose" data-bkform="${esc(b.id)}"><textarea rows="1" maxlength="1000" placeholder="Сообщение отелю…" aria-label="Сообщение отелю"></textarea><button class="btn sm">Отправить</button></form></div>`;
+      : `<div class="msg ${m.from === 'guest' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${m.from === 'staff' ? `<b class="who">${esc(m.by || 'Отель')}</b>` : ''}${oocTag(m)}${esc(m.text)}<small>${when(m.at)}</small></div>`).join('') || '<div class="msg sys">Напишите отелю — ответ придёт сюда</div>'}</div>
+    ${closed ? '<p class="note" style="margin:.4rem 0 0">Бронь закрыта. Если остался вопрос — напишите, управляющие увидят.</p>' : ''}<form class="compose" data-bkform="${esc(b.id)}">${oocSwitch('b:' + b.id)}<textarea rows="1" maxlength="1000" placeholder="Сообщение отелю…" aria-label="Сообщение отелю"></textarea><button class="btn sm">Отправить</button></form></div>`;
 }
 function reviewState(b) {
   const r = (S.items.reviews || []).find(x => x.bookingId === b.id);
@@ -939,7 +965,7 @@ function tierBlock(st) {
     ${T.length ? `<ul class="tier-list">${T.map(t => `<li class="${cur?.name === t.name ? 'on' : ''}"><b>${esc(t.name)}</b><span>от ${t.nights} ${plural(t.nights, 'ночи', 'ночей', 'ночей')}${t.discount ? ` · скидка ${t.discount}%` : ''}${t.perk ? ' · ' + esc(t.perk) : ''}</span></li>`).join('')}</ul>` : ''}</div>`;
 }
 function meChat(t) {
-  return `<div class="chat mechat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span></header><div class="msgs" id="meMsgs">${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}">${esc(m.text)}<small>${m.from === 'staff' ? 'Управляющий' + (m.by ? ' · ' + esc(m.by) : '') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? '<div class="compose note">Обращение закрыто.</div>' : `<form class="compose" id="meChatF"><input id="meChatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение управляющим"><button class="btn sm" data-sfx="">Отправить</button></form>`}</div>`;
+  return `<div class="chat mechat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span></header><div class="msgs" id="meMsgs">${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${oocTag(m)}${esc(m.text)}<small>${m.from === 'staff' ? esc(m.by || 'Управляющий') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? '<div class="compose note">Обращение закрыто.</div>' : (S.items.profile?.name ? `<form class="compose" id="meChatF">${oocSwitch('t:' + t.id)}<input id="meChatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение управляющим"><button class="btn sm" data-sfx="">Отправить</button></form>` : icNeedBox())}</div>`;
 }
 // LifeX: доступна, если на сервере заданы адреса приложения LifeX
 let lxOn = null, lxN = 0;
@@ -1009,23 +1035,24 @@ function renderMe() {
     updFab(true); play('add'); unlock('again'); openCart(); const room = document.getElementById('oRoom'); if (room && !room.value) room.value = o.room;
   });
   $$('#main [data-bkchat]').forEach(x => x.onclick = () => { const id = x.dataset.bkchat, isOpen = meBk === id || (meBk === null && bkUnread(it.bookings.find(b => b.id === id) || {}) > 0);
-    meBk = isOpen && !x.dataset.focus ? '' : id; renderMe(); const ta = document.querySelector(`[data-bkform="${CSS.escape(id)}"] textarea`); if (ta && (x.dataset.focus || !isOpen)) ta.focus({ preventScroll: true }); document.getElementById('bk-' + id)?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); });
+    meBk = isOpen && !x.dataset.focus ? '' : id; renderMe(); const ta = document.querySelector(`[data-bkform="${CSS.escape(id)}"] textarea`); if (ta && (x.dataset.focus || !isOpen)) ta.focus({ preventScroll: true }); document.getElementById('bk-' + id)?.scrollIntoView({ block: 'nearest', behavior: document.documentElement.classList.contains('calm') ? 'auto' : 'smooth' }); });
   $$('#main [data-roomsvc]').forEach(x => x.onclick = () => { location.hash = '#dining'; toast(`Заказ придёт в номер ${x.dataset.roomsvc}`); });
   it.bookings.forEach(b => { const box = document.getElementById('bkMsgs-' + b.id); if (!box) return; box.scrollTop = box.scrollHeight; bkMarkRead(b); });
-  $$('#main [data-bkform]').forEach(f => { const ta = f.querySelector('textarea'), id = f.dataset.bkform;
+  $$('#main [data-bkform]').forEach(f => { const ta = f.querySelector('textarea'), id = f.dataset.bkform, isOoc = wireOoc(f, 'b:' + id);
     if (bkFocus === id) ta.focus({ preventScroll: true }); ta.onfocus = () => { bkFocus = id; }; ta.onblur = () => setTimeout(() => { if (!document.activeElement?.closest?.('[data-bkform]')) bkFocus = null; }, 0);
     if (bkDraft[id]) ta.value = bkDraft[id]; ta.oninput = () => { bkDraft[id] = ta.value; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
     // Enter — отправить, Shift+Enter — новая строка; во время набора через IME Enter только подтверждает слово
     ta.onkeydown = e => { if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return; e.preventDefault(); if (e.isComposing || e.keyCode === 229) return; if (!e.repeat) f.requestSubmit(); };
-    f.onsubmit = async e => { e.preventDefault(); const text = ta.value.trim(); if (!text) return; const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Отправляем…';
-      try { await api('POST', `/me/bookings/${id}/messages`, { text }); bkDraft[id] = ''; meBk = id; play('soft'); await loadItems(); document.querySelector(`[data-bkform="${CSS.escape(id)}"] textarea`)?.focus({ preventScroll: true }); }
+    f.onsubmit = async e => { e.preventDefault(); const text = ta.value.trim(); if (!text) return; const btn = f.querySelector('button.btn'); btn.disabled = true; btn.textContent = 'Отправляем…';
+      try { await api('POST', `/me/bookings/${id}/messages`, { text, ooc: isOoc() }); bkDraft[id] = ''; meBk = id; play('soft'); await loadItems(); document.querySelector(`[data-bkform="${CSS.escape(id)}"] textarea`)?.focus({ preventScroll: true }); }
       catch (err) { fail(err); btn.disabled = false; btn.textContent = 'Отправить'; } }; });
   $$('#main [data-chat]').forEach(b => b.onclick = () => { meTicket = meTicket === b.dataset.chat ? null : b.dataset.chat; renderMe(); });
   if (chatT) {
     const ms = $('#meMsgs'); if (ms) ms.scrollTop = ms.scrollHeight; markRead(chatT);
     if ($('#meChatIn')) { $('#meChatIn').value = draft; if (focused) $('#meChatIn').focus(); }
+    const isOoc = wireOoc($('#meChatF'), 't:' + chatT.id);
     $('#meChatF') && ($('#meChatF').onsubmit = async e => { e.preventDefault(); const inp = $('#meChatIn'), text = inp.value.trim(); if (!text) return; inp.value = '';
-      try { await api('POST', `/tickets/${chatT.id}/messages`, { text }); play('soft'); await loadItems(); $('#meChatIn')?.focus(); } catch (err) { fail(err); inp.value = text; } });
+      try { await api('POST', `/tickets/${chatT.id}/messages`, { text, ooc: isOoc() }); play('soft'); await loadItems(); $('#meChatIn')?.focus(); } catch (err) { fail(err); inp.value = text; } });
   }
   $('#meProf').onsubmit = async e => { e.preventDefault();
     try { await api('PUT', '/me/profile', { name: $('#pfName').value, phone: $('#pfPhone').value, note: $('#pfNote').value, dm: $('#pfDm').checked }); play('soft'); reload('Профиль сохранён'); } catch (err) { fail(err); } };

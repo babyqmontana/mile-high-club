@@ -140,7 +140,11 @@ test('мост Discord: сообщения брони и заявки-с-сай�
   // заявка в режиме «чат на сайте» зеркалится в канал при открытии и на каждое сообщение
   const t = (await core.handle('POST', '/tickets', { body: { discord: 'tony', topic: 'Вопрос', text: 'Есть ли парковка?' }, guestKey: 'k1' })).ticket;
   await core.handle('POST', `/tickets/${t.id}/mode`, { body: { mode: 'site' }, guestKey: 'k1' });
+  // у гостя без имени персонажа сообщение не уходит; имя из профиля снимает запрет
+  await assert.rejects(core.handle('POST', `/tickets/${t.id}/messages`, { body: { text: 'И где вход?' }, guestKey: 'k1' }), e => e.status === 428);
+  await core.handle('PUT', '/me/profile', { body: { name: 'Тони Монтана' }, guestKey: 'k1' });
   await core.handle('POST', `/tickets/${t.id}/messages`, { body: { text: 'И где вход?' }, guestKey: 'k1' });
+  await core.handle('PUT', '/me/profile', { body: { name: 'Аманда Ли' }, user: ADMIN });
   await core.handle('POST', `/tickets/${t.id}/messages`, { body: { text: 'Вход со стороны лобби' }, user: ADMIN });
   const kinds = bridge.filter(x => x[0] === 'ticket');
   assert.ok(kinds.some(x => x[1] === 'guest' && /парковка|вход/.test(x[2])), 'реплики гостя зеркалятся в канал');
@@ -158,9 +162,11 @@ test('переписка по брони: гость пишет только в 
   await core.handle('POST', `/me/bookings/${b.id}/messages`, { body: { text: 'Можно с видом на город?' }, guestKey: 'k1' });
   assert.equal(s.get('bookings', b.id).staffUnread, 1);
   await assert.rejects(core.handle('POST', `/admin/bookings/${b.id}/messages`, { body: { text: 'x' }, user: null }), /прав|вход|доступ/i);
+  await assert.rejects(core.handle('POST', `/admin/bookings/${b.id}/messages`, { body: { text: 'x' }, user: mod }), e => e.status === 428);
+  await core.handle('PUT', '/me/profile', { body: { name: 'Марко Росси' }, user: mod });
   await core.handle('POST', `/admin/bookings/${b.id}/messages`, { body: { text: 'Подберём, ждите подтверждения' }, user: mod });
   const after = s.get('bookings', b.id);
-  assert.equal(after.staffUnread, 0); assert.equal(after.messages.at(-1).from, 'staff'); assert.equal(after.messages.at(-1).by, 'M');
+  assert.equal(after.staffUnread, 0); assert.equal(after.messages.at(-1).from, 'staff'); assert.equal(after.messages.at(-1).by, 'Марко Росси');
   const items = await core.handle('GET', '/me/items', { guestKey: 'k1' });
   assert.ok(items.notices.some(n => /Отель ответил по брони/.test(n.text)), 'гостю пришло уведомление');
   await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act: 'confirm', room: '2201' }, user: admin });
