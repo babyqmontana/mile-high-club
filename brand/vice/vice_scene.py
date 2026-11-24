@@ -4,7 +4,7 @@
 # Всё строится кодом — никаких чужих моделей и текстур.
 #
 #   blender -b -P brand/vice/vice_scene.py -- <day|night> <out_dir> [scale]
-#   blender -b -P brand/vice/vice_scene.py -- model public/img/vice   — только главный отель с площадкой → hotel.glb (витрина «Номеров»)
+#   blender -b -P brand/vice/vice_scene.py -- bake public/img/vice   — запечь свет и собрать hotel.glb (vice_bake.py)
 #
 # Рендерит четыре прохода: full (кадр), far (без среднего и ближнего планов), mn (альфа среднего+ближнего),
 # n (альфа ближнего). build_vice.py собирает из них img/vice/<day|night>.webp, -far.webp и -mask.webp.
@@ -15,8 +15,8 @@ argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 VAR = argv[0] if argv else 'night'
 OUT = argv[1] if len(argv) > 1 else os.path.join(os.path.dirname(__file__), 'out')
 SCALE = float(argv[2]) if len(argv) > 2 else 1.0
-MODEL = VAR == 'model'
-NIGHT = VAR in ('night', 'model')  # в модели неон и окна с эмиссией, яркость дня/ночи регулирует сайт
+BAKE = VAR == 'bake'
+NIGHT = VAR in ('night', 'bake')
 os.makedirs(OUT, exist_ok=True)
 random.seed(306)
 
@@ -73,22 +73,38 @@ M = {
     'glass_pink': mat('glass_pink', hexc('#1a2a3a'), .2, 0, hexc('#7fe8ff'), 2.2 if NIGHT else .0),
     'glass_rose': mat('glass_rose', hexc('#2a1a2a'), .2, 0, hexc('#ff9ad0'), 2.0 if NIGHT else .0),
     'store': mat('store', hexc('#2a1a22'), .25, 0, hexc('#ffb48a'), 1.1 if NIGHT else 0),
+    'plate': mat('plate', hexc('#2a1630'), .5),
     'neon_pink': mat('neon_pink', PINK, .4, 0, PINK, NEON_K),
     'neon_cyan': mat('neon_cyan', CYAN, .4, 0, CYAN, NEON_K),
     'neon_violet': mat('neon_violet', VIOLET, .4, 0, VIOLET, NEON_K),
     'lamp': mat('lamp', hexc('#fff1d6'), .3, 0, hexc('#ffd59a'), 9 if NIGHT else .5),
-    'asphalt': mat('asphalt', hexc('#2a2530'), .32 if NIGHT else .55, .1),
-    'walk': mat('walk', hexc('#d9c7b8'), .7),
-    'sand': mat('sand', hexc('#e9cfa7'), .95),
+    'asphalt': mat('asphalt', hexc('#221d2a'), .16 if NIGHT else .55, .1),
+    'walk': mat('walk', hexc('#8f7f88') if NIGHT else hexc('#d9c7b8'), .3 if NIGHT else .7),
+    'tile': mat('tile', hexc('#5a3f5e') if NIGHT else hexc('#e0a9b4'), .28),
+    'hedge': mat('hedge', hexc('#2f6b45'), .9),
+    'awn_a': mat('awn_a', hexc('#ff6fae'), .8), 'awn_b': mat('awn_b', hexc('#fff3e6'), .8), 'awn_c': mat('awn_c', hexc('#47cfc0'), .8),
+    'sand': mat('sand', hexc('#6b5574') if NIGHT else hexc('#e9cfa7'), .42 if NIGHT else .95),
     'metal': mat('metal', hexc('#2b2730'), .35, .8),
-    'trunk': mat('trunk', hexc('#5b4636') if not NIGHT else hexc('#1d1420'), .9),
-    'frond': mat('frond', hexc('#2f6b4a') if not NIGHT else hexc('#0f1a1c'), .7),
-    'far': mat('far', hexc('#f2a28f') if not NIGHT else hexc('#2a1440'), .9, 0, hexc('#ffb38a') if not NIGHT else hexc('#3a1858'), .25),
+    'trunk': mat('trunk', hexc('#5b4636') if not NIGHT else hexc('#5a463f'), .9),
+    'frond': mat('frond', hexc('#2f6b4a') if not NIGHT else hexc('#2f6a4e'), .7),
+    'far': mat('far', hexc('#f2a28f') if not NIGHT else hexc('#2a1440'), .9, 0, hexc('#ffb38a') if not NIGHT else hexc('#4d2160'), .25 if not NIGHT else .85),
     'far_win': mat('far_win', hexc('#ffd2a8'), .5, 0, hexc('#ffc58a'), 1.6 if NIGHT else 0),
     'chrome': mat('chrome', hexc('#e8e6ee'), .15, 1),
     'car': mat('car', hexc('#ff5fa2'), .25, .3),
     'water': mat('water', hexc('#1fb3b3') if not NIGHT else hexc('#0b3a4a'), .05, .2, hexc('#3ef2e0'), .6 if NIGHT else .1),
 }
+
+# штукатурка и камень: мягкие разводы и зерно вместо ровной заливки
+for k in ('stucco_pink', 'stucco_mint', 'stucco_lav', 'stucco_cream', 'stucco_peach', 'trim', 'walk', 'asphalt', 'sand'):
+    nt = M[k].node_tree; b = nt.nodes.get('Principled BSDF'); c = tuple(b.inputs['Base Color'].default_value)
+    geo = nt.nodes.new('ShaderNodeNewGeometry'); big = nt.nodes.new('ShaderNodeTexNoise'); fine = nt.nodes.new('ShaderNodeTexNoise'); ramp = nt.nodes.new('ShaderNodeValToRGB'); bump = nt.nodes.new('ShaderNodeBump')
+    big.inputs['Scale'].default_value = .55; big.inputs['Detail'].default_value = 6; fine.inputs['Scale'].default_value = 9; fine.inputs['Detail'].default_value = 5
+    for n in (big, fine): nt.links.new(geo.outputs['Position'], n.inputs['Vector'])
+    d = .6 if k == 'asphalt' else .8
+    ramp.color_ramp.elements[0].position, ramp.color_ramp.elements[0].color = .3, (c[0] * d, c[1] * d, c[2] * d, 1)
+    ramp.color_ramp.elements[1].position, ramp.color_ramp.elements[1].color = .62, c
+    nt.links.new(big.outputs[0], ramp.inputs[0]); nt.links.new(ramp.outputs[0], b.inputs['Base Color'])
+    bump.inputs['Strength'].default_value = .12; bump.inputs['Distance'].default_value = .03; nt.links.new(fine.outputs[0], bump.inputs['Height']); nt.links.new(bump.outputs[0], b.inputs['Normal'])
 
 # ---------- примитивы ----------
 def _mesh_box():
@@ -110,16 +126,68 @@ def text(body, loc, size, m, col=MID, rot=(math.pi / 2, 0, 0), extrude=.08, alig
     cu = bpy.data.curves.new('t', 'FONT'); cu.body = body; cu.size = size; cu.extrude = extrude; cu.align_x = align; cu.align_y = 'CENTER'
     o = bpy.data.objects.new('txt', cu); col.objects.link(o); o.location = loc; o.rotation_euler = rot; o.data.materials.append(m); return o
 
+# ---------- окна и витрины: нарисованные текстуры (make_windows.py) и настоящие рамы, дающие тень ----------
+HERE = os.path.dirname(os.path.abspath(__file__)); TEX = os.path.join(HERE, 'tex')
+def tex_mat(name, file, k):
+    m = mat(name, (0, 0, 0), .4); nt = m.node_tree; b = nt.nodes.get('Principled BSDF')
+    t = nt.nodes.new('ShaderNodeTexImage'); t.image = bpy.data.images.load(os.path.join(TEX, file))
+    nt.links.new(t.outputs['Color'], b.inputs['Base Color']); nt.links.new(t.outputs['Color'], b.inputs['Emission Color']); b.inputs['Emission Strength'].default_value = k
+    return m
+SUF = 'night' if NIGHT else 'day'
+M['win'] = tex_mat('win', f'windows-{SUF}.png', 1.5 if NIGHT else .25)
+M['storefront'] = tex_mat('storefront', f'store-{SUF}.png', 1.9 if NIGHT else .25)
+def quad(cx, y, cz, w, h, m, cell, cols, rows, col=MID, round_=False):
+    u0, v0 = (cell % cols) / cols, 1 - (cell // cols + 1) / rows; du, dv = 1 / cols, 1 / rows
+    if round_: pts = [(.5 + .5 * math.cos(a), .5 + .5 * math.sin(a)) for a in [k / 24 * math.tau for k in range(24)]]
+    else: pts = [(0, 0), (1, 0), (1, 1), (0, 1)]
+    me = bpy.data.meshes.new('q'); me.from_pydata([(cx + (a - .5) * w, y, cz + (b - .5) * h) for a, b in pts], [], [list(range(len(pts)))])
+    uv = me.uv_layers.new(name='UVMap')
+    for i, (a, b) in enumerate(pts): uv.data[i].uv = (u0 + a * du, v0 + b * dv)
+    me.materials.append(m); o = bpy.data.objects.new('q', me); col.objects.link(o); return o
+def window(cx, cz, w, h, y=0., lit=.42, col=MID):
+    cell = random.choice([6, 7, 8, 9, 10, 11]) if random.random() < lit else random.choice([0, 1, 2, 3, 4, 5])
+    quad(cx, y - .03, cz, w, h, M['win'], cell, 4, 3, col)
+    t = .1
+    for s_ in (-1, 1): box((cx + s_ * (w / 2 + t / 2), y - .07, cz), (t, .2, h + t * 2), M['trim'], col)
+    box((cx, y - .07, cz + h / 2 + t / 2), (w, .2, t), M['trim'], col); box((cx, y - .16, cz - h / 2 - .07), (w + .4, .4, .12), M['trim'], col)
+def balcony(cx, z, w, m, col=MID):
+    box((cx, -.5, z), (w, 1.0, .14), M['trim'], col); box((cx, -.96, z + .62), (w, .07, .07), m, col)
+    n = max(3, int(w / .3))
+    for i in range(n + 1): box((cx - w / 2 + w * i / n, -.96, z + .34), (.045, .045, .56), M['trim'], col)
+    for s_ in (-1, 1): box((cx + s_ * w / 2, -.5, z + .62), (.06, .95, .06), m, col)
+def awning(cx, z, w, a, b, col=MID):
+    n = max(4, int(w / .36)); st = w / n
+    for i in range(n): box((cx - w / 2 + st * (i + .5), -.72, z), (st * .98, 1.5, .06), M[a if i % 2 else b], col, rot=(math.radians(24), 0, 0)); box((cx - w / 2 + st * (i + .5), -1.4, z - .42), (st * .98, .05, .26), M[a if i % 2 else b], col)
+def parasol(x, y, a, b, col=MID):
+    cyl((x, y, 1.2), .05, 2.4, M['trim'], col)
+    me = bpy.data.meshes.new('par'); n = 12; vs = [(0, 0, .55)] + [(1.25 * math.cos(k / n * math.tau), 1.25 * math.sin(k / n * math.tau), 0) for k in range(n)]
+    me.from_pydata(vs, [], [(0, 1 + k, 1 + (k + 1) % n) for k in range(n)]); me.materials.append(M[a]); me.materials.append(M[b])
+    me.polygons.foreach_set('material_index', [k % 2 for k in range(n)])
+    for mi, name in ((0, a), (1, b)):
+        m2 = bpy.data.meshes.new('p2'); keep = [(0, 1 + k, 1 + (k + 1) % n) for k in range(n) if k % 2 == mi]; m2.from_pydata(vs, [], keep); m2.materials.append(M[name]); o = bpy.data.objects.new('p2', m2); col.objects.link(o); o.location = (x, y, 2.15)
+    cyl((x, y, .72), .45, .05, M['trim'], col); cyl((x, y, .36), .04, .7, M['metal'], col)
+    for dx in (-.75, .75): box((x + dx, y, .42), (.4, .4, .06), M[a], col); box((x + dx * 1.22, y, .68), (.06, .4, .5), M[a], col)
+def hedge(x, y, w, col=MID):
+    box((x, y, .22), (w, .6, .44), M['trim'], col)
+    for i in range(int(w / .42)):
+        me = bpy.data.meshes.get('ico') or _ico(); put(me, (x - w / 2 + .25 + i * .42, y, .62 + .06 * (i % 2)), (.32, .3, .3), M['hedge'], col)
+def _ico():
+    me = bpy.data.meshes.new('ico'); bm = bmesh.new(); bmesh.ops.create_icosphere(bm, subdivisions=1, radius=1); bm.to_mesh(me); bm.free(); me.materials.append(None); return me
+def storefronts(x0, w, col=MID):
+    n = max(1, int(w // 3)); step = (w - .6) / n
+    for k in range(n):
+        quad(x0 + .3 + step * (k + .5), -.06, 1.85, step - .45, 3.3, M['storefront'], 3 if k == n // 2 else k % 3, 4, 1, col)
+
 # ---------- отель ар-деко ----------
 # фасад смотрит на камеру (−Y), здание стоит от y=0 вглубь
-def deco_hotel(x0, w, floors, body, accent, neon, col=MID, tower=None, round_left=False, sign=None, portholes=False):
+def deco_hotel(x0, w, floors, body, accent, neon, col=MID, skip=None, round_left=False, sign=None, portholes=False):
     fh = 3.2; h = floors * fh + 1.2; d = 11
     box((x0 + w / 2, d / 2, h / 2), (w, d, h), body, col)
     if round_left:  # скруглённый угол — визитная карточка Майами ар-деко
         r = 2.6
         cyl((x0, r, h / 2), r, h, body, col)
     # первый этаж: витрины, колонны, козырёк
-    box((x0 + w / 2, -.15, 1.9), (w - .4, .2, 3.4), M['store'] if NIGHT else M['glass'], col)
+    storefronts(x0, w, col)
     for k in range(int(w // 3) + 1):
         box((x0 + .3 + k * (w - .6) / max(1, int(w // 3)), -.3, 1.9), (.45, .5, 3.6), M['trim'], col)
     # этажи: ленточные окна, над каждым — «бровь»-козырёк, по кромке неон
@@ -127,13 +195,16 @@ def deco_hotel(x0, w, floors, body, accent, neon, col=MID, tower=None, round_lef
         y = f * fh + .9
         if portholes:
             for k in range(int(w // 2.2)):
-                cyl((x0 + 1.4 + k * 2.2, -.05, y + .9), .55, .2, random.choice([M['glass'], M['glass_lit'], M['glass_lit']]) if NIGHT else M['glass'], col, rot=(math.pi / 2, 0, 0))
+                cyl((x0 + 1.4 + k * 2.2, -.06, y + .9), .72, .16, M['trim'], col, rot=(math.pi / 2, 0, 0))
+                quad(x0 + 1.4 + k * 2.2, -.16, y + .9, 1.16, 1.16, M['win'], random.choice([0, 3, 5, 6, 9]), 4, 3, col, True)
         else:
             n = max(2, int(w // 2.6))
             for k in range(n):
                 ww = (w - 1.2) / n
-                lit = random.random() < (.38 if NIGHT else 0)
-                box((x0 + .6 + ww * (k + .5), -.05, y + .9), (ww - .45, .2, 1.7), random.choice([M['glass_lit'], M['glass_lit'], M['glass_pink'], M['glass_rose']]) if lit else M['glass'], col)
+                cx = x0 + .6 + ww * (k + .5)
+                if skip and skip[0] < cx + ww / 2 and cx - ww / 2 < skip[1]: continue   # здесь выступает башня
+                window(cx, y + .85, ww - .6, 1.75, 0, .58, col)
+                if k % 2 == f % 2 and not portholes: balcony(cx, y - .18, ww - .35, accent, col)
         box((x0 + w / 2, -.55, y + 2.05), (w + .3, 1.1, .18), M['trim'], col)                       # бровь
         box((x0 + w / 2, -1.08, y + 2.0), (w + .3, .06, .06), M[neon] if f == floors - 1 else M['trim'], col)
     # парапет ступенями и неоновая кромка крыши
@@ -148,16 +219,17 @@ def deco_hotel(x0, w, floors, body, accent, neon, col=MID, tower=None, round_lef
     if sign:
         box((x0 + w / 2, -2.1, 4.0), (w * .7, 3.2, .25), M['trim'], col)                             # козырёк входа
         box((x0 + w / 2, -3.72, 4.0), (w * .7, .06, .06), M[neon], col)
+        box((x0 + w / 2, -3.62, 4.72), (len(sign) * .62 + .8, .12, 1.15), M['plate'], col)              # подложка: буквы не спорят с окнами
         text(sign, (x0 + w / 2, -3.75, 4.75), .78, M[neon], col, extrude=.06)
     return h
 
 # главный отель: центральная башня со ступенчатой короной и неоновым пилоном
 def main_hotel(x0=-3.0, w=19.0):
     col = MID
-    h = deco_hotel(x0, w, 5, M['stucco_cream'], M['stucco_mint'], 'neon_cyan', col, round_left=True, sign='MILE HIGH CLUB')
+    h = deco_hotel(x0, w, 5, M['stucco_cream'], M['stucco_mint'], 'neon_cyan', col, round_left=True, sign='MILE HIGH CLUB', skip=(x0 + w * .62 - 3.1, x0 + w * .62 + 3.1))
     cx = x0 + w * .62
     tw, th = 6.2, h + 9
-    box((cx, 3.0, th / 2), (tw, 6, th), M['stucco_pink'], col)
+    box((cx, 2.8, th / 2), (tw, 6, th), M['stucco_pink'], col)  # чуть вперёд: совпавшие плоскости рябят
     for k, (s, dz) in enumerate(((1.0, 0), (.78, 1.6), (.56, 3.0), (.34, 4.2))):   # ступени короны
         z = th + dz
         box((cx, 3.0, z + .75), (tw * s, 6 * s, 1.5), M['stucco_cream'] if k % 2 == 0 else M['stucco_mint'], col)
@@ -166,8 +238,10 @@ def main_hotel(x0=-3.0, w=19.0):
     cyl((cx, 3.0, th + 10.5), .22, .22, M['neon_pink'], col)
     # окна башни: вертикальные ленты
     for k in (-1, 0, 1):
-        for f in range(int(h // 3.2), int(th // 3.2)):
-            box((cx + k * 1.7, -.02, f * 3.2 + 1.6), (1.1, .1, 2.2), M['glass_lit'] if (NIGHT and random.random() < .6) else M['glass'], col)
+        for f in range(2, int(th // 3.2)):
+            if k: window(cx + k * 2.2, f * 3.2 + 1.75, 1.15, 2.0, -.2, .5, col)   # по центру — пилон
+    for k in (-1, 0, 1): quad(cx + k * 1.95, -.26, 1.85, 1.7, 3.3, M['storefront'], 3 if k == 0 else 1, 4, 1, col)   # парадный вход
+    for k in (-1.5, -.5, .5, 1.5): box((cx + k * 1.95, -.38, 1.9), (.22, .4, 3.6), M['trim'], col)
     # вертикальный неоновый пилон MILE HIGH: белая лопатка, буквы по одной сверху вниз
     fx, fz0 = cx, th - 1.2
     box((fx, -1.2, fz0 - 7.5), (1.7, 2.4, 15.5), M['trim'], col)
@@ -196,7 +270,8 @@ def far_city():
         box((x, y, h / 2), (w, 6, h), M['far'], FAR)
         if NIGHT:
             for r in range(3, int(h), 3):
-                if random.random() < .5: box((x + random.uniform(-w / 3, w / 3), y - 3.05, r), (1.2, .1, .8), M['far_win'], FAR)
+                for _ in range(3):
+                    if random.random() < .42: box((x + random.uniform(-w / 2.4, w / 2.4), y - 3.05, r), (.55, .1, .7), M['far_win'], FAR)
 
 def retro_sun():
     if NIGHT: return
@@ -232,14 +307,18 @@ def lamp(x, y, col=MID):
         L = bpy.data.lights.new('l', 'POINT'); L.use_shadow = False; L.energy = 380; L.color = hexc('#ffc890'); L.shadow_soft_size = .3
         lo = bpy.data.objects.new('l', L); col.objects.link(lo); lo.location = (x, y - .75, 4.7)
 
-def frond_mesh(L=3.6, wmax=.55, droop=.55, seg=14):
-    me = bpy.data.meshes.new('frond'); bm = bmesh.new(); vs = []
-    for i in range(seg + 1):
-        t = i / seg; x = t * L; z = -droop * (t ** 2) * L * .5; w = wmax * math.sin(math.pi * min(1, t * 1.08)) * (1.0 if i % 2 == 0 else .55)
-        vs.append((bm.verts.new((x, -w, z - .05 * w)), bm.verts.new((x, 0, z + .04)), bm.verts.new((x, w, z - .05 * w))))
-    for i in range(seg):
-        a, b = vs[i], vs[i + 1]
-        bm.faces.new((a[0], b[0], b[1], a[1])); bm.faces.new((a[1], b[1], b[2], a[2]))
+def frond_mesh(L=3.6, n=15):
+    # перистый лист: дуга-стебель и тонкие свисающие листочки по обе стороны
+    me = bpy.data.meshes.new('frond'); bm = bmesh.new()
+    P = lambda t: Vector((t * L, 0, .32 * math.sin(t * 2.2) * L * .35 - .42 * t ** 2.4 * L))
+    for i in range(6):
+        a, b = P(i / 6), P((i + 1) / 6); w = .035 * (1 - i / 7)
+        bm.faces.new([bm.verts.new(v) for v in (a + Vector((0, -w, 0)), b + Vector((0, -w * .8, 0)), b + Vector((0, w * .8, 0)), a + Vector((0, w, 0)))])
+    for i in range(n):
+        t = .1 + .88 * i / (n - 1); c = P(t); ln = .95 * math.sin(math.pi * (.14 + .8 * t)) + .12
+        for sd in (-1, 1):
+            tip = c + Vector((ln * .55, sd * ln * .8, -ln * .38)); d = Vector((.075, 0, 0)); md = (c + tip) / 2 + Vector((0, 0, .05))
+            bm.faces.new([bm.verts.new(v) for v in (c - d * .5, md - d, tip, md + d)])
     bm.to_mesh(me); bm.free(); me.materials.append(None); return me
 FROND = frond_mesh()
 
@@ -253,8 +332,8 @@ def palm(x, y, h, col, lean=0., rot=0., fs=1.):
         o = put(CYL, mid, (r, r, d.length * 1.02), M['trunk'], col)
         o.rotation_euler = (0, math.atan2(d.x, d.z), 0)
         top = p2
-    for k in range(11):
-        a = rot + k / 11 * math.tau + random.uniform(-.15, .15)
+    for k in range(13):
+        a = rot + k / 13 * math.tau + random.uniform(-.15, .15)
         o = put(FROND, top, ((1 + random.uniform(-.1, .2)) * fs,) * 3, M['frond'], col)
         o.rotation_euler = (random.uniform(-.1, .1), -random.uniform(.05, .45), a)
     cyl(top + Vector((0, 0, -.1)), .38 * fs, .5 * fs, M['trunk'], col)
@@ -268,64 +347,6 @@ def car(x, y):
     if NIGHT: box((x - 2.32, y, .8), (.05, 1.6, .06), M['neon_pink'], MID)
 
 
-# ---------- модель для сайта: главный отель на площадке ----------
-def tex_image(name, size, fn):
-    import numpy as np
-    img = bpy.data.images.new(name, size, size, alpha=False)
-    px = fn(np, size).astype('float32'); a = np.ones((size, size, 1), 'float32')
-    img.pixels.foreach_set(np.concatenate([px, a], axis=2).ravel()); img.file_format = 'PNG'; img.pack(); return img
-def stucco(col):
-    def f(np, n):
-        rng = np.random.default_rng(len(col) * 7 + int(col[0] * 100))
-        big = np.kron(rng.random((16, 16)), np.ones((n // 16, n // 16))); fine = rng.random((n, n))
-        k = (.93 + .05 * big + .04 * fine)[..., None]
-        return np.clip(np.array(col)[None, None, :] * k, 0, 1)
-    return f
-def glass_tex(np, n):
-    y = np.linspace(0, 1, n)[:, None, None]
-    top, bot = np.array(hexc('#7fd3e0')), np.array(hexc('#1b3a4a'))
-    c = bot + (top - bot) * y ** 1.6
-    x = np.linspace(0, 1, n)[None, :, None]; c = c + .18 * np.exp(-((x - y * .6 - .2) ** 2) / .004)  # блик по диагонали
-    c[:4], c[-4:], c[:, :4], c[:, -4:] = .9, .9, .9, .9                                              # белая рама
-    return np.clip(c * np.ones((n, n, 3)), 0, 1)
-def use_tex(m, img):
-    nt = m.node_tree; b = nt.nodes.get('Principled BSDF'); t = nt.nodes.new('ShaderNodeTexImage'); t.image = img
-    nt.links.new(t.outputs['Color'], b.inputs['Base Color'])
-def build_model():
-    from mathutils import Matrix
-    for k, h in (('stucco_pink', '#f4b6c8'), ('stucco_mint', '#a8e6d4'), ('stucco_cream', '#f6e7cf'), ('trim', '#fbf6ee')):
-        use_tex(M[k], tex_image(k, 256, stucco(hexc(h))))
-    use_tex(M['glass'], tex_image('glass', 128, glass_tex))
-    main_hotel(-3.0, 19.0)
-    box((5.5, 1.0, -.06), (36, 26, .12), M['walk'], MID)                   # площадка
-    box((5.5, -10.6, .04), (36, 1.2, .08), M['trim'], MID)
-    box((5.5, -11.18, .1), (36, .06, .06), M['neon_cyan'], MID)
-    for x in (-8, -1, 12, 19): palm(x, -6.0, random.uniform(8.5, 10.5), MID, lean=random.uniform(-.06, .06), rot=random.uniform(0, 6), fs=1.35)
-    for z in (2, 8): palm(-9.5, z, random.uniform(8, 10), MID, rot=random.uniform(0, 6), fs=1.3); palm(20.5, z, random.uniform(8, 10), MID, rot=random.uniform(0, 6), fs=1.3)
-    for x in (-5, 5.5, 16): lamp(x, -4.6)
-    car(5.5, -8.0)
-    # слить всё по материалам: два десятка сеток вместо сотен объектов — быстро грузится и рисуется
-    dg = bpy.context.evaluated_depsgraph_get(); groups = {}; shift = Matrix.Translation((-5.5, -1.0, 0))
-    for o in list(sc.objects):
-        if o.type not in ('MESH', 'FONT') or not o.material_slots: continue
-        m = o.material_slots[0].material
-        me = bpy.data.meshes.new_from_object(o.evaluated_get(dg)); me.transform(shift @ o.matrix_world)
-        groups.setdefault(m.name, []).append(me)
-    for o in list(sc.objects): bpy.data.objects.remove(o)
-    for name, meshes in groups.items():
-        bm = bmesh.new()
-        for me in meshes: bm.from_mesh(me)
-        out = bpy.data.meshes.new(name); bm.to_mesh(out); bm.free(); out.materials.clear(); out.materials.append(bpy.data.materials[name])
-        for pl in out.polygons: pl.material_index = 0
-        sc.collection.objects.link(bpy.data.objects.new(name, out))
-    path = os.path.join(OUT, 'hotel.glb'); kw = dict(filepath=path, export_format='GLB', export_apply=True, export_yup=True, export_cameras=False, export_lights=False)
-    try: bpy.ops.export_scene.gltf(**kw, export_image_format='WEBP')
-    except TypeError: bpy.ops.export_scene.gltf(**kw)
-    print('VICE MODEL', path, round(os.path.getsize(path) / 1e6, 2), 'MB', len(groups), 'meshes')
-
-if MODEL:
-    build_model(); raise SystemExit(0)
-
 # ---------- сборка кадра ----------
 ground(); far_city(); retro_sun()
 deco_hotel(-27, 10, 3, M['stucco_mint'], M['stucco_lav'], 'neon_pink', MID, portholes=True)
@@ -333,12 +354,32 @@ deco_hotel(-15.5, 11, 4, M['stucco_lav'], M['stucco_peach'], 'neon_violet', MID,
 main_hotel(-3.0, 19.0)
 deco_hotel(17.5, 11, 4, M['stucco_peach'], M['stucco_mint'], 'neon_cyan', MID, sign='SUNSET')
 deco_hotel(30, 10, 3, M['stucco_cream'], M['stucco_pink'], 'neon_pink', MID, portholes=True)
-for x in range(-34, 46, 8): lamp(x + 2.5, -2.4)
-for x in range(-30, 44, 9): palm(x, -3.0, random.uniform(7.5, 10.5), MID, lean=random.uniform(-.08, .08), rot=random.uniform(0, 6), fs=1.35)
+for x in range(-34, 46, 8):
+    if abs(x + 2.5 - 6.5) > 5: lamp(x + 2.5, -2.4)
+for x in (-30, -21, -11.5, -4.5, 15.5, 24, 33, 42): palm(x, -3.0, random.uniform(7.5, 10.5), MID, lean=random.uniform(-.08, .08), rot=random.uniform(0, 6), fs=1.35)
 car(4.5, -6.2)
 # ближний план: парапет набережной и две большие пальмы по краям кадра
-box((0, -12.4, .55), (200, .45, 1.1), M['trim'], NEAR)
-box((0, -12.15, 1.13), (200, .06, .06), M['neon_cyan'] if NIGHT else M['trim'], NEAR)
+box((0, -12.4, .1), (200, .5, .2), M['trim'], NEAR); box((0, -12.4, .86), (200, .4, .14), M['trim'], NEAR)
+for k in range(-58, 59): box((k * .95, -12.4, .49), (.16, .16, .62), M['trim'], NEAR)
+for k in range(-9, 10): box((k * 6.1, -12.4, .56), (.5, .5, 1.1), M['trim'], NEAR); cyl((k * 6.1, -12.4, 1.22), .2, .22, M['lamp'], NEAR)
+box((0, -12.15, .96), (200, .05, .05), M['neon_cyan'] if NIGHT else M['trim'], NEAR)
+# мозаика набережной: волны плиткой
+for i in range(-60, 61):
+    for j in range(5):
+        if (i + (j if (i // 4) % 2 else -j)) % 4 == 0: box((i * .95, -13.2 - j * 1.1, .145), (.93, 1.06, .012), M['tile'], NEAR)
+# жизнь у входов: маркизы, столики под зонтами, живая изгородь, подсветка пальм снизу
+for x, w_, a in ((-22, 8.6, 'awn_a'), (22.9, 9.0, 'awn_c'), (35, 8.4, 'awn_a')): awning(x, 3.55, w_, a, 'awn_b') if x != 22.9 else None
+for x in (-13.6, -11.2, -7.4, 19.4, 21.6, 26.6): parasol(x, -1.9, 'awn_a' if x < 0 else 'awn_c', 'awn_b')
+for x in (-25, -19, 1.5, 14.6, 32, 38): hedge(x, -2.2, 3.2)
+if NIGHT:
+    for i, x in enumerate((-30, -21, -11.5, -4.5, 15.5, 24, 33, 42)):
+        L = bpy.data.lights.new('up', 'SPOT'); L.energy = 1500; L.color = PINK if i % 3 == 0 else CYAN if i % 3 == 1 else AMBER; L.spot_size = 1.0; L.spot_blend = .8; L.shadow_soft_size = .2
+        o = bpy.data.objects.new('up', L); MID.objects.link(o); o.location = (x, -3.9, .3); o.rotation_euler = (math.radians(174), 0, 0)
+    for x, c in ((-17.5, VIOLET), (27.0, PINK)):
+        L = bpy.data.lights.new('up', 'SPOT'); L.energy = 1700; L.color = c; L.spot_size = 1.1; L.spot_blend = .8; o = bpy.data.objects.new('up', L); NEAR.objects.link(o); o.location = (x, -17.6, .4); o.rotation_euler = (math.radians(174), 0, 0)
+# терраса на крыше главного отеля: зонты и перила видны над карнизом
+for x in (-1.2, 1.4, 3.8):
+    cyl((x, 2.0, 19.2), .05, 2.6, M['trim']); parasol_top = put(_mesh_cyl(10), (x, 2.0, 20.5), (1.2, 1.2, .12), M['awn_a'], MID)
 palm(-17.5, -16.5, 15.5, NEAR, lean=.14, rot=.4, fs=1.9)
 palm(27.0, -17.5, 17.0, NEAR, lean=-.12, rot=1.3, fs=2.0)
 
@@ -380,6 +421,8 @@ co.location = (-2.0, -50.0, 2.2)
 tgt = Vector((5.5, 0, 12.5)); d = tgt - co.location; co.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
 
 # ---------- проходы ----------
+if BAKE:
+    exec(compile(open(os.path.join(HERE, 'vice_bake.py'), encoding='utf8').read(), 'vice_bake.py', 'exec')); raise SystemExit(0)
 def render(name, show, transparent):
     for n, c in COLS.items(): c.hide_render = n not in show
     sc.render.film_transparent = transparent

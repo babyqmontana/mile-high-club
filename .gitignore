@@ -11,3 +11,4 @@ __pycache__/
 
 # рендеры Blender для темы «Горячие туры» (в сайт идут собранные public/img/vice/*.webp)
 brand/vice/out/
+brand/tower/out/

@@ -431,3 +431,28 @@ test('новый отзыв уходит персоналу через notify', 
   assert.deepEqual(got.find(x => x[0] === 'review'), ['review', 4]);
   s.close();
 });
+
+test('кабинет и «Гости»: просьбы, поправки администратора, заметка и ключ не утекают', async () => {
+  const s = openStore(path.join(dir, 'guests.sqlite')); seed(s); const core = createCore(s, {}); const admin = { id: 'a1', username: 'Админ', role: 'admin' }, mod = { id: 'm1', username: 'Мод', role: 'mod' }, guestKey = 'секретный-ключ-гостя';
+  const go = (m, p, body, who = { guestKey }) => core.handle(m, p, { body, ...who });
+  const free = s.all('rooms').find(r => r.status === 'free'), { booking: b } = await go('POST', '/bookings', { type: free.type, name: 'Тони', discord: 'tony', date: '2026-12-01', nights: 2, guests: 1 });
+  await assert.rejects(go('POST', `/me/bookings/${b.id}/service`, { kind: 'towels' }), /недоступна/);
+  await go('POST', `/admin/bookings/${b.id}/action`, { act: 'confirm', room: free.id }, { user: admin }); await go('POST', `/admin/bookings/${b.id}/action`, { act: 'checkin' }, { user: admin });
+  const r = await go('POST', `/me/bookings/${b.id}/service`, { kind: 'wake', time: '08:00' }); assert.equal(r.booking.services[0].status, 'new');
+  await assert.rejects(go('POST', `/me/bookings/${b.id}/service`, { kind: 'wake', time: '09:00' }), /уже передана/);
+  for (const kind of ['__proto__', 'constructor', 'toString']) await assert.rejects(go('POST', `/me/bookings/${b.id}/service`, { kind }), /Такой услуги нет/);
+  await assert.rejects(core.handle('POST', `/me/bookings/${b.id}/service`, { body: { kind: 'towels' }, guestKey: 'чужой' }), /не найдена/);
+  await go('POST', `/admin/bookings/${b.id}/service`, { service: r.booking.services[0].id, status: 'done' }, { user: mod });
+  await go('PUT', '/me/profile', { name: 'Тони', prefs: { pillow: 'firm', temp: 'lava', __proto__: { x: 1 } }, adj: { nights: 500 }, staffNote: 'взлом' });
+  let me = await go('GET', '/me/items'); assert.deepEqual(me.profile.prefs, { pillow: 'firm' }); assert.equal(me.stats.nights, 0); assert.equal(me.bookings[0].services[0].status, 'done');
+  for (const user of [mod, { id: 'g', username: 'G', role: 'guest' }]) await assert.rejects(go('GET', '/admin/guests', {}, { user }), /Недостаточно прав/);
+  const list = await go('GET', '/admin/guests', {}, { user: admin }); assert.ok(!JSON.stringify(list).includes(guestKey), 'ключ гостя не уходит в панель');
+  assert.ok(!JSON.stringify(await go('GET', '/admin/all', {}, { user: mod })).includes(guestKey));
+  const g = list.guests.find(x => x.profile.name === 'Тони'); await go('PUT', `/admin/guests/${g.ref}`, { nights: 16, staffNote: 'тайна', tier: 'VIP' }, { user: admin });
+  me = await go('GET', '/me/items'); assert.equal(me.stats.nights, 16); assert.equal(me.stats.tier.name, 'VIP'); assert.equal(me.stats.next, null); assert.ok(!JSON.stringify(me).includes('тайна'));
+  await assert.rejects(go('PUT', `/admin/guests/${g.ref}`, { nights: -1 }, { user: admin }), /от 0/); await assert.rejects(go('PUT', '/admin/guests/нет', { name: 'x' }, { user: admin }), /не найден/);
+  core.seen({ id: 'd1', username: 'Диск', role: 'guest' }); assert.equal(s.get('accounts', 'd:d1'), null); core.seen({ id: 'd1', username: 'Диск', role: 'guest' }, true); assert.equal(s.get('accounts', 'd:d1').logins, 1);
+  await go('POST', '/me/delete', { confirm: 'УДАЛИТЬ' }, { user: { id: 'd1', username: 'Диск', role: 'guest' } }); assert.equal(s.get('accounts', 'd:d1'), null);
+  await go('POST', `/admin/guests/${g.ref}/delete`, { confirm: 'УДАЛИТЬ' }, { user: admin }); assert.equal(s.all('bookings').length, 0);
+  s.close();
+});

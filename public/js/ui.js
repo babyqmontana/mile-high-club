@@ -4,7 +4,6 @@ export const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document)
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const money = n => '$' + Number(n || 0).toLocaleString('ru-RU');
 export const when = t => t ? new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' }) : '';
-export const dayStr = t => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 export const hhmm = t => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' });
 export const plural = (n, a, b, c) => { const m = Math.abs(n) % 100, k = m % 10; return m > 10 && m < 20 ? c : k > 1 && k < 5 ? b : k === 1 ? a : c; };
 
@@ -51,6 +50,7 @@ export const ic = { admin: null };
 export function fixIc() {
   if (location.hash.startsWith('#admin') && ic.admin) return ic.admin();
   if (!location.hash.startsWith('#me')) location.hash = '#me';
+  dispatchEvent(new CustomEvent('mhc-me', { detail: 'card' }));
   let n = 0; const go = () => { const i = document.getElementById('pfName'); if (i) { i.scrollIntoView({ block: 'center', behavior: 'smooth' }); i.focus({ preventScroll: true }); i.closest('.field')?.classList.add('flash'); } else if (n++ < 20) setTimeout(go, 150); }; go();
 }
 export const icNeedBox = (who = 'персонажа') => `<div class="compose icneed"><span>Чтобы писать, укажите имя ${who} — им подписываются сообщения.</span><button type="button" class="btn sm" data-icfix>Указать имя</button></div>`;
@@ -65,6 +65,8 @@ export function wireOoc(f, key) {
   b.onclick = () => { oocState[key] = !oocState[key]; b.setAttribute('aria-pressed', oocState[key]); b.textContent = oocState[key] ? 'OOC' : 'IC'; f.classList.toggle('ooc', oocState[key]); f.querySelector('input,textarea')?.focus(); };
   return () => !!oocState[key];
 }
+// знак подтверждённого гостя: золотая печать с галочкой рядом с именем
+export const vBadge = on => (on ? '<svg class="vb" viewBox="0 0 24 24" role="img" aria-label="Подтверждённый гость"><title>Подтверждённый гость отеля</title><path class="vb-s" d="M12 1.8l2.5 2 3.2-.3 1 3 2.7 1.7-.9 3.1.9 3.1-2.7 1.7-1 3-3.2-.3-2.5 2-2.5-2-3.2.3-1-3-2.7-1.7.9-3.1-.9-3.1 2.7-1.7 1-3 3.2.3z" transform="translate(0 .7)"/><path class="vb-c" d="m8 12.2 2.7 2.7 5.3-5.4"/></svg>' : '');
 export const oocTag = m => (m.ooc ? '<span class="ooctag">OOC</span>' : '');
 
 // «Магнитная» кнопка: под курсором слегка тянется к нему (до max px). Только мышь и без «меньше анимации».
