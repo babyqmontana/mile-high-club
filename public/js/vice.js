@@ -51,13 +51,13 @@ const hhmm = () => new Date(Date.now() + 15 * 60e3).toLocaleTimeString('ru-RU', 
 export async function open() {
   const staff = ['admin', 'mod'].includes(S.me?.role), on = isOn(), name = String(S.items?.profile?.name || '').trim() || 'Гость отеля';
   const from = on ? ['VC', 'Вайс-Сити'] : ['LS', 'Лос-Сантос'], to = on ? ['LS', 'Лос-Сантос'] : ['VC', 'Вайс-Сити'];
-  const r = await modal(`<div class="vt">
+  const r = await modal(`<div class="bp">
     <div><span class="eyebrow">Турагентство Mile High Club</span><h2 style="margin-top:.4rem">${on ? 'Обратный рейс' : 'Горячие туры'}</h2>
     <p class="note" style="margin:.5rem 0 0">${on ? (staff ? 'Загар не смывается, а номер в пентхаусе ждёт. Персоналу рейс открыт всегда — можно вернуться сюда в любой момент.' : 'Загар не смывается, а номер в пентхаусе ждёт. Билет в одну сторону: обратно в Вайс-Сити этот рейс уже не полетит.') : 'Последние места на прямой рейс к океану: неон, пальмы и вечный закат уже в стоимости. Виза не нужна, чемодан — тоже.'}</p></div>
-    <div class="vt-pass" role="group" aria-label="Посадочный талон">
-      <div class="vt-route"><div><small>Откуда</small><b>${from[0]}</b><span>${from[1]}</span></div><span class="vt-plane">${PLANE}</span><div><small>Куда</small><b>${to[0]}</b><span>${to[1]}</span></div></div>
-      <div class="vt-grid"><div><small>Пассажир</small><b>${esc(name)}</b></div><div><small>Рейс</small><b>MHC 306</b></div><div><small>Вылет</small><b class="num">${hhmm()}</b></div><div><small>Выход</small><b>40</b></div><div><small>Место</small><b>1A</b></div><div><small>Класс</small><b>Пентхаус</b></div></div>
-      <div class="vt-bar"></div>
+    <div class="bp-pass" role="group" aria-label="Посадочный талон">
+      <div class="bp-route"><div><small>Откуда</small><b>${from[0]}</b><span>${from[1]}</span></div><span class="bp-plane">${PLANE}</span><div><small>Куда</small><b>${to[0]}</b><span>${to[1]}</span></div></div>
+      <div class="bp-grid"><div><small>Пассажир</small><b>${esc(name)}</b></div><div><small>Рейс</small><b>MHC 306</b></div><div><small>Вылет</small><b class="num">${hhmm()}</b></div><div><small>Выход</small><b>40</b></div><div><small>Место</small><b>1A</b></div><div><small>Класс</small><b>Пентхаус</b></div></div>
+      <div class="bp-bar"></div>
     </div>
     <div class="row" style="gap:.5rem;flex-wrap:wrap"><button class="btn" data-close="go" data-sfx="secret">${on ? 'Домой, в Лос-Сантос' : 'Вылетаем'}</button><button class="btn ghost" data-close="">${on ? 'Ещё побуду' : 'Остаться в Лос-Сантосе'}</button></div>
   </div>`);

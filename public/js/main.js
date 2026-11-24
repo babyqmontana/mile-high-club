@@ -332,8 +332,8 @@ function renderStayVice() {
   const v = view('stay'); if (v.querySelector('.vshow')) { mods.tower?.relight?.(); return; }
   mods.tower?.active?.(false); mods.tower = null;
   v.innerHTML = `<div class="wrap sec vshow">
-    <div class="head"><span class="eyebrow">Вайс-Сити</span><h2>Mile High Club на набережной</h2><p>Отель ар-деко у самого океана: пастельные этажи, неоновый пилон MILE HIGH и пальмы у входа. Покрутите здание — оно того стоит.</p></div>
-    <div class="vbox"><div class="vstage"><canvas id="vGl" aria-label="Отель Mile High Club в Вайс-Сити"></canvas><span class="vhint">Тяните, чтобы обойти отель</span></div>
+    <div class="head"><span class="eyebrow">Вайс-Сити</span><h2>Mile High Club на набережной</h2><p>Отель ар-деко у самого океана, среди соседей по Оушен-бич: пастельные этажи, неоновый пилон MILE HIGH и пальмы вдоль улицы. Потяните, чтобы оглядеться.</p></div>
+    <div class="vbox"><div class="vstage"><canvas id="vGl" aria-label="Отель Mile High Club в Вайс-Сити"></canvas><span class="vhint">Тяните, чтобы оглядеться</span></div>
       <aside class="vnote"><span class="eyebrow">Бронь номеров</span><h3>Номера — в Лос-Сантосе</h3><p>В Вайс-Сити отель открыт только для экскурсий. Чтобы выбрать этаж и номер, вернитесь домой обратным рейсом — лифт и все номера ждут там.</p><button class="btn" id="vBack" data-sfx="">Обратный рейс в Лос-Сантос</button></aside></div>
     <div class="vfacts">${[['Пентхаус', 'Вид на океан и вечный закат прямо из окна'], ['Неон', 'Вывеска MILE HIGH загорается с первой звездой'], ['Набережная', 'Пальмы, кабриолеты и музыка до утра']].map(([t, d]) => `<div class="vfact"><b>${t}</b><span>${d}</span></div>`).join('')}</div>
   </div>`;

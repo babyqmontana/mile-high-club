@@ -157,7 +157,7 @@ def main_hotel(x0=-3.0, w=19.0):
     h = deco_hotel(x0, w, 5, M['stucco_cream'], M['stucco_mint'], 'neon_cyan', col, round_left=True, sign='MILE HIGH CLUB')
     cx = x0 + w * .62
     tw, th = 6.2, h + 9
-    box((cx, 3.0, th / 2), (tw, 6, th), M['stucco_pink'], col)
+    box((cx, 2.8, th / 2), (tw, 6, th), M['stucco_pink'], col)  # чуть вперёд: совпавшие плоскости рябят
     for k, (s, dz) in enumerate(((1.0, 0), (.78, 1.6), (.56, 3.0), (.34, 4.2))):   # ступени короны
         z = th + dz
         box((cx, 3.0, z + .75), (tw * s, 6 * s, 1.5), M['stucco_cream'] if k % 2 == 0 else M['stucco_mint'], col)
@@ -167,7 +167,7 @@ def main_hotel(x0=-3.0, w=19.0):
     # окна башни: вертикальные ленты
     for k in (-1, 0, 1):
         for f in range(int(h // 3.2), int(th // 3.2)):
-            box((cx + k * 1.7, -.02, f * 3.2 + 1.6), (1.1, .1, 2.2), M['glass_lit'] if (NIGHT and random.random() < .6) else M['glass'], col)
+            box((cx + k * 1.7, -.22, f * 3.2 + 1.6), (1.1, .1, 2.2), M['glass_lit'] if (NIGHT and random.random() < .6) else M['glass'], col)
     # вертикальный неоновый пилон MILE HIGH: белая лопатка, буквы по одной сверху вниз
     fx, fz0 = cx, th - 1.2
     box((fx, -1.2, fz0 - 7.5), (1.7, 2.4, 15.5), M['trim'], col)
@@ -272,7 +272,8 @@ def car(x, y):
 def tex_image(name, size, fn):
     import numpy as np
     img = bpy.data.images.new(name, size, size, alpha=False)
-    px = fn(np, size).astype('float32'); a = np.ones((size, size, 1), 'float32')
+    px = np.clip(fn(np, size), 0, 1); px = np.where(px <= .0031308, px * 12.92, 1.055 * px ** (1 / 2.4) - .055).astype('float32')  # картинка хранится в sRGB
+    a = np.ones((size, size, 1), 'float32')
     img.pixels.foreach_set(np.concatenate([px, a], axis=2).ravel()); img.file_format = 'PNG'; img.pack(); return img
 def stucco(col):
     def f(np, n):
@@ -293,17 +294,28 @@ def use_tex(m, img):
     nt.links.new(t.outputs['Color'], b.inputs['Base Color'])
 def build_model():
     from mathutils import Matrix
-    for k, h in (('stucco_pink', '#f4b6c8'), ('stucco_mint', '#a8e6d4'), ('stucco_cream', '#f6e7cf'), ('trim', '#fbf6ee')):
+    for k, h in (('stucco_pink', '#f4b6c8'), ('stucco_mint', '#a8e6d4'), ('stucco_cream', '#f6e7cf'), ('stucco_lav', '#cdb8f0'), ('stucco_peach', '#ffc9a3'), ('trim', '#fbf6ee')):
         use_tex(M[k], tex_image(k, 256, stucco(hexc(h))))
     use_tex(M['glass'], tex_image('glass', 128, glass_tex))
+    # та же улица, что на картинке первого экрана: пять отелей, дорога, набережная, пляж, фонари, пальмы, машина, город позади
+    random.seed(306)
+    box((0, 30, -.5), (220, 220, 1), M['asphalt'], FAR)
+    box((0, -1.3, .07), (120, 2.6, .14), M['walk'], FAR)
+    box((0, -15.5, .07), (120, 7, .14), M['walk'], FAR)
+    box((0, -30, .02), (160, 22, .04), M['sand'], FAR)
+    for k in range(-22, 23): box((k * 5, -8.6, .01), (2.4, .18, .02), M['trim'], FAR)
+    far_city()
+    deco_hotel(-27, 10, 3, M['stucco_mint'], M['stucco_lav'], 'neon_pink', MID, portholes=True)
+    deco_hotel(-15.5, 11, 4, M['stucco_lav'], M['stucco_peach'], 'neon_violet', MID, sign='PALMS')
     main_hotel(-3.0, 19.0)
-    box((5.5, 1.0, -.06), (36, 26, .12), M['walk'], MID)                   # площадка
-    box((5.5, -10.6, .04), (36, 1.2, .08), M['trim'], MID)
-    box((5.5, -11.18, .1), (36, .06, .06), M['neon_cyan'], MID)
-    for x in (-8, -1, 12, 19): palm(x, -6.0, random.uniform(8.5, 10.5), MID, lean=random.uniform(-.06, .06), rot=random.uniform(0, 6), fs=1.35)
-    for z in (2, 8): palm(-9.5, z, random.uniform(8, 10), MID, rot=random.uniform(0, 6), fs=1.3); palm(20.5, z, random.uniform(8, 10), MID, rot=random.uniform(0, 6), fs=1.3)
-    for x in (-5, 5.5, 16): lamp(x, -4.6)
-    car(5.5, -8.0)
+    deco_hotel(17.5, 11, 4, M['stucco_peach'], M['stucco_mint'], 'neon_cyan', MID, sign='SUNSET')
+    deco_hotel(30, 10, 3, M['stucco_cream'], M['stucco_pink'], 'neon_pink', MID, portholes=True)
+    for x in range(-34, 46, 8): lamp(x + 2.5, -2.4)
+    for x in range(-30, 44, 9): palm(x, -3.0, random.uniform(7.5, 10.5), MID, lean=random.uniform(-.08, .08), rot=random.uniform(0, 6), fs=1.35)
+    car(4.5, -6.2)
+    box((0, -12.4, .55), (120, .45, 1.1), M['trim'], NEAR)
+    box((0, -12.15, 1.13), (120, .06, .06), M['neon_cyan'], NEAR)
+    for x in (-31, -20, 24, 38): palm(x, -16.5, random.uniform(10, 13), NEAR, lean=random.uniform(-.1, .1), rot=random.uniform(0, 6), fs=1.6)
     # слить всё по материалам: два десятка сеток вместо сотен объектов — быстро грузится и рисуется
     dg = bpy.context.evaluated_depsgraph_get(); groups = {}; shift = Matrix.Translation((-5.5, -1.0, 0))
     for o in list(sc.objects):
