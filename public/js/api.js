@@ -58,7 +58,7 @@ export async function authConfig() {
   try { return await fetch('/auth/config').then(r => r.json()); } catch { return { oauth: false, demo: false }; }
 }
 export async function login(role = 'admin', next = 'admin') {
-  if (DEMO) { const d = await demoInit(); d.user = { id: 'demo-' + role, username: role === 'admin' ? 'Демо-администратор' : role === 'mod' ? 'Демо-модератор' : 'Демо-гость', role, demo: true }; listeners.forEach(fn => fn(['me'])); return; }
+  if (DEMO) { const d = await demoInit(); d.user = { id: 'demo-' + role, username: role === 'admin' ? 'Демо-администратор' : role === 'mod' ? 'Демо-модератор' : 'Демо-гость', role, demo: true }; d.core.seen(d.user, true); listeners.forEach(fn => fn(['me'])); return; }
   const cfg = await authConfig();
   location.href = cfg.oauth ? '/auth/discord?next=' + next : '/auth/demo?role=' + role;
 }

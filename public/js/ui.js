@@ -51,6 +51,7 @@ export const ic = { admin: null };
 export function fixIc() {
   if (location.hash.startsWith('#admin') && ic.admin) return ic.admin();
   if (!location.hash.startsWith('#me')) location.hash = '#me';
+  dispatchEvent(new CustomEvent('mhc-me', { detail: 'card' }));
   let n = 0; const go = () => { const i = document.getElementById('pfName'); if (i) { i.scrollIntoView({ block: 'center', behavior: 'smooth' }); i.focus({ preventScroll: true }); i.closest('.field')?.classList.add('flash'); } else if (n++ < 20) setTimeout(go, 150); }; go();
 }
 export const icNeedBox = (who = 'персонажа') => `<div class="compose icneed"><span>Чтобы писать, укажите имя ${who} — им подписываются сообщения.</span><button type="button" class="btn sm" data-icfix>Указать имя</button></div>`;

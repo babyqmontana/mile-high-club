@@ -2,7 +2,7 @@
 // Лёгкий 2D-канвас, частиц немного, анимация на паузе, когда вкладка скрыта или блок не виден.
 export function mountWeather(canvas, { strength = 1, wind = 0.25 } = {}) {
   const g = canvas.getContext('2d'); if (!g) return { set() {}, destroy() {} };
-  const reduce = document.documentElement.classList.contains('calm');
+  let reduce = document.documentElement.classList.contains('calm'); const onCalm = e => { reduce = e.detail; kick(); }; document.addEventListener('mhc-calm', onCalm);
   let W = 0, H = 0, dpr = 1, kind = 'clear', day = 1, P = [], raf = 0, last = 0, visible = true, fogT = 0;
   const rnd = (a, b) => a + Math.random() * (b - a);
   function size() { dpr = Math.min(devicePixelRatio || 1, 1.5); W = canvas.clientWidth; H = canvas.clientHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); seed(); kick(); }
@@ -53,6 +53,6 @@ export function mountWeather(canvas, { strength = 1, wind = 0.25 } = {}) {
   return {
     set(k, isDay) { if (k === kind && +!!isDay === day) return; kind = k; day = isDay ? 1 : 0; seed(); kick(); },
     // при пересборке главного экрана: остановить цикл и отпустить наблюдатели и обработчики
-    destroy() { cancelAnimationFrame(raf); raf = 0; P = []; ro.disconnect(); io.disconnect(); document.removeEventListener('visibilitychange', kick); }
+    destroy() { cancelAnimationFrame(raf); raf = 0; P = []; ro.disconnect(); io.disconnect(); document.removeEventListener('visibilitychange', kick); document.removeEventListener('mhc-calm', onCalm); }
   };
 }

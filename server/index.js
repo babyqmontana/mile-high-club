@@ -124,6 +124,7 @@ app.get('/auth/callback', async (req, res) => {
     const avatar = me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png?size=64` : null;
     setCookie(res, 'mhc_s', encode({ id: me.id, username: me.global_name || me.username, avatar, role, checked: Date.now(), exp: Date.now() + 7 * 86400e3 }), 7 * 86400);
     setCookie(res, 'mhc_state', '', 0);
+    core.seen({ id: me.id, username: me.global_name || me.username, avatar, role }, true);
     core.log(`${me.global_name || me.username} вошёл через Discord (${role === 'admin' ? 'администратор' : role === 'mod' ? 'модератор' : 'гость'})`, 'auth');
     res.redirect('/#' + (role === 'guest' ? (next === 'admin' ? 'admin' : next || 'home') : next || 'admin'));
   } catch (e) { res.redirect('/#login-error'); }
@@ -131,6 +132,7 @@ app.get('/auth/callback', async (req, res) => {
 app.get('/auth/demo', (req, res) => {
   if (!DEMO) return res.status(404).end();
   const role = ['admin', 'mod', 'guest'].includes(req.query.role) ? req.query.role : 'admin';
+  core.seen({ id: 'demo-' + role, username: role === 'admin' ? 'Демо-администратор' : role === 'mod' ? 'Демо-модератор' : 'Демо-гость', role }, true);
   setCookie(res, 'mhc_s', encode({ id: 'demo-' + role, username: role === 'admin' ? 'Демо-администратор' : role === 'mod' ? 'Демо-модератор' : 'Демо-гость', avatar: null, role, demo: true, checked: Date.now(), exp: Date.now() + 86400e3 }), 86400);
   res.redirect('/#' + (role === 'guest' ? 'home' : 'admin'));
 });

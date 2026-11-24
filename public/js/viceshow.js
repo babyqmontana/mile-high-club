@@ -16,7 +16,8 @@ function haloTex() { // мягкое пятно: свечение вокруг �
 
 export function mountShowcase(canvas) {
   const coarse = matchMedia('(pointer: coarse)').matches;
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' }); renderer.debug.checkShaderErrors = false; // проверка ошибок шейдеров ждёт видеокарту и замораживает страницу
+ 
   renderer.setPixelRatio(Math.min(devicePixelRatio, coarse ? 1.5 : 1.75)); renderer.toneMapping = THREE.NoToneMapping;
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(40, 1, 1, 700);
   const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 24, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false,

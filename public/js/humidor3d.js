@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 // 3D-хьюмидор в духе GTA V / RDR2: мало полигонов, рисованные текстуры, тёплый свет.
-const tex = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
+const tex = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d', { willReadFrequently: true }), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
 const rnd = (() => { let s = 7; return () => (s = s * 16807 % 2147483647) / 2147483647; })();
 
 function wood(base, dark, light, rings = 26) {
@@ -116,10 +116,17 @@ export function buildCigar(c, mats) {
   return holder;
 }
 
+// картинки и модель качаются заранее, пока гость на другой странице
+const HV = '?v=3', HB = 'img/hum/', HIMG = {};
+const ldImg = n => HIMG[n] ??= new Promise(ok => { const i = new Image(); i.decoding = 'async'; i.onload = () => (i.decode ? i.decode() : Promise.resolve()).then(() => ok(i), () => ok(i)); i.onerror = () => { delete HIMG[n]; ok(null); }; i.src = HB + n + '.webp' + HV; });
+let hGlb = null; const ldGlb = () => hGlb ??= import('three/addons/loaders/GLTFLoader.js').then(m => new m.GLTFLoader().loadAsync(HB + 'humidor.glb' + HV)).catch(() => { hGlb = null; return null; });
+export function warmHumidor() { ['cig-leaf', 'cig-leaf-n', 'cig-foot', 'cig-ash', 'burl', 'burl-n', 'marq', 'cross', 'cedar', 'body-ao', 'lid-ao', 'studio', 'smoke', 'ember'].forEach(ldImg); ldGlb(); }
+const breathe = () => new Promise(r => setTimeout(r, 0));
 export function mountHumidor(host, { onPick, onLid }) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' }); renderer.debug.checkShaderErrors = false; // проверка ошибок шейдеров ждёт видеокарту и замораживает страницу
+ 
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75)); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
-  host.prepend(renderer.domElement);
+  host.prepend(renderer.domElement); renderer.domElement.style.cssText += ';opacity:0;transition:opacity .7s ease';
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
   cam.position.set(0, 6.6, 6.9); const look = new THREE.Vector3(0, 0.9, 0.1); cam.lookAt(look);
   const hemi = new THREE.HemisphereLight(0xffe6c4, 0x2a160a, 1.2), key = new THREE.DirectionalLight(0xffe2b8, 2.6), fill = new THREE.PointLight(0xff9a4a, 18, 20), rim = new THREE.PointLight(0xd9822b, 8, 18);
@@ -159,7 +166,9 @@ export function mountHumidor(host, { onPick, onLid }) {
   const tray = new THREE.Group(); tray.position.y = T + 0.05; box.add(tray);
   let cigars = [], meshes = [], extras = [], sel = 0, open = false, lidA = 0, lidTarget = 0, mats = [];
   const show = new THREE.Group(); show.position.set(0, 2.55, 1.15); scene.add(show);
+  let texIn = false, want = null; // сигары собираем один раз, когда приехали текстуры листа
   function setCigars(list, idx = 0) {
+    if (!texIn) { want = [list, idx]; return; }
     const key = JSON.stringify(list.map(c => [c.id, c.shape, c.length, c.ring, c.wrapper, c.band, c.band2, c.bandStyle, c.bandText, c.bandText2]));
     if (key !== setCigars.key) {
       setCigars.key = key; meshes.concat(extras).forEach(m => m.parent?.remove(m)); extras = []; mats.forEach(m => m.dispose?.()); mats = []; meshes = [];
@@ -228,7 +237,8 @@ export function mountHumidor(host, { onPick, onLid }) {
   new IntersectionObserver(([en]) => { visible = en.isIntersecting; kick(); }).observe(host);
   function size() { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); cam.aspect = w / h; const k = w / h < 1.25 ? 1.25 / (w / h) : 1; cam.position.set(0, 6.6 * k * 1.1, 6.9 * k * 1.1); cam.lookAt(look); cam.updateProjectionMatrix(); kick(); }
   new ResizeObserver(size).observe(host);
-  function kick() { if (!raf && active && visible) { last = performance.now(); raf = requestAnimationFrame(loop); } }
+  let ready = false;
+  function kick() { if (!raf && active && visible && ready) { last = performance.now(); raf = requestAnimationFrame(loop); } }
   function loop(t) {
     raf = 0; const dt = Math.min(0.05, (t - last) / 1000); last = t; let moving = false;
     const dl = lidTarget - lidA; if (Math.abs(dl) > 0.001) { lidA += dl * Math.min(1, dt * 5); moving = true; } lidPivot.rotation.x = lidA;
@@ -254,18 +264,18 @@ export function mountHumidor(host, { onPick, onLid }) {
   // ореха, крышка-подушка с маркетри — кромка, тройная струнка, табачные листья, овальный картуш с латунной табличкой,
   // кедровый воротник, накладка с замочной скважиной, петли, гигрометр и увлажнитель) + запечённые мягкие тени (AO)
   // и студийная панорама для отражений в лаке. ~400 КБ, грузится после первого кадра; без них остаётся простая модель.
-  const V = '?v=3', BASE = 'img/hum/', ld = // ?v — сброс кэша браузера при обновлении ассетов
-    n => new Promise(ok => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = () => ok(null); i.src = BASE + n + '.webp' + V; });
-  const glb = import('three/addons/loaders/GLTFLoader.js').then(m => new m.GLTFLoader().loadAsync(BASE + 'humidor.glb' + V)).catch(() => null);
-  Promise.all(['cig-leaf', 'cig-leaf-n', 'cig-foot', 'cig-ash'].map(ld)).then(([leaf, leafN, foot, ash]) => {
+  const ld = ldImg, glb = ldGlb();
+  // сцену показываем, когда всё приехало, шейдеры собраны и текстуры на видеокарте: без подмен на глазах и замираний
+  const pA = Promise.all(['cig-leaf', 'cig-leaf-n', 'cig-foot', 'cig-ash'].map(ld)).then(([leaf, leafN, foot, ash]) => {
     const T = (img, srgb = true) => { const t = new THREE.Texture(img); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.needsUpdate = true; return t; };
     if (leaf) CIG.leaf = leaf; if (leafN) CIG.leafN = T(leafN, false); if (foot) CIG.foot = T(foot);
     if (ash) { const t = T(ash); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(.6, .18); t.rotation = .35; ashSide.map = t; ashSide.color.set(0xffffff); ashSide.needsUpdate = true; }
-    if (cigars.length) { const was = sel; setCigars.key = null; setCigars(cigars, was); }
+    texIn = true; if (want) setCigars(...want);
   });
-  Promise.all([glb, ...['burl', 'burl-n', 'marq', 'cross', 'cedar', 'body-ao', 'lid-ao', 'studio', 'smoke', 'ember'].map(ld)]).then(([g, burl, bn, marq, cross, ced, aoB, aoL, env, smoke, ember]) => {
+  const pB = Promise.all([glb, ...['burl', 'burl-n', 'marq', 'cross', 'cedar', 'body-ao', 'lid-ao', 'studio', 'smoke', 'ember'].map(ld)]).then(async ([g, burl, bn, marq, cross, ced, aoB, aoL, env, smoke, ember]) => {
     const T = (img, srgb = true, rep = 0) => { const t = new THREE.Texture(img); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; if (rep) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); } t.needsUpdate = true; return t; };
     if (env) { const pm = new THREE.PMREMGenerator(renderer), e = T(env); e.mapping = THREE.EquirectangularReflectionMapping; scene.environment = pm.fromEquirectangular(e).texture; e.dispose(); pm.dispose(); brass.roughness = 0.38; brass.metalness = 0.85; brass.color.set(0xd8b060); }
+    await breathe();
     if (smoke) mountSmoke(smoke);
     if (ember) { emberMat.map = T(ember); emberMat.needsUpdate = true; }
     if (!g || !burl || !marq || !ced) { kick(); return; }
@@ -292,6 +302,7 @@ export function mountHumidor(host, { onPick, onLid }) {
       glass: () => new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, roughness: 0.02, metalness: 0, depthWrite: false }),
       felt: () => new THREE.MeshStandardMaterial({ color: 0x0c0706, roughness: 1 })
     };
+    await breathe();
     const Body = g.scene.getObjectByName('Body'), LidM = g.scene.getObjectByName('Lid'); if (!Body || !LidM) { kick(); return; }
     const aoT = { Body: aoB && T(aoB, false), Lid: aoL && T(aoL, false) };
     [[Body, 'Body'], [LidM, 'Lid']].forEach(([root, k]) => root.traverse(o => {
@@ -309,9 +320,15 @@ export function mountHumidor(host, { onPick, onLid }) {
   });
   function relight() { const day = document.documentElement.dataset.mode === 'day'; hemi.intensity = day ? 2 : 1.2; rim.intensity = day ? 3 : 10; kick(); }
   relight(); size();
-  return {
+  const shown = Promise.race([Promise.allSettled([pA, pB]), new Promise(r => setTimeout(r, 6000))]).then(async () => {
+    size(); await breathe(); const tx = new Set(); scene.traverse(o => [].concat(o.material || []).forEach(m => ['map', 'normalMap', 'aoMap', 'emissiveMap'].forEach(q => m[q]?.image && tx.add(m[q]))));
+    try { await renderer.compileAsync?.(scene, cam); } catch { }
+    for (const t of tx) { renderer.initTexture(t); await breathe(); }
+    ready = true; kick(); renderer.domElement.style.opacity = 1;
+  });
+  return { shown,
     active(on) { active = on; if (on) { size(); kick(); } },
-    setCigars, select(i) { select(i); },
+    setCigars, select(i) { if (want && !texIn) want[1] = i; else select(i); },
     toggleLid() { return setOpen(!open); },
     get open() { return open; }, relight
   };

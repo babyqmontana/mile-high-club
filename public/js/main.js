@@ -3,7 +3,7 @@ import { api, subscribe, authConfig, login, logout, DEMO, pref, guestKey, demoLi
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
 import { unlock, burst, openCabinet, count as achCount, LIST as ACH, onChange as onAch, ids as achIds, merge as achMerge, feed as achFeed, bar as achBar, grow as achGrow, seenCount as achSeen, rarityChips } from './achievements.js';
-import { venueState, mskMinutes, weatherNow, ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, minutesOf, inSpan, roomGameFloor } from './core.js';
+import { venueState, mskMinutes, weatherNow, ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, minutesOf, inSpan, roomGameFloor, PREFS, SERVICES, SERVICE_STATUS, CARD_ART } from './core.js';
 
 document.documentElement.classList.add('js');
 // авторство сайта: IC — создатель в игре (Louis Cruze), OOC — реальный автор (babymontana)
@@ -33,7 +33,7 @@ function shell() {
   </div></header>
   <nav class="drawer" id="drawer" aria-label="Меню"><button class="ibtn x" id="drawerX" aria-label="Закрыть" data-sfx="close">${I.x}</button>${ROUTES.map(([id, n], i) => `<a href="#${id}" data-r="${id}"><i>${String(i + 1).padStart(2, '0')}</i>${n}</a>`).join('')}<a href="#me" data-r="me"><i>${I.user}</i>Мои брони и заявки</a><div class="dtools"><button type="button" class="btn ghost" id="dSnd" data-sfx=""></button><button type="button" class="btn ghost" id="dCalm" data-sfx=""></button></div></nav>
   <main id="main">${ROUTES.concat([['me'], ['admin'], ['issue'], ['jobs'], ['privacy'], ['lost']]).map(([id]) => `<section class="view" data-view="${id}"></section>`).join('')}</main>
-  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Мои брони</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span>·</span><button class="secrets vice-t" id="viceBtn" data-sfx="" aria-pressed="false">Горячие туры</button><span>·</span><button class="secrets" id="calmBtn" data-sfx="" aria-pressed="false">Спокойный режим</button><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana${APP_VER ? `<span class="ver num" title="Версия сайта">${APP_VER}</span>` : ''}</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
+  <footer><div class="wrap"><span id="foot"></span><span class="row"><a href="#me">Кабинет гостя</a><span>·</span><button class="secrets" id="achBtn" data-sfx="secret">Секреты отеля <b class="num" id="achN"></b></button><span>·</span><a href="#admin">Вход для персонала</a><span>·</span><a href="#jobs">Вакансии</a><span>·</span><a href="#privacy">Конфиденциальность</a><span>·</span><button class="secrets vice-t" id="viceBtn" data-sfx="" aria-pressed="false">Горячие туры</button><span>·</span><button class="secrets" id="calmBtn" data-sfx="" aria-pressed="false">Спокойный режим</button><span class="appl" hidden>·</span><button class="secrets appl" id="appBtn" hidden>Приложение</button></span></div><div class="wrap credits"><span>© ${COPY_YEARS} Mile High Club · Создатель сайта Louis Cruze</span><span class="ooc"><b>OOC</b>Сайт: babymontana${APP_VER ? `<span class="ver num" title="Версия сайта">${APP_VER}</span>` : ''}</span></div><div class="wrap kon" aria-hidden="true">${[["ArrowUp", "↑"], ["ArrowUp", "↑"], ["ArrowDown", "↓"], ["ArrowDown", "↓"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["ArrowLeft", "←"], ["ArrowRight", "→"], ["b", "B"], ["a", "A"]].map(([k, c]) => `<b data-k="${k}">${c}</b>`).join("")}</div></footer>
   <button class="fab" id="fab" aria-label="Заказ в номер" data-sfx="open"><span class="n" id="fabN">0</span>${I.cart}<span id="fabT">$0</span></button>`;
   const drawer = $('#drawer'), closeDrawer = () => { if (!drawer.classList.contains('on')) return; drawer.classList.remove('on'); popLayer(drawer); $('#burger').setAttribute('aria-expanded', 'false'); };
   $('#burger').setAttribute('aria-controls', 'drawer'); $('#burger').setAttribute('aria-expanded', 'false');
@@ -44,7 +44,10 @@ function shell() {
   $('#sndBtn').onclick = $('#dSnd').onclick = () => { setSound(!soundOn); paintNav(); mods.deck?.sound(); burst('dj', 8, 20000); };
   // «Спокойный режим»: меньше движения по желанию гостя. Системную настройку Windows не берём — её часто выключают
   // твикеры ради скорости, и сайт терял атриум, лифт и анимации у тех, кто об этом не просил
-  $('#calmBtn').onclick = $('#dCalm').onclick = () => { const on = !document.documentElement.classList.contains('calm'); document.documentElement.classList.toggle('calm', on); try { localStorage.setItem('mhc-calm', on ? '1' : '0'); } catch { } paintNav(); render(); };
+  $('#calmBtn').onclick = $('#dCalm').onclick = () => { const on = !document.documentElement.classList.contains('calm'); document.documentElement.classList.toggle('calm', on); try { localStorage.setItem('mhc-calm', on ? '1' : '0'); } catch { } paintNav();
+    // страницу не пересобираем: только первый экран меняет вид, а подвал под пальцем остаётся на месте
+    const fromEnd = document.documentElement.scrollHeight - scrollY, hold = () => scrollTo({ top: document.documentElement.scrollHeight - fromEnd, behavior: 'instant' }), low = scrollY > innerHeight * .6;
+    document.dispatchEvent(new CustomEvent('mhc-calm', { detail: on })); if (current === 'home') { renderHome(); if (low) { hold(); requestAnimationFrame(hold); } } };
   addEventListener('resize', fitNavSoon);
   // индикатор появился, исчез или сменил текст — шапка пересчитывается сама, без перезагрузки
   { const mo = new MutationObserver(fitNavSoon); ['.navr', '.links', '.brand'].forEach(q => $(q) && mo.observe($(q), { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'class', 'style'] })); }
@@ -83,7 +86,7 @@ function fitNav() {
 }
 const fitNavSoon = () => { cancelAnimationFrame(fitNav.raf); fitNav.raf = requestAnimationFrame(fitNav); };
 function paintNav() {
-  { const calm = document.documentElement.classList.contains('calm'); $('#dCalm').textContent = calm ? 'Спокойный режим: вкл' : 'Спокойный режим: выкл'; $('#dCalm').setAttribute('aria-pressed', calm); $('#calmBtn').setAttribute('aria-pressed', calm); $('#calmBtn').textContent = calm ? 'Спокойный режим · вкл' : 'Спокойный режим'; }
+  { const calm = document.documentElement.classList.contains('calm'); $('#dCalm').textContent = calm ? 'Спокойный режим: вкл' : 'Спокойный режим: выкл'; $('#dCalm').setAttribute('aria-pressed', calm); $('#calmBtn').setAttribute('aria-pressed', calm); $('#calmBtn').title = calm ? 'Включён: меньше движения' : 'Меньше движения на сайте'; }
   { const vs = S.pub?.settings?.vice || {}, vb = $('#viceBtn'), on = document.documentElement.classList.contains('vice'); let done = false; try { done = localStorage.getItem('mhc-vice-done') === '1'; } catch { }
     // рейс одноразовый: после возвращения в Лос-Сантос кнопки нет; выключена в панели — видна только тем, кто ещё в Вайс-Сити
     const staff = ['admin', 'mod'].includes(S.me?.role); // персоналу рейс доступен всегда — проверить, как выглядит тема
@@ -328,6 +331,15 @@ function evCard(e) {
 let selFloor = null, selRoom = null;
 const FLOOR_ANG = (fl, f) => { const a = [...fl].sort((x, y) => x - y), i = a.indexOf(f); return a.length < 2 ? 0 : -70 + (i / (a.length - 1)) * 140; };
 // «Номера» в Вайс-Сити: вместо башни и лифта — витрина отеля в Майами (модель из Blender). Номера бронируются только в Лос-Сантосе
+// тяжёлые сцены собираем, когда анимация перехода закончилась, чтобы она не дёргалась
+const afterMove = () => (vtRunning?.finished || Promise.resolve()).catch(() => {}).then(() => new Promise(r => setTimeout(r, 30)));
+// пока гость читает страницу, тихо докачиваем остальные сцены: разделы открываются без подгрузок
+function warmUp() {
+  if (DEMO || navigator.connection?.saveData || /2g/.test(navigator.connection?.effectiveType || '') || !hasWebGL()) return;
+  const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 4000 }) : setTimeout(f, 800));
+  const steps = [() => import('./skyline3d.js').then(m => !isVice() && m.warmTower()), () => import('./humidor3d.js').then(m => m.warmHumidor?.()), () => import('./deck.js'), () => import('./journal.js')];
+  (function next() { const f = steps.shift(); if (f) idle(() => { Promise.resolve(f()).catch(() => {}).finally(() => setTimeout(next, 400)); }); })();
+}
 function renderStayVice() {
   const v = view('stay'); if (v.querySelector('.vshow')) { mods.tower?.relight?.(); return; }
   mods.tower?.active?.(false); mods.tower = null;
@@ -339,7 +351,7 @@ function renderStayVice() {
   </div>`;
   $('#vBack').onclick = () => import('./vice.js').then(m => m.open());
   if (!hasWebGL()) { $('#vGl').replaceWith(Object.assign(document.createElement('img'), { className: 'vfallback', alt: '', src: heroUrl(S.pub.settings, mode()) })); return; }
-  import('./viceshow.js').then(m => { if (!$('#vGl')) return; mods.tower = m.mountShowcase($('#vGl')); mods.tower.active(current === 'stay'); })
+  afterMove().then(() => import('./viceshow.js')).then(m => { if (!$('#vGl')) return; mods.tower = m.mountShowcase($('#vGl')); mods.tower.active(current === 'stay'); })
     .catch(e => { console.error(e); $('#vGl')?.replaceWith(Object.assign(document.createElement('img'), { className: 'vfallback', alt: '', src: heroUrl(S.pub.settings, mode()) })); });
 }
 async function renderStay() {
@@ -369,7 +381,7 @@ async function renderStay() {
     const opts = { onPickVenue: id => { const v = S.pub.venues.find(x => x.id === id); if (v) location.hash = '#' + venueRoute(v); }, onPick: f => goFloor(f), onSpin: () => unlock('dizzy'), onHoverFloor: f => $$('#lfBtns button').forEach(b => b.classList.toggle('hv', +b.dataset.f === f)) };
     const ready = t => { mods.tower = t; t.active(current === 'stay'); t.setVenues?.(towerVenues()); t.update(S.pub.rooms, selFloor, S.pub.types); t.setFilter?.(roomFilterIds()); if (selRoom) t.focusRoom(selRoom); if (wxNow) t.setWeather(wxNow); };
     // 3D-башня, а если WebGL нет или сцена не создалась — фасад из DOM с тем же интерфейсом
-    (hasWebGL() ? import('./skyline3d.js').then(m => ready(m.mountTower($('#tower'), opts))) : Promise.reject(null))
+    (hasWebGL() ? afterMove().then(() => import('./skyline3d.js')).then(m => m.mountTower($('#tower'), opts)).then(ready) : Promise.reject(null))
       .catch(e => { if (e) console.error(e); return import('./facade.js').then(f => ready(f.mountFacade($('#tower'), opts))); })
       .catch(e => { console.error(e); $('#tower').innerHTML = '<div class="empty" style="margin:2rem">Вид башни не загрузился. Этаж можно выбрать кнопками лифта.</div>'; });
     // подсказка «тяните» нужна, пока гость не попробовал; после первого жеста больше не показываем
@@ -560,7 +572,7 @@ function openBooking(type, room) {
         <ol class="next-steps" aria-label="Что дальше"><li class="now"><b>Управляющий проверит заявку</b><span>и назначит номер — увидите это в кабинете, в колокольчике и в Discord</span></li><li><b>Ключ-карта</b><span>появится в кабинете после подтверждения</span></li><li><b>Заселение на ресепшене</b><span>дальше — заказ в номер и чат с отелем прямо из брони</span></li></ol>
         <div class="row" style="justify-content:center"><a class="btn" href="#me" data-goto="${esc(b.id)}">Открыть бронь</a><a class="btn ghost" href="#me" data-goto="${esc(b.id)}" data-chatnow="1">Написать отелю</a></div></div>`;
       el.querySelector('.x').onclick = () => closeSheet('bookSheet');
-      el.querySelectorAll('[data-goto]').forEach(a => a.onclick = () => { meBk = a.dataset.chatnow ? b.id : null; bkFocus = a.dataset.chatnow ? b.id : null; closeSheet('bookSheet'); setTimeout(() => { const card = document.getElementById('bk-' + b.id); card?.scrollIntoView({ block: 'center' }); if (a.dataset.chatnow) card?.querySelector('textarea')?.focus({ preventScroll: true }); }, 450); });
+      el.querySelectorAll('[data-goto]').forEach(a => a.onclick = () => { setMeTab('room'); meBk = a.dataset.chatnow ? b.id : null; bkFocus = a.dataset.chatnow ? b.id : null; closeSheet('bookSheet'); setTimeout(() => { const card = document.getElementById('bk-' + b.id); card?.scrollIntoView({ block: 'center' }); if (a.dataset.chatnow) card?.querySelector('textarea')?.focus({ preventScroll: true }); }, 450); });
       loadItems();
     } catch (err) { fail(err); btn.disabled = false; }
   };
@@ -790,7 +802,7 @@ function renderCigars() {
     v.addEventListener('keydown', e => { if (e.target.closest('input,textarea,select')) return; if (e.key === 'ArrowLeft') stepCigar(-1); if (e.key === 'ArrowRight') stepCigar(1); });
     const humFallback = () => { $('#hum').classList.add('flat'); $('#lidBtn').hidden = true; $('#humLoad').textContent = '3D-хьюмидор недоступен в этом браузере. Выбирайте сигары стрелками или в ленте ниже — заказ работает как обычно.'; };
     if (!hasWebGL()) humFallback();
-    else import('./humidor3d.js').then(m => { mods.hum = m.mountHumidor($('#hum'), { onPick: i => pickCigar(i, true), onLid: o => { play('lid'); burst('lid', 6, 12000); $('#lidBtn').textContent = o ? 'Закрыть' : 'Открыть'; } }); $('#humLoad')?.remove(); mods.hum.active(current === 'cigars'); mods.hum.setCigars(S.pub.cigars, cigIdx); }).catch(e => { console.error(e); humFallback(); });
+    else afterMove().then(() => import('./humidor3d.js')).then(m => { mods.hum = m.mountHumidor($('#hum'), { onPick: i => pickCigar(i, true), onLid: o => { play('lid'); burst('lid', 6, 12000); $('#lidBtn').textContent = o ? 'Закрыть' : 'Открыть'; } }); mods.hum.shown.then(() => $('#humLoad')?.remove()); mods.hum.active(current === 'cigars'); mods.hum.setCigars(S.pub.cigars, cigIdx); }).catch(e => { console.error(e); humFallback(); });
   } else mods.hum?.setCigars(p.cigars, cigIdx);
   paintCigar();
 }
@@ -950,6 +962,9 @@ function paintChat() {
 }
 
 /* ---------------- кабинет ---------------- */
+const mi = (p => k => `<svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p[k] || ''}</svg>`)({
+  room: '<circle cx="8" cy="15" r="4.5"/><path d="M11.2 11.8 20 3M16 7l3 3"/>', stays: '<rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>', orders: '<path d="M3 18h18M5 18a7 7 0 0 1 14 0M12 8.5V11M10.5 8.5h3"/>', desk: '<path d="M4 5h16v11h-9l-4 3v-3H4z"/><path d="M8 9h8M8 12h5"/>', card: '<rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>',
+  user: '<circle cx="12" cy="8" r="3.7"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>', phone: '<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/>', note: '<path d="M5 4h14v12l-4 4H5z"/><path d="M15 20v-4h4M8.5 8.5h7M8.5 12h5"/>', pillow: '<path d="M4 8c5-2 11-2 16 0 1 3 1 5 0 8-5 2-11 2-16 0-1-3-1-5 0-8z"/>', temp: '<path d="M10 14.5V5a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0z"/><path d="M12 9v8"/>', drink: '<path d="M6 3h12l-1 6a5 5 0 0 1-10 0zM12 14v6M8.5 20.5h7"/>', view: '<rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="M12 4v16M3.5 13l4-3 4.5 3.5 4-4 4.5 4"/>', smoke: '<path d="M3 14h13v4H3zM19 14v4M21.5 14v4M19 10c0-2-2-2-2-4"/>', art: '<rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m4.5 18 5-5 4 4 2-2 4 4"/>', star: '<path d="M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.9 7.2 19.4l.9-5.4L4.2 9.7l5.4-.8z"/>', secret: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5M12 14.5v2.5"/>', now: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>', in: '<path d="M4 12h10M10 8l4 4-4 4M14 4h6v16h-6"/>', out: '<path d="M20 12H10M14 8l-4 4 4 4M10 4H4v16h6"/>', bed: '<path d="M3 19V6M3 15h18v4M21 15v-2a3 3 0 0 0-3-3h-8v5M6.5 12.5h.01"/>', sum: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v10M14.5 9.3a2.4 2.4 0 0 0-2.3-1.5h-1a2 2 0 0 0 0 4h1.4a2 2 0 0 1 0 4h-1a2.4 2.4 0 0 1-2.3-1.6"/>', night: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>', bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/>' });
 const STEPS = [['new', 'Заявка'], ['confirmed', 'Подтверждена'], ['checkedin', 'Заселён'], ['done', 'Завершена']];
 const addDays = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const ruDate = d => new Date(d + 'T12:00:00Z').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
@@ -959,8 +974,8 @@ function bookingCard(b) {
     : `<ol class="bk-steps" aria-label="Статус брони">${STEPS.map(([k, n], i) => `<li class="${i < at ? 'done' : i === at ? 'now' : ''}"${i === at ? ' aria-current="step"' : ''}>${n}</li>`).join('')}</ol>`;
   const unread = bkUnread(b), open = meBk === b.id || (meBk === null && unread > 0);
   return `<article class="bk bk-${b.status}${bkMoved.has(b.id) ? ' moved' : ''}" id="bk-${esc(b.id)}" data-bk="${esc(b.id)}"><div class="bk-top"><div><span class="lbl">Код брони</span><b class="bk-code num">${esc(b.code)}</b></div><span class="bk-type">${esc(b.typeName)}</span></div>${steps}
-    ${bkStage(b, room)}
-    <dl class="bk-facts"><div><dt>Заезд</dt><dd>${ruDate(b.date)}</dd></div><div><dt>Выезд</dt><dd>${ruDate(addDays(b.date, b.nights))}</dd></div><div><dt>Номер</dt><dd>${room ? `${esc(room.id)} · ${room.floor} этаж` : 'назначат при подтверждении'}</dd></div><div><dt>Сумма</dt><dd class="num">${money(b.total)}${b.discount ? ` <small>скидка ${b.discount}%${b.tier ? ' · ' + esc(b.tier) : ''}</small>` : ''}</dd></div></dl>
+    ${bkStage(b, room)}${svcPanel(b)}
+    <dl class="bk-facts"><div><dt>${mi('in')}Заезд</dt><dd>${ruDate(b.date)}</dd></div><div><dt>${mi('out')}Выезд</dt><dd>${ruDate(addDays(b.date, b.nights))}</dd></div><div><dt>${mi('bed')}Номер</dt><dd>${room ? `${esc(room.id)} · ${room.floor} этаж` : 'назначат при подтверждении'}</dd></div><div><dt>${mi('sum')}Сумма</dt><dd class="num">${money(b.total)}${b.discount ? ` <small>скидка ${b.discount}%${b.tier ? ' · ' + esc(b.tier) : ''}</small>` : ''}</dd></div></dl>
     <div class="row bk-act"><button class="btn sm ${unread ? '' : 'ghost'} bk-chat-btn" data-bkchat="${esc(b.id)}" aria-expanded="${open}" aria-controls="bkc-${esc(b.id)}">Чат с отелем${unread ? ` <span class="badge" aria-label="Новых ответов: ${unread}">${unread}</span>` : ''}</button>${room ? `<button class="btn sm ghost" data-tower="${esc(room.id)}">Показать на башне</button>` : ''}${b.status === 'new' ? `<button class="btn sm ghost" data-move="${esc(b.id)}">Перенести</button>` : ''}${['new', 'confirmed'].includes(b.status) ? `<button class="btn sm ghost danger-t" data-cancel="${esc(b.id)}">Отменить</button>` : ''}${b.status === 'done' ? reviewState(b) : ''}</div>
     ${open ? bkChat(b) : ''}</article>`;
 }
@@ -977,7 +992,7 @@ function bkStage(b, room) {
       <div class="bk-next"><b>${dz > 1 ? `Заезд через ${dz} ${plural(dz, 'день', 'дня', 'дней')}` : dz === 1 ? 'Заезд завтра' : dz === 0 ? 'Заезд сегодня' : 'Ждём вас на ресепшене'}</b><p>Ключ-карта готова. Подойдите на ресепшен в лобби — управляющий заселит вас в номер ${esc(room.id)}. Лифт: ${esc(roomGameFloor(S.pub.rooms, room.floor))}.</p></div></div>`;
   if (b.status === 'checkedin' && room) return `<div class="bk-stage in"><div class="bk-next"><b>Вы в номере ${esc(room.id)}</b><p>${dOut > 0 ? `Выезд ${ruDate(out)}, через ${dOut} ${plural(dOut, 'день', 'дня', 'дней')}.` : 'Выезд сегодня — ключ-карту оставьте на ресепшене.'} Хорошего отдыха!</p></div>
       <div class="bk-quick"><button class="qa" data-roomsvc="${esc(room.id)}"><b>Заказать в номер</b><span>Le Ciel и сигары</span></button><button class="qa" data-bkchat="${esc(b.id)}" data-focus="1"><b>Ресепшен</b><span>Написать управляющим</span></button><a class="qa" href="#leisure"><b>Отдых</b><span>Бассейны и клуб</span></a></div></div>`;
-  if (b.status === 'done') return `<div class="bk-stage done"><div class="bk-next"><b>Спасибо, что выбрали Mile High Club</b><p>Будем рады видеть вас снова. Оцените проживание — отзыв появится на главной.</p></div></div>`;
+  if (b.status === 'done') return `<div class="bk-stage done"><div class="bk-next"><b>Спасибо, что выбрали Mile High Club</b><p>Будем рады видеть вас снова. Оцените проживание, отзыв появится на главной.</p></div></div>`;
   return '';
 }
 function bkChat(b) {
@@ -985,6 +1000,29 @@ function bkChat(b) {
   return `<div class="chat mechat bkchat" id="bkc-${esc(b.id)}"><div class="msgs" id="bkMsgs-${esc(b.id)}" role="log" aria-label="Переписка по брони ${esc(b.code)}">${ms.map(m => m.from === 'system' ? `<div class="msg sys">${esc(m.text)} <small>${when(m.at)}</small></div>`
       : `<div class="msg ${m.from === 'guest' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${m.from === 'staff' ? `<b class="who">${esc(m.by || 'Отель')}</b>` : ''}${oocTag(m)}${esc(m.text)}<small>${when(m.at)}</small></div>`).join('') || '<div class="msg sys">Напишите отелю — ответ придёт сюда</div>'}</div>
     ${closed ? '<p class="note" style="margin:.4rem 0 0">Бронь закрыта. Если остался вопрос — напишите, управляющие увидят.</p>' : ''}<form class="compose" data-bkform="${esc(b.id)}">${oocSwitch('b:' + b.id)}<textarea rows="1" maxlength="1000" placeholder="Сообщение отелю…" aria-label="Сообщение отелю"></textarea><button class="btn sm">Отправить</button></form></div>`;
+}
+// просьбы к отелю: плитки услуг, табличка на двери и что уже передано персоналу
+const SVI = p => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+const SV_ICON = { clean: SVI('<path d="M14 3l-4 9M7 12h7l2 9H5z"/><path d="M9 16v5M12.5 16v5"/>'), towels: SVI('<rect x="4" y="5" width="16" height="5" rx="2"/><path d="M6 10v9h12v-9M6 15h12"/>'), wake: SVI('<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M4 5l3-2.4M20 5l-3-2.4"/>'), car: SVI('<path d="M3 16v-3l2.4-5.2A2 2 0 0 1 7.2 6.6h9.6a2 2 0 0 1 1.8 1.2L21 13v3"/><path d="M3 13h18M3 16h18v2.5H3z"/><circle cx="7" cy="16" r="1"/><circle cx="17" cy="16" r="1"/>'), bags: SVI('<rect x="4" y="8" width="16" height="12" rx="2"/><path d="M9 8V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V8M9 8v12M15 8v12"/>'), late: SVI('<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>') };
+function svcPanel(b) {
+  if (!['confirmed', 'checkedin'].includes(b.status)) return '';
+  const list = b.services || [], live = k => list.find(x => x.kind === k && ['new', 'work'].includes(x.status)), kinds = Object.entries(SERVICES).filter(([, v]) => v.when.includes(b.status));
+  return `<section class="svc" aria-label="Услуги отеля"><div class="row" style="justify-content:space-between"><h4>${mi('bell')}${b.status === 'checkedin' ? 'Что нужно в номер?' : 'Подготовить к приезду'}</h4>${b.status === 'checkedin' ? `<button type="button" class="dnd${b.dnd ? ' on' : ''}" data-dnd="${esc(b.id)}" aria-pressed="${!!b.dnd}"><i aria-hidden="true"></i>Не беспокоить</button>` : ''}</div>
+    <div class="svc-grid">${kinds.map(([k, v]) => { const l = live(k); return `<button type="button" class="svc-b${l ? ' on' : ''}" data-svc="${k}" data-b="${esc(b.id)}" ${l ? 'disabled' : ''}>${SV_ICON[k]}<b>${v.label}</b><span>${l ? `${SERVICE_STATUS[l.status]}${l.time ? ' · ' + l.time : ''}` : v.time ? 'Выбрать время' : 'Попросить'}</span></button>`; }).join('')}</div>
+    ${list.length ? `<ul class="svc-log">${list.slice(-4).reverse().map(x => `<li class="s-${x.status}"><span>${esc(SERVICES[x.kind]?.label || 'Просьба')}${x.time ? `, к ${esc(x.time)}` : ''}</span><em>${SERVICE_STATUS[x.status] || ''}</em></li>`).join('')}</ul>` : ''}</section>`;
+}
+function wireSvc() {
+  $$('#main [data-svc]').forEach(x => x.onclick = async () => {
+    const kind = x.dataset.svc, v = SERVICES[kind]; let time = '';
+    if (v.time) {
+      const r = await modal(`<h3>${v.label}</h3><p class="note">${kind === 'car' ? 'Машина будет ждать у главного входа.' : 'Портье позвонит в номер.'} Время отеля, Лос-Сантос.</p><label class="field"><span>К какому времени</span><input type="time" id="svT" value="${kind === 'wake' ? '08:00' : hhmm(Date.now() + 30 * 60e3)}"></label><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Отмена</button><button class="btn" id="svGo">Передать</button></div>`, { onMount: (box, close) => { box.querySelector('#svGo').onclick = () => close({ t: box.querySelector('#svT').value }); } });
+      if (!r || typeof r !== 'object') return; time = r.t;
+    }
+    x.disabled = true;
+    try { await api('POST', `/me/bookings/${x.dataset.b}/service`, { kind, time }); play('success'); toast(`${v.label}: передали отелю`); await loadItems(); } catch (e) { fail(e); x.disabled = false; }
+  });
+  $$('#main [data-dnd]').forEach(x => x.onclick = async () => { const on = x.getAttribute('aria-pressed') !== 'true'; x.disabled = true;
+    try { await api('POST', `/me/bookings/${x.dataset.dnd}/service`, { kind: 'dnd', on }); play('soft'); toast(on ? 'Табличка на двери: вас не потревожат' : 'Табличка снята'); await loadItems(); } catch (e) { fail(e); x.disabled = false; } });
 }
 function reviewState(b) {
   const r = (S.items.reviews || []).find(x => x.bookingId === b.id);
@@ -994,7 +1032,7 @@ function reviewState(b) {
 function tierBlock(st) {
   const T = S.pub.settings.tiers || [], cur = st.tier, nx = st.next;
   const from = cur ? cur.nights : 0, pct = nx ? Math.min(100, Math.round((st.nights - from) / (nx.nights - from) * 100)) : 100;
-  return `<div class="card pad stack tierc"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.05rem">Статус гостя</h3><span class="chip ${cur ? 'p' : 'm'}">${cur ? esc(cur.name) : 'Гость'}</span></div>
+  return `<div class="card pad stack tierc"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.05rem">${mi('star')}Статус гостя</h3><span class="chip ${cur ? 'p' : 'm'}">${cur ? esc(cur.name) : 'Гость'}</span></div>
     <div class="tier-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="До следующего статуса"><i style="width:${pct}%"></i></div>
     <p class="note">${nx ? `Прожито ночей: <b>${st.nights}</b>. До статуса «${esc(nx.name)}» — ${nx.nights - st.nights} ${plural(nx.nights - st.nights, 'ночь', 'ночи', 'ночей')}.` : `Прожито ночей: <b>${st.nights}</b>. Это высший статус отеля.`}</p>
     <dl class="bk-facts"><div><dt>Проживаний</dt><dd>${st.stays}</dd></div><div><dt>Любимый номер</dt><dd>${st.favRoom ? esc(st.favRoom) : '—'}</dd></div><div><dt>Любимый тип</dt><dd>${st.favType ? esc(st.favType) : '—'}</dd></div></dl>
@@ -1012,31 +1050,83 @@ function lifexBlock(p) {
     ${lx.bio ? `<p class="note" style="margin:0">${esc(lx.bio)}</p>` : ''}<div class="row" style="gap:.4rem">${lx.url ? `<a class="btn sm lifex" href="${esc(lx.url)}" target="_blank" rel="noopener">${lxMark()}Открыть в LifeX</a>` : ''}<a class="btn sm ghost" href="${link}"${demo}>Обновить из LifeX</a><button type="button" class="btn sm ghost danger-t" id="lxOff">Отвязать</button></div></div>`;
   return lxOn ? `<div class="lx-card"><div class="row" style="gap:.6rem;flex-wrap:nowrap;align-items:center">${lxMark()}<b>Профиль LifeX</b></div><p class="note" style="margin:0">Привяжите профиль из игровой соцсети: фото станет вашим аватаром на сайте, имя персонажа и телефон подставятся в профиль.</p>${DEMO ? '<p class="note" style="margin:0">Демо-версия: привяжется пример профиля, без входа в настоящий LifeX.</p>' : ''}<div><a class="btn sm lifex" href="${link}"${demo}>${lxMark()}Привязать LifeX</a></div></div>` : '';
 }
-let meTicket = null;
+let meTicket = null, meTab = (() => { try { return sessionStorage.getItem('mhc-me') || 'room'; } catch { return 'room'; } })();
+function setMeTab(t) { meTab = t; try { sessionStorage.setItem('mhc-me', t); } catch { } }
+addEventListener('mhc-me', e => { setMeTab(e.detail); if (current === 'me') renderMe(); });
+// --- гостевая карта: лицо кабинета ---
+// рисунок карты: свой выбор гостя, иначе картинка из «Настроек», иначе цвет статуса
+const artSafe = u => (/^(https?:\/\/|\/(?!\/)|img\/|uploads\/|data:image\/)/.test(u || '') ? new URL(u, location.href).href.replace(/['()\\]/g, encodeURIComponent) : '');
+const artUrl = c => (c === 'plain' ? '' : c && CARD_ART[c] ? artSafe(CARD_ART[c].img) : artSafe(S.pub?.settings?.guestCard));
+function guestCardHtml(p, st, no) {
+  const nx = st.next, from = st.tier ? st.tier.nights : 0, pct = nx ? Math.max(0, Math.min(100, Math.round((st.nights - from) / Math.max(1, nx.nights - from) * 100))) : 100, t = String(st.tier?.name || '').toLowerCase();
+  const art = artUrl(p.card);
+  return `<div class="gcard${art ? ' art' : ''} t-${/silver|сереб/.test(t) ? 'silver' : /gold|золот/.test(t) ? 'gold' : st.tier ? 'vip' : 'base'}"${art ? ` style="--art:url('${esc(art)}')"` : ''} aria-label="Гостевая карта"><div class="gc-top"><span class="gc-brand">THE MILE HIGH CLUB</span><span class="gc-tier">${st.tier ? esc(st.tier.name) : 'Гость'}</span></div><img class="gc-mark" src="img/logo.webp?v=3" alt="" width="120" height="72"><div><b class="gc-name">${esc(p.name || 'Имя гостя')}</b><span class="gc-no num">${esc(no || '•••• ••••')}</span></div><div class="gc-foot"><div class="gc-bar"><i style="width:${pct}%"></i></div><span>${nx ? `${st.nights} из ${nx.nights} ночей до «${esc(nx.name)}»` : `${st.nights} ${plural(st.nights, 'ночь', 'ночи', 'ночей')} в отеле`}</span></div></div>`;
+}
+function meRoom(live, st, p) {
+  const now = Date.now(), open = S.pub.venues.map(v => ({ v, s: venueState(v, S.pub.events, now) })).filter(x => ['open', 'live', 'event', 'calm'].includes(x.s.state)).slice(0, 4), ev = (S.pub.events || []).filter(e => e.status !== 'cancelled' && e.start > now && e.start < now + 36 * 3600e3).sort((a, b) => a.start - b.start)[0];
+  const main = live.length ? live.map(bookingCard).join('') : `<div class="g-empty"><h3>Номер ещё не выбран</h3><p class="mut">${st.favType ? `В прошлый раз вы выбирали «${esc(st.favType)}». ` : ''}Посмотрите башню, выберите этаж и вид. Управляющий подготовит ключ-карту к вашему приезду.</p><div class="row"><a class="btn" href="#stay">Выбрать номер</a>${st.favRoom ? `<button class="btn ghost" data-tower="${esc(st.favRoom)}">Мой номер ${esc(st.favRoom)}</button>` : ''}</div></div>`;
+  const need = !p.name ? `<button type="button" class="g-tip" data-go="card"><b>${mi('user')}Представьтесь</b><span>Впишите имя: с ним вас встретят на ресепшене</span></button>` : !Object.keys(p.prefs || {}).length ? `<button type="button" class="g-tip" data-go="card"><b>${mi('pillow')}Расскажите о привычках</b><span>Подушка, прохлада, напиток к приезду. Подготовим номер под вас</span></button>` : '';
+  return `<div class="me-grid"><div class="stack" style="gap:1rem;min-width:0">${main}</div><aside class="stack" style="gap:1rem;min-width:0">${need}
+    <div class="card pad stack"><h3>${mi('now')}Сейчас в отеле</h3>${open.length ? `<ul class="g-now">${open.map(x => `<li><a href="#leisure"><b>${esc(x.v.name)}</b><span>${esc(x.s.label || 'Открыто')}</span></a></li>`).join('')}</ul>` : '<p class="note">Площадки закрыты, ресепшен работает круглосуточно.</p>'}${ev ? `<div class="g-ev"><span class="lbl">Скоро</span><b>${esc(ev.name)}</b><span class="note">${when(ev.start)}</span></div>` : ''}</div></aside></div>`;
+}
+function meStays(past, st) {
+  return `<div class="g-stats"><div><b class="num">${st.stays}</b><span>${mi('bed')}${plural(st.stays, 'проживание', 'проживания', 'проживаний')}</span></div><div><b class="num">${st.nights}</b><span>${mi('night')}${plural(st.nights, 'ночь', 'ночи', 'ночей')}</span></div><div><b>${st.favRoom ? esc(st.favRoom) : '—'}</b><span>${mi('room')}любимый номер</span></div><div><b>${st.favType ? esc(st.favType) : '—'}</b><span>${mi('star')}любимый тип</span></div></div>
+    ${past.length ? `<div class="stack" style="gap:1rem">${past.map(bookingCard).join('')}</div>` : '<div class="empty">Здесь появятся ваши проживания и отзывы о них. <a href="#stay">Выбрать номер</a></div>'}`;
+}
+function meOrders(it, inRoom) {
+  return `<div class="row" style="justify-content:space-between;margin-bottom:1rem"><p class="mut">${inRoom ? `Официант поднимется в номер ${esc(inRoom.room || '')}.` : 'Заказ принесут прямо в номер.'}</p><div class="row"><a class="btn sm" href="#dining">Меню Le Ciel</a><a class="btn sm ghost" href="#cigars">Сигары</a></div></div>
+    ${it.orders.length ? `<div class="list">${it.orders.map(o => `<div class="item"><div class="top"><b>Номер ${esc(o.room)} · ${money(o.total)}</b><span class="chip ${o.status === 'done' ? 'ok' : o.status === 'cancelled' ? 'bad' : 'warn'}">${ORDER_STATUS[o.status]}</span></div>${o.status !== 'cancelled' ? `<ol class="bk-steps three" aria-label="Статус заказа">${[['new', 'Принят'], ['cooking', 'Готовится'], ['delivering', 'Несём'], ['done', 'Доставлен']].map(([k, n], i) => { const at = ['new', 'cooking', 'delivering', 'done'].indexOf(o.status); return `<li class="${i < at ? 'done' : i === at ? (k === 'done' ? 'done' : 'now') : ''}">${n}</li>`; }).join('')}</ol>` : ''}<span class="note">${o.items.map(i => esc(i.name) + ' ×' + i.qty).join(', ')} · ${when(o.createdAt)}</span>${o.items.some(i => itemById(i.id)) ? `<div><button class="btn sm ghost" data-again="${esc(o.id)}">Заказать снова</button></div>` : ''}</div>`).join('')}</div>` : '<div class="empty">Заказов пока не было.</div>'}`;
+}
+function meDesk(it, live, chatT) {
+  const lines = live.filter(b => (b.messages || []).some(m => m.from !== 'system'));
+  return `<div class="row" style="justify-content:space-between;margin-bottom:1rem"><p class="mut">Консьерж на связи круглосуточно. Вопрос о проживании лучше задать в переписке брони: её видит ваш управляющий.</p><a class="btn sm" href="#contact">Написать консьержу</a></div>
+    ${lines.length ? `<div class="list" style="margin-bottom:1rem">${lines.map(b => { const m = b.messages.filter(x => x.from !== 'system').at(-1); return `<div class="item${bkUnread(b) ? ' unread' : ''}"><div class="top"><b>${b.room ? 'Номер ' + esc(b.room) : esc(b.typeName)}</b>${bkUnread(b) ? '<span class="chip p">Новый ответ</span>' : `<span class="note">${when(m.at)}</span>`}</div><span class="note">${m.from === 'guest' ? 'Вы: ' : ''}${esc(m.text.slice(0, 120))}</span><div><button class="btn sm ghost" data-go="room" data-bk="${esc(b.id)}">Открыть переписку</button></div></div>`; }).join('')}</div>` : ''}
+    ${it.tickets.length ? `<div class="list">${it.tickets.map(t => `<div class="item${unreadOf(t) ? ' unread' : ''}"><div class="top"><b>${esc(t.topic)}${unreadOf(t) ? ' <span class="chip p">Новый ответ</span>' : ''}</b><span class="chip ${t.status === 'open' ? 'ok' : 'm'}">${TICKET_STATUS[t.status]}</span></div><span class="note">${t.mode === 'site' ? 'Переписка здесь' : t.mode === 'discord' ? 'Ответ придёт в Discord' : ''} · ${when(t.createdAt)}</span>${t.mode === 'site' ? `<div><button class="btn sm ghost" data-chat="${esc(t.id)}" aria-expanded="${t.id === meTicket}">${t.id === meTicket ? 'Свернуть' : 'Открыть переписку'}</button></div>` : ''}${t.id === meTicket && chatT ? meChat(chatT) : ''}</div>`).join('')}</div>` : lines.length ? '' : '<div class="empty">Обращений пока нет.</div>'}`;
+}
+function meCard(p, u, st) {
+  const pr = p.prefs || {};
+  return `<div class="me-grid"><div class="stack" style="gap:1rem;min-width:0"><form class="card pad stack" id="meProf"><div class="stack" style="gap:.3rem"><h3>${mi('card')}Кто вы и как вас встретить</h3><p class="note">Эти данные подставятся в бронь и заказы, а персонал подготовит номер под ваши привычки.</p></div>
+      <div class="g2"><label class="field"><span>${mi('user')}Имя и фамилия</span><input id="pfName" value="${esc(p.name || '')}" maxlength="60" autocomplete="off"></label><label class="field"><span>${mi('phone')}Телефон</span><input id="pfPhone" value="${esc(p.phone || '')}" maxlength="20" autocomplete="off"></label></div>
+      ${Object.entries(PREFS).map(([k, f]) => `<fieldset class="pf-set"><legend>${mi(k)}${f.label}</legend><div class="pf-opts"><label><input type="radio" name="pf_${k}" value="" ${pr[k] ? '' : 'checked'}><span>Не важно</span></label>${Object.entries(f.opts).map(([o, n]) => `<label><input type="radio" name="pf_${k}" value="${o}" ${pr[k] === o ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div></fieldset>`).join('')}
+      <fieldset class="pf-set"><legend>${mi('art')}Рисунок карты</legend><div class="art-opts">${[['', 'От отеля', artSafe(S.pub?.settings?.guestCard)], ['plain', 'Цвет статуса', ''], ...Object.entries(CARD_ART).map(([k, a]) => [k, a.label, artSafe(a.img)])].map(([k, n, u]) => `<label><input type="radio" name="pf_card" value="${k}" ${(p.card || '') === k ? 'checked' : ''}><span${u ? ` style="--art:url('${esc(u)}')"` : ''}>${n}</span></label>`).join('')}</div></fieldset>
+      <label class="field"><span>${mi('note')}Ещё пожелания</span><textarea id="pfNote" maxlength="300" placeholder="Аллергия на лилии, высокий этаж, детская кровать…">${esc(p.note || '')}</textarea></label>
+      <div><button class="btn sm">Сохранить карту</button></div></form></div>
+    <aside class="stack" style="gap:1rem;min-width:0">${tierBlock(st)}
+      <div class="card pad stack"><div class="row" style="justify-content:space-between"><h3>${mi('secret')}Секреты отеля</h3><b class="num" style="color:var(--gold)"><span data-count="${achCount()}" data-from="${Math.min(achSeen(), achCount())}">${achCount()}</span>/${ACH.length}</b></div>${achBar(achCount(), ACH.length, Math.min(achSeen(), achCount()))}${rarityChips()}${achCount() > achSeen() ? `<p class="note" style="color:var(--gold)">Новых секретов: ${achCount() - achSeen()}. Загляните в коллекцию.</p>` : ''}<div><button class="btn sm ghost" id="meAch">Открыть коллекцию</button></div></div>
+      <details class="card pad g-ooc"${lxOpen ? ' open' : ''}><summary><span class="ooctag">OOC</span> Аккаунт на сайте</summary><div class="stack"><p class="note">Этот блок вне роли: вход, уведомления и ваши данные.</p>
+        <p>${u ? `Вы вошли через Discord как <b>${esc(u.username)}</b>. Карта и брони доступны на любом устройстве.` : 'Вы не вошли: карта и брони хранятся за этим устройством. После входа они перейдут в аккаунт.'}</p><div>${u ? `<button type="button" class="btn ghost sm" id="meOut">${I.out} Выйти</button>` : `<button type="button" class="btn discord sm" id="meIn2">${I.discord} Войти через Discord</button>`}</div>
+        <label class="check"><input type="checkbox" id="pfDm" ${p.dm === false ? '' : 'checked'}><span>Присылать статусы брони, заказов и ответы в личные сообщения Discord</span></label>
+        ${lifexBlock(p)}
+        <div class="stack" style="gap:.5rem"><p class="note">Удалить брони, заказы, заявки и карту${u ? ' из аккаунта и с этого устройства' : ' с этого устройства'}. Действующие брони отменятся. Подробнее в <a href="#privacy">политике конфиденциальности</a>.</p><div><button type="button" class="btn sm ghost danger-t" id="meDel">Удалить мои данные</button></div></div></div></details>
+    </aside></div>`;
+}
+let lxOpen = false;
 function renderMe() {
   if (lxOn === null) { lxOn = false; authConfig().then(c => { lxOn = !!c.lifex; if (lxOn && current === 'me') renderMe(); }); }
   const it = S.items, u = S.me, p = it.profile || {}, st = it.stats || { nights: 0, stays: 0 };
   const chatT = it.tickets.find(t => t.id === meTicket && t.mode === 'site') || null;
   if (p.name && p.phone) unlock('passport'); if (p.lifex) unlock('lifex'); if (st.tier) unlock('loyal');
   const draft = $('#meChatIn')?.value || '', focused = $('#meChatIn') === document.activeElement;
-  view('me').innerHTML = `<div class="wrap sec"><p class="sr-only" role="status" aria-atomic="true" id="meLive"></p><div class="head"><span class="eyebrow">Кабинет</span><h2>Мои брони и заявки</h2><p>${u ? `Вы вошли как <b>${esc(u.username)}</b>.` : 'Брони и заявки с этого устройства видны здесь. Войдите через Discord, чтобы видеть их на любом устройстве: всё, что вы оформили здесь, перейдёт в аккаунт.'}</p></div>
-    <div class="row" style="margin-bottom:1.5rem">${u ? `<button class="btn ghost sm" id="meOut">${I.out} Выйти</button>${u.role !== 'guest' ? '<a class="btn sm" href="#admin">Панель персонала</a>' : ''}` : `<button class="btn discord sm" id="meIn">${I.discord} Войти через Discord</button>`}</div>
-    <div class="me-grid">
-      <div class="stack" style="gap:1rem;min-width:0"><h3 style="font-size:1.1rem">Брони</h3>${it.bookings.length ? it.bookings.map(bookingCard).join('') : '<div class="empty">Броней пока нет. <a href="#stay">Выбрать номер</a></div>'}
-        <h3 style="font-size:1.1rem;margin-top:.5rem">Заказы в номер</h3>${it.orders.length ? `<div class="list">${it.orders.map(o => `<div class="item"><div class="top"><b>Номер ${esc(o.room)} · ${money(o.total)}</b><span class="chip ${o.status === 'done' ? 'ok' : o.status === 'cancelled' ? 'bad' : 'warn'}">${ORDER_STATUS[o.status]}</span></div><span class="note">${o.items.map(i => esc(i.name) + ' ×' + i.qty).join(', ')} · ${when(o.createdAt)}</span>${o.items.some(i => itemById(i.id)) ? `<div><button class="btn sm ghost" data-again="${esc(o.id)}">Заказать снова</button></div>` : ''}</div>`).join('')}</div>` : '<div class="empty">Заказов нет. <a href="#dining">Меню Le Ciel</a></div>'}
-        <h3 style="font-size:1.1rem;margin-top:.5rem">Заявки</h3>${it.tickets.length ? `<div class="list">${it.tickets.map(t => `<div class="item${unreadOf(t) ? ' unread' : ''}"><div class="top"><b>${esc(t.topic)}${unreadOf(t) ? ' <span class="chip p">Новый ответ</span>' : ''}</b><span class="chip ${t.status === 'open' ? 'ok' : 'm'}">${TICKET_STATUS[t.status]}</span></div><span class="note">${t.mode === 'site' ? 'Чат на сайте' : t.mode === 'discord' ? 'В Discord' : ''} · ${when(t.createdAt)}</span>${t.mode === 'site' ? `<div><button class="btn sm ghost" data-chat="${esc(t.id)}" aria-expanded="${t.id === meTicket}">${t.id === meTicket ? 'Свернуть чат' : 'Открыть чат'}</button></div>` : ''}${t.id === meTicket && chatT ? meChat(chatT) : ''}</div>`).join('')}</div>` : '<div class="empty">Заявок нет. <a href="#contact">Написать управляющим</a></div>'}
-      </div>
-      <aside class="stack" style="gap:1rem;min-width:0">${tierBlock(st)}
-        <form class="card pad stack" id="meProf"><h3 style="font-size:1.05rem">Профиль гостя</h3><p class="note">Игровые данные. Подставляются в формы брони, заказа и заявки.</p>${lifexBlock(p)}
-          <label class="field"><span>Имя персонажа</span><input id="pfName" value="${esc(p.name || '')}" maxlength="60" autocomplete="off"></label>
-          <label class="field"><span>Игровой телефон</span><input id="pfPhone" value="${esc(p.phone || '')}" maxlength="20" autocomplete="off"></label>
-          <label class="field"><span>Пожелания к номеру</span><textarea id="pfNote" maxlength="300">${esc(p.note || '')}</textarea></label>
-          <label class="check"><input type="checkbox" id="pfDm" ${p.dm === false ? '' : 'checked'}><span>Присылать статусы брони, заказов и ответы в личные сообщения Discord</span></label>
-          <div><button class="btn sm">Сохранить профиль</button></div></form>
-        <div class="card pad stack"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.05rem">Секреты отеля</h3><b class="num" style="color:var(--gold)"><span data-count="${achCount()}" data-from="${Math.min(achSeen(), achCount())}">${achCount()}</span>/${ACH.length}</b></div>${achBar(achCount(), ACH.length, Math.min(achSeen(), achCount()))}${rarityChips()}${achCount() > achSeen() ? `<p class="note" style="color:var(--gold)">Новых секретов: ${achCount() - achSeen()}. Загляните в коллекцию.</p>` : ''}<p class="note">${u ? 'Найденные секреты сохраняются в аккаунте и видны на любом устройстве.' : 'Секреты хранятся в этом браузере. Войдите, чтобы не потерять их.'}</p><div><button class="btn sm ghost" id="meAch">Открыть коллекцию</button></div></div>
-        <div class="card pad stack"><h3 style="font-size:1.05rem">Мои данные</h3><p class="note">Удалить брони, заказы, заявки и профиль${u ? ' из аккаунта и с этого устройства' : ' с этого устройства'}. Действующие брони отменятся. Подробнее — в <a href="#privacy">политике конфиденциальности</a>.</p><div><button class="btn sm ghost danger-t" id="meDel">Удалить мои данные</button></div></div>
-      </aside></div></div>`;
-  $('#meOut') && ($('#meOut').onclick = () => logout()); $('#meIn') && ($('#meIn').onclick = () => openLogin('me'));
+  // недописанная карта гостя переживает фоновое обновление
+  const pf = $('#meProf'), keep = pf?.dataset.dirty ? { v: [...pf.elements].map(x => [x.id || x.name + x.value, x.type === 'radio' ? x.checked : x.value]), f: document.activeElement?.id } : null;
+  const live = it.bookings.filter(b => ['checkedin', 'confirmed', 'new'].includes(b.status)).sort((a, b) => ['checkedin', 'confirmed', 'new'].indexOf(a.status) - ['checkedin', 'confirmed', 'new'].indexOf(b.status) || a.date.localeCompare(b.date)), past = it.bookings.filter(b => ['done', 'cancelled'].includes(b.status));
+  const inRoom = live.find(b => b.status === 'checkedin'), hr = Math.floor(mskMinutes() / 60), hello = hr < 5 ? 'Доброй ночи' : hr < 12 ? 'Доброе утро' : hr < 18 ? 'Добрый день' : 'Добрый вечер', who = p.name || (u && u.role === 'guest' ? '' : '');
+  const lead = inRoom ? `Вы в номере ${esc(inRoom.room || '')}. Всё, что нужно, можно попросить прямо отсюда.` : live[0]?.status === 'confirmed' ? `Ждём вас ${ruDate(live[0].date)}. Номер ${esc(live[0].room || '')} готовят к приезду.` : live[0] ? 'Бронь у управляющего. Подтвердим и выдадим ключ-карту.' : it.bookings.length ? 'Будем рады принять вас снова.' : 'Ваша гостевая карта готова. Осталось выбрать номер.';
+  const TABS = [['room', 'Мой номер', live.reduce((n, b) => n + bkUnread(b), 0)], ['stays', 'Проживания', past.reduce((n, b) => n + bkUnread(b), 0)], ['orders', 'Заказы', it.orders.filter(o => ['new', 'cooking', 'delivering'].includes(o.status)).length], ['desk', 'Консьерж', it.tickets.filter(unreadOf).length], ['card', 'Карта гостя', 0]];
+  if (!TABS.some(t => t[0] === meTab)) meTab = 'room';
+  const tab = meTab === 'room' ? meRoom(live, st, p) : meTab === 'stays' ? meStays(past, st) : meTab === 'orders' ? meOrders(it, inRoom) : meTab === 'desk' ? meDesk(it, live, chatT) : meCard(p, u, st);
+  view('me').innerHTML = `<div class="wrap sec gme"><p class="sr-only" role="status" aria-atomic="true" id="meLive"></p>
+    <header class="g-hero"><div class="g-hi"><span class="eyebrow">Гость Mile High Club</span><h2>${hello}${who ? ', ' + esc(who) : ''}</h2><p>${lead}</p><div class="row">${inRoom ? `<button class="btn sm" data-roomsvc="${esc(inRoom.room || '')}">Заказать в номер</button>` : live.length ? '' : '<a class="btn sm" href="#stay">Выбрать номер</a>'}${u && u.role !== 'guest' ? '<a class="btn sm ghost" href="#admin">Панель персонала</a>' : ''}${u ? '' : `<button class="btn sm ghost" id="meIn">${I.discord} Войти</button>`}</div></div>
+      ${guestCardHtml(p, st, it.card)}</header>
+    <nav class="g-tabs" role="tablist" aria-label="Разделы кабинета">${TABS.map(([k, n, c]) => `<button type="button" role="tab" id="gt-${k}" aria-controls="gp" aria-selected="${k === meTab}" tabindex="${k === meTab ? 0 : -1}" data-gt="${k}">${mi(k)}${n}${c ? ` <span class="badge">${c}</span>` : ''}</button>`).join('')}</nav>
+    <div class="g-pane" id="gp" role="tabpanel" aria-labelledby="gt-${meTab}">${tab}</div></div>`;
+  $$('#main [data-gt]').forEach(b => { b.onclick = () => { if (b.dataset.gt === meTab) return; setMeTab(b.dataset.gt); play('soft'); renderMe(); $('#gp')?.classList.add('in'); $(`#gt-${meTab}`)?.focus({ preventScroll: true }); };
+    b.onkeydown = e => { const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0; if (!d) return; e.preventDefault(); const L = $$('#main [data-gt]'); L[(L.indexOf(b) + d + L.length) % L.length].click(); }; });
+  { const on = $('.g-tabs [aria-selected="true"]'), nv = on?.parentNode; if (nv && nv.scrollWidth > nv.clientWidth) nv.scrollLeft = on.offsetLeft - nv.clientWidth / 2 + on.offsetWidth / 2; }
+  $$('#main [data-go]').forEach(b => b.onclick = () => { setMeTab(b.dataset.go); if (b.dataset.bk) meBk = b.dataset.bk; renderMe(); });
+  wireSvc();
+  if (keep && $('#meProf')) { const f = $('#meProf'); f.dataset.dirty = '1'; keep.v.forEach(([k, v]) => { const x = [...f.elements].find(q => (q.id || q.name + q.value) === k); if (!x) return; if (x.type === 'radio') x.checked = v; else x.value = v; }); keep.f && document.getElementById(keep.f)?.focus({ preventScroll: true }); }
+  $('#meOut') && ($('#meOut').onclick = () => logout()); $$('#meIn, #meIn2').forEach(b => b.onclick = () => openLogin('me'));
   const reload = async msg => { await loadItems(); if (msg) toast(msg); };
   $$('#main [data-tower]').forEach(b => b.onclick = () => showOnTower(b.dataset.tower));
   $$('#main [data-review]').forEach(b => b.onclick = async () => {
@@ -1090,13 +1180,17 @@ function renderMe() {
     $('#meChatF') && ($('#meChatF').onsubmit = async e => { e.preventDefault(); const inp = $('#meChatIn'), text = inp.value.trim(); if (!text) return; inp.value = '';
       try { await api('POST', `/tickets/${chatT.id}/messages`, { text, ooc: isOoc() }); play('soft'); await loadItems(); $('#meChatIn')?.focus(); } catch (err) { fail(err); inp.value = text; } });
   }
-  $('#meProf').onsubmit = async e => { e.preventDefault();
-    try { await api('PUT', '/me/profile', { name: $('#pfName').value, phone: $('#pfPhone').value, note: $('#pfNote').value, dm: $('#pfDm').checked }); play('soft'); reload('Профиль сохранён'); } catch (err) { fail(err); } };
-  $('#meAch').onclick = () => openCabinet(); achGrow($('#meAch').closest('.card'));
+  const F = $('#meProf');
+  if (F) { F.oninput = () => { F.dataset.dirty = '1'; };
+    F.onsubmit = async e => { e.preventDefault(); const prefs = {}; Object.keys(PREFS).forEach(k => { const v = F.querySelector(`[name="pf_${k}"]:checked`)?.value; if (v) prefs[k] = v; });
+      try { await api('PUT', '/me/profile', { name: $('#pfName').value, phone: $('#pfPhone').value, note: $('#pfNote').value, prefs, card: F.querySelector('[name="pf_card"]:checked')?.value || '' }); delete F.dataset.dirty; play('soft'); reload('Карта гостя сохранена'); } catch (err) { fail(err); } };
+    $('.g-ooc').ontoggle = e => { lxOpen = e.target.open; };
+    $('#pfDm').onchange = async e => { try { await api('PUT', '/me/profile', { dm: e.target.checked }); reload(e.target.checked ? 'Личные сообщения включены' : 'Личные сообщения выключены'); } catch (err) { fail(err); } }; }
+  if ($('#meAch')) { $('#meAch').onclick = () => openCabinet(); achGrow($('#meAch').closest('.card')); }
   $$('#main [data-lxdemo]').forEach(a => a.onclick = async e => { e.preventDefault(); await demoLifex(); await loadItems(); toast('Демо: привязан пример профиля LifeX'); });
   $('#lxOff') && ($('#lxOff').onclick = async () => { if (!await confirmBox('Отвязать LifeX?', 'Фото из LifeX уберём, имя и телефон в профиле останутся.', 'Отвязать')) return; try { await api('DELETE', '/me/lifex'); reload('Профиль LifeX отвязан'); } catch (e) { fail(e); } });
-  $('#meDel').onclick = async () => {
-    const ok = await modal(`<h3>Удалить мои данные?</h3><p class="mut">Удалятся брони, заказы в номер, заявки с перепиской и профиль. Действующие брони будут отменены, тикет-каналы в Discord закроются без сохранения. Вернуть данные нельзя.</p><label class="field"><span>Для подтверждения введите УДАЛИТЬ</span><input id="delIn" autocomplete="off" placeholder="УДАЛИТЬ"></label><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Отмена</button><button class="btn danger" id="delGo" disabled>Удалить</button></div>`, { onMount: (box, close) => { const inp = box.querySelector('#delIn'), go = box.querySelector('#delGo'); inp.oninput = () => go.disabled = inp.value.trim() !== 'УДАЛИТЬ'; go.onclick = () => close(inp.value.trim()); } });
+  if ($('#meDel')) $('#meDel').onclick = async () => {
+    const ok = await modal(`<h3>Удалить мои данные?</h3><p class="mut">Удалятся брони, заказы в номер, заявки с перепиской, карта гостя и запись о входе. Действующие брони будут отменены, тикет-каналы в Discord закроются без сохранения. Вернуть данные нельзя.</p><label class="field"><span>Для подтверждения введите УДАЛИТЬ</span><input id="delIn" autocomplete="off" placeholder="УДАЛИТЬ"></label><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Отмена</button><button class="btn danger" id="delGo" disabled>Удалить</button></div>`, { onMount: (box, close) => { const inp = box.querySelector('#delIn'), go = box.querySelector('#delGo'); inp.oninput = () => go.disabled = inp.value.trim() !== 'УДАЛИТЬ'; go.onclick = () => close(inp.value.trim()); } });
     if (ok !== 'УДАЛИТЬ') return;
     try { const r = await api('POST', '/me/delete', { confirm: 'УДАЛИТЬ' }); meTicket = null; reload(`Удалено: броней ${r.deleted.bookings}, заказов ${r.deleted.orders}, заявок ${r.deleted.tickets}`); } catch (err) { fail(err); }
   };
@@ -1158,12 +1252,13 @@ function paintBell() {
   const fresh = list.find(n => !n.read && n.at > bellSeen);
   if (fresh) { bellSeen = list[0].at; pref.set('mhc-bell-at', String(bellSeen)); if (booted) toast(fresh.text); }
 }
-const ICON_N = { booking: '🛏️', order: '🍽️', ticket: '💬', review: '⭐' };
+const ICON_N = { booking: '🛏️', order: '🍽️', ticket: '💬', review: '⭐', profile: '🎫' }, TAB_N = { booking: 'room', order: 'orders', ticket: 'desk', review: 'stays', profile: 'card' };
 function openBell() {
   const list = S.items?.notices || [];
   modal(`<div class="stack"><div class="row" style="justify-content:space-between"><h3>Уведомления</h3><a class="btn sm ghost" href="#me" data-close="">Кабинет</a></div>
-    <div class="nlist">${list.map(n => `<a class="nitem ${n.read ? '' : 'new'}" href="${esc(n.link || '#me')}" data-close=""><span class="ni" aria-hidden="true">${ICON_N[n.kind] || '🔔'}</span><span><span class="nt">${esc(n.text)}</span><small class="note">${when(n.at)}</small></span></a>`).join('')}</div>
+    <div class="nlist">${list.map(n => `<a class="nitem ${n.read ? '' : 'new'}" href="${esc(n.link || '#me')}" data-ntab="${TAB_N[n.kind] || 'room'}" data-close=""><span class="ni" aria-hidden="true">${ICON_N[n.kind] || '🔔'}</span><span><span class="nt">${esc(n.text)}</span><small class="note">${when(n.at)}</small></span></a>`).join('')}</div>
     <p class="note" style="margin:0">${S.me ? 'Эти же уведомления бот присылает в Discord, если это не выключено в профиле.' : 'Войдите через Discord, чтобы получать уведомления на любом устройстве.'}</p></div>`);
+  $$('[data-ntab]').forEach(a => a.addEventListener('click', () => { setMeTab(a.dataset.ntab); if (current === 'me') renderMe(); }));
   if (list.some(n => !n.read)) api('POST', '/me/notices/read').then(() => { list.forEach(n => n.read = true); paintBell(); }).catch(() => {});
 }
 // профиль гостя подставляется в пустые поля форм брони, заказа и заявки
@@ -1183,7 +1278,7 @@ function onChange(cols) {
       if (c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq', 'jobs', 'reviews'].includes(x))) { await loadPublic(); applyWeather(); if (!['contact', 'admin', 'me'].includes(current)) render(); updFab(); }
       if (c.includes('guests') && !c.some(x => ['settings', 'types', 'rooms', 'venues', 'menu', 'cigars', 'depts', 'issues', 'events', 'media', 'team', 'offers', 'faq'].includes(x))) { await loadPublic(); paintGuests(); }
       // свои брони и заявки нужны только на страницах «Заявка» и «Мои брони»: на остальных просто помечаем устаревшими
-      if (c.some(x => ['bookings', 'tickets', 'orders', 'reviews'].includes(x))) { const it = S.items, live = it && (it.tickets.some(t => t.status !== 'closed') || it.bookings.some(b => ['new', 'confirmed', 'checkedin'].includes(b.status)) || it.orders.some(o => !['done', 'cancelled'].includes(o.status))); if (['contact', 'me'].includes(current) || live) await loadItems(); else itemsDirty = true; }
+      if (c.some(x => ['bookings', 'tickets', 'orders', 'reviews', 'guests'].includes(x))) { const it = S.items, live = it && (it.tickets.some(t => t.status !== 'closed') || it.bookings.some(b => ['new', 'confirmed', 'checkedin'].includes(b.status)) || it.orders.some(o => !['done', 'cancelled'].includes(o.status))); if (['contact', 'me'].includes(current) || live) await loadItems(); else itemsDirty = true; }
       if (current === 'admin') mods.admin?.refresh?.(c);
     } catch (e) { console.error(e); }
   }, DEMO ? 250 : 250 + Math.random() * 1500);
@@ -1218,7 +1313,7 @@ async function boot() {
     // картинки и шрифты — украшение: если телефон их не отдал быстро, страница всё равно показывается
     // (раньше при повторном открытии без заставки ожидание было бесконечным — видны были только шапка и фон)
     await Promise.race([Promise.all(jobs), new Promise(r => setTimeout(r, 2500))]);
-    applyMode(); route();
+    applyMode(); route(); setTimeout(warmUp, 2500);
   });
   if (failed) { $('#main').innerHTML = `<div class="gate"><h2>Сайт недоступен</h2><p class="mut">${esc(failed.message)}</p><button class="btn" onclick="location.reload()">Обновить</button></div>`; return; }
   if (!$('.view.on')) { applyMode(); route(); }
