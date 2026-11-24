@@ -67,6 +67,10 @@ export function wireOoc(f, key) {
 }
 // знак подтверждённого гостя: золотая печать с галочкой рядом с именем
 export const vBadge = on => (on ? '<svg class="vb" viewBox="0 0 24 24" role="img" aria-label="Подтверждённый гость"><title>Подтверждённый гость отеля</title><path class="vb-s" d="M12 1.8l2.5 2 3.2-.3 1 3 2.7 1.7-.9 3.1.9 3.1-2.7 1.7-1 3-3.2-.3-2.5 2-2.5-2-3.2.3-1-3-2.7-1.7.9-3.1-.9-3.1 2.7-1.7 1-3 3.2.3z" transform="translate(0 .7)"/><path class="vb-c" d="m8 12.2 2.7 2.7 5.3-5.4"/></svg>' : '');
+// значок персонала: щит управляющего (администрация) и щит дежурного (модерация)
+export const sBadge = role => (role === 'admin' ? '<svg class="vb sb-a" viewBox="0 0 24 24" role="img" aria-label="Администрация отеля"><title>Администрация отеля</title><path d="M12 1.8 21 5v6.4c0 5.2-3.7 9-9 10.8-5.3-1.8-9-5.6-9-10.8V5z"/><path class="sb-i" d="M7 15l-.8-6 3.2 2.4L12 7.2l2.6 4.2L17.8 9 17 15z"/></svg>' : role === 'mod' ? '<svg class="vb sb-m" viewBox="0 0 24 24" role="img" aria-label="Модерация отеля"><title>Модерация отеля</title><path d="M12 1.8 21 5v6.4c0 5.2-3.7 9-9 10.8-5.3-1.8-9-5.6-9-10.8V5z"/><path class="sb-i" d="M12 6.6l1.6 3.4 3.7.5-2.7 2.6.7 3.7-3.3-1.8-3.3 1.8.7-3.7-2.7-2.6 3.7-.5z"/></svg>' : '');
+// у персонала — щит, у остальных вошедших — печать подтверждённого гостя
+export const badges = (staff, ok) => sBadge(staff) || vBadge(ok);
 export const oocTag = m => (m.ooc ? '<span class="ooctag">OOC</span>' : '');
 
 // «Магнитная» кнопка: под курсором слегка тянется к нему (до max px). Только мышь и без «меньше анимации».

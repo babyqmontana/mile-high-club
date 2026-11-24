@@ -451,8 +451,44 @@ test('кабинет и «Гости»: просьбы, поправки адм�
   const g = list.guests.find(x => x.profile.name === 'Тони'); await go('PUT', `/admin/guests/${g.ref}`, { nights: 16, staffNote: 'тайна', tier: 'VIP' }, { user: admin });
   me = await go('GET', '/me/items'); assert.equal(me.stats.nights, 16); assert.equal(me.stats.tier.name, 'VIP'); assert.equal(me.stats.next, null); assert.ok(!JSON.stringify(me).includes('тайна'));
   await assert.rejects(go('PUT', `/admin/guests/${g.ref}`, { nights: -1 }, { user: admin }), /от 0/); await assert.rejects(go('PUT', '/admin/guests/нет', { name: 'x' }, { user: admin }), /не найден/);
+  const me1 = { id: 'd9', username: 'Коллекционер', role: 'guest' }; await go('POST', '/me/achievements', { ids: ['logo'] }, { user: me1 });
+  const find = async () => (await go('GET', '/admin/guests', {}, { user: admin })).guests.find(x => x.discordId === 'd9'), g9 = await find();
+  await go('POST', '/me/achievements', { ids: ['night'] }, { user: me1 }); await go('PUT', `/admin/guests/${g9.ref}`, { achAdd: ['dj'], achDel: ['logo'] }, { user: admin });
+  assert.deepEqual((await go('GET', '/me/items', {}, { user: me1 })).profile.achievements, ['night', 'dj'], 'найденное во время правки не потеряно');
+  assert.deepEqual(await go('POST', '/me/achievements', { ids: ['logo', 'night'] }, { user: me1 }), { achievements: ['night', 'dj'], off: ['logo'] }, 'снятый секрет с устройства не возвращается');
+  await go('PUT', `/admin/guests/${g9.ref}`, { achAdd: ['logo'] }, { user: admin }); assert.deepEqual((await go('POST', '/me/achievements', { ids: [] }, { user: me1 })).off, []);
   core.seen({ id: 'd1', username: 'Диск', role: 'guest' }); assert.equal(s.get('accounts', 'd:d1'), null); core.seen({ id: 'd1', username: 'Диск', role: 'guest' }, true); assert.equal(s.get('accounts', 'd:d1').logins, 1);
   await go('POST', '/me/delete', { confirm: 'УДАЛИТЬ' }, { user: { id: 'd1', username: 'Диск', role: 'guest' } }); assert.equal(s.get('accounts', 'd:d1'), null);
   await go('POST', `/admin/guests/${g.ref}/delete`, { confirm: 'УДАЛИТЬ' }, { user: admin }); assert.equal(s.all('bookings').length, 0);
   s.close();
+});
+
+test('портрет гостя: только после входа, тип по содержимому, снятие с причиной и запрет', async () => {
+  const cookie = async role => (await fetch(BASE + '/auth/demo?role=' + role, { redirect: 'manual' })).headers.get('set-cookie').split(';')[0], g = await cookie('guest'), a = await cookie('admin');
+  const send = (buf, c) => { const f = new FormData(); f.append('file', new Blob([buf], { type: 'image/png' }), 'a.png'); return fetch(BASE + '/api/me/avatar', { method: 'POST', body: f, headers: c ? { cookie: c } : {} }); };
+  const api = async (m, p, body, c) => { const r = await fetch(BASE + '/api' + p, { method: m, headers: { cookie: c, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) }); return [r.status, await r.json()]; };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  assert.equal((await send(png)).status, 401); assert.equal((await send(Buffer.from('<svg onload=alert(1)>'), g)).status, 400, 'подделка типа'); assert.equal((await send(Buffer.alloc(1200e3), g)).status, 400, 'слишком большой');
+  const r1 = await (await send(png, g)).json(); assert.match(r1.avatar, /^\/uploads\/av-[a-f0-9]{16}\.png$/); assert.equal((await fetch(BASE + r1.avatar)).status, 200);
+  const r2 = await (await send(png, g)).json(); const gone = async u => !/image/.test((await fetch(BASE + u)).headers.get('content-type')); assert.ok(await gone(r1.avatar), 'старый файл удалён');
+  const x = (await api('GET', '/admin/guests', null, a))[1].guests.find(q => q.profile.avatar === r2.avatar); assert.ok(x);
+  assert.equal((await api('POST', `/admin/guests/${x.ref}/avatar`, { reason: 'взлом' }, g))[0], 403);
+  assert.equal((await api('POST', `/admin/guests/${x.ref}/avatar`, { reason: 'Реклама', block: true }, a))[0], 200); assert.ok(await gone(r2.avatar));
+  const me = (await api('GET', '/me/items', null, g))[1]; assert.equal(me.profile.avatar, undefined); assert.equal(me.profile.avOff.reason, 'Реклама'); assert.ok(me.notices.some(n => /Причина: Реклама/.test(n.text)), 'гость уведомлён');
+  assert.equal((await send(png, g)).status, 403, 'загрузка отключена'); await api('POST', `/admin/guests/${x.ref}/avatar`, { allow: true }, a); assert.equal((await send(png, g)).status, 200);
+});
+
+test('страницы гостей: только по желанию, без личных данных; роль персонала — значком', async () => {
+  const s = openStore(path.join(dir, 'pages.sqlite')); seed(s); const core = createCore(s, {}), user = { id: 'p1', username: 'НикВДискорде', role: 'mod' }, admin = { id: 'a1', username: 'Админ', role: 'admin' };
+  const go = (m, p, body, u = user) => core.handle(m, p, { body, user: u }); core.seen(user, true);
+  await assert.rejects(go('PUT', '/me/profile', { page: true }), /имя/);
+  await go('PUT', '/me/profile', { name: 'Вито', phone: '555-777', note: 'секретное пожелание' }); assert.equal((await go('GET', '/guests', {}, null)).guests.length, 0, 'по умолчанию закрыта');
+  const { profile } = await go('PUT', '/me/profile', { page: true, about: 'Люблю виды' }), { guests } = await go('GET', '/guests', {}, null), raw = JSON.stringify(guests);
+  assert.equal(guests[0].staff, 'mod'); for (const x of ['555-777', 'секретное', 'НикВДискорде', 'd:p1', '"p1"']) assert.ok(!raw.includes(x), x);
+  assert.equal((await go('GET', '/guests/' + profile.slug, {}, null)).guest.about, 'Люблю виды');
+  const room = s.all('rooms').find(r => r.status === 'free'), { booking } = await go('POST', '/bookings', { type: room.type, name: 'Вито', discord: 'x', date: '2026-12-01', nights: 2, guests: 1 }); await go('POST', `/admin/bookings/${booking.id}/action`, { act: 'confirm', room: room.id }, admin); await go('POST', `/admin/bookings/${booking.id}/action`, { act: 'checkin' }, admin);
+  const page = JSON.stringify(await go('GET', '/guests/' + profile.slug, {}, null)) + JSON.stringify(core.publicData().rooms.find(r => r.id === room.id)); assert.ok(!page.includes(`"${room.id}","name`) && !/favType|favRoom|typeName|"date"/.test(page) && !page.slice(0, page.indexOf('{"id"')).includes(room.id), 'номер комнаты не выдаётся'); assert.ok(!JSON.stringify(core.publicData().rooms).includes('Вито'), 'в номерах нет имён');
+  const ref = (await go('GET', '/admin/guests', {}, admin)).guests.find(g => g.discordId === 'p1').ref; await go('PUT', `/admin/guests/${ref}`, { pageOff: true }, admin);
+  await assert.rejects(go('GET', '/guests/' + profile.slug, {}, null), /не открыл/); await go('PUT', `/admin/guests/${ref}`, { pageOff: false }, admin); assert.equal((await go('GET', '/guests', {}, null)).guests.length, 1);
+  await go('PUT', '/me/profile', { page: false }); assert.equal((await go('GET', '/guests', {}, null)).guests.length, 0); s.close();
 });

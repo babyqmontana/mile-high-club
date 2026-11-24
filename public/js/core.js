@@ -65,7 +65,6 @@ export const PREFS = {
   pillow: { label: 'Подушка', opts: { soft: 'Мягкая', firm: 'Упругая', ortho: 'Ортопедическая' } },
   temp: { label: 'Прохлада в номере', opts: { cool: 'Свежо, 19°', mid: 'Комфорт, 22°', warm: 'Тепло, 25°' } },
   drink: { label: 'Приветственный напиток', opts: { champagne: 'Шампанское', cocktail: 'Фирменный коктейль', coffee: 'Кофе', soft: 'Без алкоголя' } },
-  view: { label: 'Вид из окна', opts: { city: 'На город', sea: 'На океан', hills: 'На холмы' } },
   smoke: { label: 'Сигары', opts: { no: 'Номер для некурящих', yes: 'Нужна пепельница и хьюмидор' } }
 };
 // просьбы гостя к отелю: when — при каких статусах брони доступны, time — нужно ли указать время
@@ -102,12 +101,14 @@ export function createCore(store, hooks = {}) {
   // отзывы: на сайте только одобренные персоналом; рейтинг — по ним же
   function reviewsPublic() {
     const ok = store.all('reviews').filter(r => r.status === 'approved').sort((a, b) => b.createdAt - a.createdAt);
-    return { avg: ok.length ? Math.round(ok.reduce((n, r) => n + r.stars, 0) / ok.length * 10) / 10 : 0, count: ok.length, list: ok.slice(0, 12).map(r => ({ id: r.id, name: r.name, typeName: r.typeName, stars: r.stars, text: r.text, reply: r.reply || '', createdAt: r.createdAt, verified: verified(r.owner) })) };
+    return { avg: ok.length ? Math.round(ok.reduce((n, r) => n + r.stars, 0) / ok.length * 10) / 10 : 0, count: ok.length, list: ok.slice(0, 12).map(r => ({ id: r.id, name: r.name, typeName: r.typeName, stars: r.stars, text: r.text, reply: r.reply || '', createdAt: r.createdAt, verified: verified(r.owner), staff: staffRole(r.owner) })) };
   }
   // кабинет гостя: профиль хранится по владельцу (Discord-аккаунт или ключ устройства)
   const profileOf = owner => (owner && store.get('profiles', owner)) || null;
   // что из профиля видит сам гость: служебные заметки и поправки персонала наружу не уходят
   const ownProfile = p => { if (!p) return null; const { staffNote, adj, ...rest } = p; return rest; };
+  // роль персонала видна значком: берётся из записи о входе
+  const staffRole = owner => { const r = verified(owner) && store.get('accounts', owner)?.role; return r === 'admin' || r === 'mod' ? r : ''; };
   // номер гостевой карты: постоянный для владельца, сам ключ по нему не восстановить
   const cardNo = owner => { if (!owner) return null; let h = 2166136261; for (const c of 'mhc:' + owner) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return String(h % 100000000).padStart(8, '0').replace(/(\d{4})(\d{4})/, '$1 $2'); };
   // подтверждённый гость: личность закреплена за учётной записью (без входа владелец — ключ устройства)
@@ -183,7 +184,7 @@ export function createCore(store, hooks = {}) {
   on('GET', '/me/items', ({ user, guestKey }) => {
     seen(user); const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [], profile: null, card: null, stats: guestStats(null), reviews: [], notices: [] };
     const mine = c => store.all(c).filter(d => d.owner === o).sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
-    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: ownProfile(profileOf(o)), card: cardNo(o), verified: verified(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r) };
+    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: ownProfile(profileOf(o)), card: cardNo(o), verified: verified(o), staff: staffRole(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r) };
   });
   // после входа брони, заказы, обращения и профиль с этого устройства переходят в аккаунт
   on('POST', '/me/claim', ({ user, guestKey }) => {
@@ -202,8 +203,10 @@ export function createCore(store, hooks = {}) {
     const prev = profileOf(o) || { id: o, achievements: [] };
     const doc = { ...prev, id: o, name: str(body.name ?? prev.name, 60), phone: str(body.phone ?? prev.phone, 20), note: str(body.note ?? prev.note, 300), dm: body.dm === undefined ? prev.dm !== false : !!body.dm, updatedAt: Date.now() };
     if (body.prefs !== undefined) doc.prefs = cleanPrefs(body.prefs);
+    if (body.about !== undefined) doc.about = str(body.about, 160);
+    if (body.page !== undefined) { if (body.page && !String(doc.name || '').trim()) bad('Сначала впишите имя'); doc.page = !!body.page; if (doc.page && !doc.slug) doc.slug = uid('').slice(-10) + Math.random().toString(36).slice(2, 6); dirAt = 0; }
     if (body.card !== undefined) { const c = str(body.card, 20); doc.card = c === 'plain' || Object.hasOwn(CARD_ART, c) ? c : ''; }
-    store.put('profiles', o, doc); return { profile: ownProfile(doc) };
+    store.put('profiles', o, doc); dirAt = 0; return { profile: ownProfile(doc) };
   });
   on('POST', '/me/notices/read', ({ user, guestKey }) => {
     const o = ownerOf(user, guestKey); let n = 0;
@@ -215,9 +218,10 @@ export function createCore(store, hooks = {}) {
     if (!user) return { achievements: [] };
     const o = ownerOf(user), prev = profileOf(o) || { id: o, dm: true };
     const ids = (Array.isArray(body.ids) ? body.ids : []).slice(0, 60).filter(x => typeof x === 'string' && ACH_ID.test(x));
-    const achievements = [...new Set([...(prev.achievements || []), ...ids])].slice(0, 40);
+    // снятые администратором секреты с устройства гостя обратно не приезжают
+    const off = new Set(prev.achOff || []), achievements = [...new Set([...(prev.achievements || []), ...ids.filter(x => !off.has(x))])].slice(0, 40);
     if (achievements.length !== (prev.achievements || []).length) store.put('profiles', o, { ...prev, achievements, updatedAt: Date.now() });
-    return { achievements };
+    return { achievements, off: [...off] };
   });
   // LifeX: привязанный профиль игровой соцсети. Имя и телефон заполняют пустые поля профиля гостя, аватар заменяет фото
   function linkLifex(owner, lx) {
@@ -232,6 +236,40 @@ export function createCore(store, hooks = {}) {
     const { lifex, ...rest } = prev; store.put('profiles', o, { ...rest, updatedAt: Date.now() }); call('removeUpload', lifex.avatar);
     return { profile: ownProfile(profileOf(o)) };
   });
+  // портрет гостя: сам файл принимает сервер, здесь — только ссылка и правила
+  const AVATAR = /^\/uploads\/av-[a-f0-9]{16}\.(png|jpg|webp)$/;
+  const avatarBan = owner => profileOf(owner)?.avOff?.block ? profileOf(owner).avOff : null;
+  function setAvatar(owner, url) {
+    const prev = profileOf(owner) || { id: owner, dm: true, achievements: [] }, old = prev.avatar, { avOff, ...rest } = prev;
+    if (!AVATAR.test(url) || avOff?.block) bad('Портрет не принят');
+    store.put('profiles', owner, { ...rest, avatar: url, updatedAt: Date.now() }); if (old) call('removeAvatar', old); emit(['guests']);
+  }
+  on('DELETE', '/me/avatar', ({ user, guestKey }) => {
+    const o = ownerOf(user, guestKey), prev = profileOf(o); if (!prev?.avatar) return { profile: ownProfile(prev) };
+    const { avatar, ...rest } = prev; store.put('profiles', o, { ...rest, updatedAt: Date.now() }); call('removeAvatar', avatar); emit(['guests']);
+    return { profile: ownProfile(profileOf(o)) };
+  });
+  // администрация снимает портрет: гость видит причину в кабинете, колокольчике и личных сообщениях
+  on('POST', '/admin/guests/:ref/avatar', ({ params, body, user }) => {
+    need(user, 'admin'); const o = guestOwner(params.ref), prev = profileOf(o) || { id: o, dm: true, achievements: [] }, { avatar, avOff, ...rest } = prev;
+    if (body.allow) { store.put('profiles', o, { ...prev, avOff: undefined, updatedAt: Date.now() }); if (avOff?.block) notice(o, 'profile', 'Вы снова можете загрузить портрет.'); log(`${user.username} разрешил портрет: карта ${cardNo(o)}`, 'edit', user.username); emit(['guests', 'log']); return { guest: guestCard(o) }; }
+    if (!avatar && !body.block) bad('У гостя нет портрета');
+    const reason = str(body.reason, 200), block = !!body.block, text = `${avatar ? 'Администрация сняла ваш портрет.' : 'Загрузка портрета отключена.'}${reason ? ` Причина: ${reason}.` : ''}${block ? ' Загрузить новый пока нельзя.' : ' Можно загрузить другой.'}`.replace(/\.\./g, '.');
+    store.put('profiles', o, { ...rest, avOff: { reason, block, at: Date.now() }, updatedAt: Date.now() }); if (avatar) call('removeAvatar', avatar);
+    notice(o, 'profile', text); notifyGuest('avatar_removed', { owner: o, text }); log(`${user.username} снял портрет: карта ${cardNo(o)}${reason ? `, причина: ${reason}` : ''}`, 'edit', user.username); emit(['guests', 'log']);
+    return { guest: guestCard(o) };
+  });
+  // страницы гостей: видна, только если гость сам её открыл и администрация не скрыла. Номера комнаты, типа номера, дат, телефона, пожеланий, броней и Discord здесь нет: по странице нельзя понять, где и когда живёт гость
+  const pageOf = p => {
+    if (!p?.page || p.pageOff || !p.slug || !String(p.name || '').trim()) return null; const st = guestStats(p.id);
+    return { slug: p.slug, name: p.name, about: p.about || '', avatar: p.avatar || '', card: p.card || '', verified: verified(p.id), staff: staffRole(p.id), tier: st.tier?.name || '', nights: st.nights, stays: st.stays, achievements: p.achievements || [] };
+  };
+  let dirAt = 0, dirList = [];
+  on('GET', '/guests', () => {
+    if (Date.now() - dirAt > 5000) { dirList = store.all('profiles').map(pageOf).filter(Boolean).sort((a, b) => !!b.staff - !!a.staff || b.nights - a.nights || b.achievements.length - a.achievements.length || a.name.localeCompare(b.name, 'ru')).slice(0, 300); dirAt = Date.now(); }
+    return { guests: dirList };
+  });
+  on('GET', '/guests/:slug', ({ params }) => { const g = pageOf(store.all('profiles').find(p => p.slug && p.slug === str(params.slug, 30))); if (!g) throw new HttpError(404, 'Гость не открыл свою страницу'); return { guest: g }; });
   on('POST', '/check-discord', async ({ body, user }) => {
     const nick = str(body.discord, 40).replace(/^@/, ''); if (!nick) return { member: null };
     if (user && !String(user.id).startsWith('demo') && nick.toLowerCase() === String(user.username || '').toLowerCase()) return { member: true };
@@ -351,7 +389,7 @@ export function createCore(store, hooks = {}) {
     for (const d of [...bookings.map(b => 'b:' + b.id), ...orders.map(o => 'o:' + o.id), ...tickets.map(t => 't:' + t.id)]) call('dropCard', d);
     const marks = [...bookings.map(b => b.code), ...tickets.map(t => `от ${t.discord}`), ...tickets.map(t => `обращение ${t.discord}`)].filter(x => x && x.length > 3);
     store.all('log').filter(l => marks.some(m => String(l.text).includes(m))).forEach(l => store.del('log', l.id));
-    owners.forEach(o => { const pr = profileOf(o); if (pr?.lifex?.avatar) call('removeUpload', pr.lifex.avatar); store.del('profiles', o); store.del('accounts', o); });
+    owners.forEach(o => { const pr = profileOf(o); if (pr?.lifex?.avatar) call('removeUpload', pr.lifex.avatar); if (pr?.avatar) call('removeAvatar', pr.avatar); store.del('profiles', o); store.del('accounts', o); });
     emit(['bookings', 'orders', 'tickets', 'log', 'reviews']); if (rooms) roomsChanged();
     return { deleted: { bookings: bookings.length, orders: orders.length, tickets: tickets.length } };
   }
@@ -453,7 +491,7 @@ export function createCore(store, hooks = {}) {
     const st = guestStats(o), last = [...mine.bookings, ...mine.orders, ...mine.tickets].sort((a, b) => b.createdAt - a.createdAt)[0], nick = mine.bookings.concat(mine.tickets, mine.orders).find(d => d.discord)?.discord || '';
     const spent = mine.bookings.filter(b => b.status === 'done').reduce((n, b) => n + (b.total || 0), 0) + mine.orders.filter(x => x.status === 'done').reduce((n, x) => n + (x.total || 0), 0);
     return { ref: refOf(o), card: cardNo(o), account: acc ? { username: acc.username, avatar: acc.avatar, role: acc.role, firstAt: acc.firstAt, lastAt: acc.lastAt, logins: acc.logins } : null, discordId: o.startsWith('d:') ? o.slice(2) : '', nick,
-      profile: { name: p?.name || '', phone: p?.phone || '', note: p?.note || '', dm: p?.dm !== false, prefs: p?.prefs || {}, achievements: p?.achievements || [], staffNote: p?.staffNote || '', adj: p?.adj || {}, lifex: p?.lifex ? { username: p.lifex.username, name: p.lifex.name, bio: p.lifex.bio, url: p.lifex.url, avatar: p.lifex.avatar, linkedAt: p.lifex.linkedAt } : null, updatedAt: p?.updatedAt || 0 },
+      profile: { name: p?.name || '', phone: p?.phone || '', note: p?.note || '', dm: p?.dm !== false, prefs: p?.prefs || {}, achievements: p?.achievements || [], staffNote: p?.staffNote || '', adj: p?.adj || {}, avatar: p?.avatar || '', about: p?.about || '', page: !!p?.page, pageOff: !!p?.pageOff, avOff: p?.avOff || null, lifex: p?.lifex ? { username: p.lifex.username, name: p.lifex.name, bio: p.lifex.bio, url: p.lifex.url, avatar: p.lifex.avatar, linkedAt: p.lifex.linkedAt } : null, updatedAt: p?.updatedAt || 0 },
       stats: { nights: st.nights, stays: st.stays, tier: st.tier?.name || '', favType: st.favType, favRoom: st.favRoom, spent }, real: realStats(o),
       bookings: mine.bookings.sort((a, b) => b.createdAt - a.createdAt).slice(0, 20).map(b => ({ id: b.id, code: b.code, status: b.status, typeName: b.typeName, room: b.room, date: b.date, nights: b.nights, total: b.total, name: b.name, phone: b.phone, note: b.note })),
       counts: { bookings: mine.bookings.length, orders: mine.orders.length, tickets: mine.tickets.length, reviews: mine.reviews.length }, lastAt: Math.max(acc?.lastAt || 0, p?.updatedAt || 0, last?.createdAt || 0) };
@@ -463,7 +501,7 @@ export function createCore(store, hooks = {}) {
     const by = new Map(), slot = o => { let m = by.get(o); if (!m) by.set(o, m = { bookings: [], orders: [], tickets: [], reviews: [] }); return m; };
     for (const c of ['bookings', 'orders', 'tickets', 'reviews']) store.all(c).forEach(d => d.owner && slot(d.owner)[c].push(d));
     const acc = new Map(store.all('accounts').map(a => [a.id, a])), prof = new Map(store.all('profiles').map(p => [p.id, p]));
-    acc.forEach((_, o) => slot(o)); prof.forEach((p, o) => (p.name || p.phone || p.note || p.lifex || p.staffNote || p.prefs || p.achievements?.length) && slot(o));
+    acc.forEach((_, o) => slot(o)); prof.forEach((p, o) => (p.name || p.phone || p.note || p.avatar || p.lifex || p.staffNote || p.prefs || p.achievements?.length) && slot(o));
     const list = [...by].map(([o, m]) => guestCard(o, acc.get(o) || null, prof.get(o) || null, m)).sort((a, b) => b.lastAt - a.lastAt);
     return { guests: list.slice(0, 1000), total: list.length, tiers: tiers().map(t => t.name) };
   });
@@ -471,6 +509,7 @@ export function createCore(store, hooks = {}) {
     need(user, 'admin'); const o = guestOwner(params.ref), prev = profileOf(o) || { id: o, dm: true, achievements: [] }, doc = { ...prev, id: o }, was = guestStats(o), what = [];
     const set = (k, v, n) => { if (JSON.stringify(doc[k] ?? null) !== JSON.stringify(v ?? null)) { doc[k] = v; what.push(n); } };
     if ('name' in body) set('name', str(body.name, 60), 'имя'); if ('phone' in body) set('phone', str(body.phone, 20), 'телефон'); if ('note' in body) set('note', str(body.note, 300), 'пожелания');
+    if ('about' in body) set('about', str(body.about, 160), 'о себе'); if ('pageOff' in body) { set('pageOff', !!body.pageOff || undefined, 'страница гостя'); if (what.includes('страница гостя')) notice(o, 'profile', body.pageOff ? 'Администрация скрыла вашу страницу гостя.' : 'Ваша страница гостя снова доступна.'); }
     if ('prefs' in body) set('prefs', cleanPrefs(body.prefs), 'предпочтения'); if ('staffNote' in body) set('staffNote', str(body.staffNote, 600), 'заметка персонала');
     if ('nights' in body || 'stays' in body || 'tier' in body) {
       const real = realStats(o), a = { ...(prev.adj || {}) }, int = (v, r, k) => { if (v === undefined || v === '') return; const n = Number(v); if (!Number.isFinite(n) || n < 0 || n > 9999) bad('Ночи и проживания — число от 0 до 9999'); a[k] = Math.round(n) - r; };
@@ -479,11 +518,16 @@ export function createCore(store, hooks = {}) {
       for (const k of Object.keys(a)) if (!a[k]) delete a[k];
       if (JSON.stringify(a) !== JSON.stringify(prev.adj || {})) { doc.adj = a; what.push('статистика'); }
     }
-    if ('achievements' in body) set('achievements', [...new Set((Array.isArray(body.achievements) ? body.achievements : []).filter(x => typeof x === 'string' && ACH_ID.test(x)))].slice(0, 40), 'секреты отеля');
+    if ('achAdd' in body || 'achDel' in body) { // правка разницей: найденное гостем, пока форма открыта, не затирается
+      const pick = v => (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && ACH_ID.test(x)).slice(0, 60), add = pick(body.achAdd), del = new Set(pick(body.achDel).filter(x => !add.includes(x)));
+      set('achievements', [...new Set([...(prev.achievements || []), ...add])].filter(x => !del.has(x)).slice(0, 40), 'секреты отеля');
+      set('achOff', [...new Set([...(prev.achOff || []), ...del])].filter(x => !add.includes(x)).slice(0, 60), 'секреты отеля');
+    }
     if (!what.length) return { guest: guestCard(o) };
-    doc.updatedAt = Date.now(); store.put('profiles', o, doc);
+    const gained = (doc.achievements || []).filter(x => !(prev.achievements || []).includes(x)).length; if (gained) notice(o, 'profile', gained === 1 ? 'В вашей коллекции новый секрет отеля.' : `В вашей коллекции новые секреты отеля: ${gained}.`);
+    doc.updatedAt = Date.now(); store.put('profiles', o, doc); dirAt = 0;
     const now = guestStats(o); if (now.tier?.name !== was.tier?.name) notice(o, 'profile', now.tier ? `Ваш статус гостя теперь «${now.tier.name}».` : 'Ваш статус гостя обновлён.');
-    log(`${user.username} изменил карту гостя ${cardNo(o)}: ${what.join(', ')}`, 'edit', user.username); emit(['guests', 'log']);
+    log(`${user.username} изменил карту гостя ${cardNo(o)}: ${[...new Set(what)].join(', ')}`, 'edit', user.username); emit(['guests', 'log']);
     return { guest: guestCard(o) };
   });
   on('POST', '/admin/guests/:ref/delete', async ({ params, body, user }) => {
@@ -724,7 +768,7 @@ export function createCore(store, hooks = {}) {
 
   // имя сотрудника, написавшего прямо в Discord: игровое из профиля, если задано
   const icOf = discordId => String(profileOf('d:' + discordId)?.name || '').trim();
-  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, bookingMessage, matchVenue, settings, log, store, linkLifex, icOf, seen };
+  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, bookingMessage, matchVenue, settings, log, store, linkLifex, icOf, seen, setAvatar, avatarBan };
 }
 
 /* ---------- стартовые данные ---------- */
