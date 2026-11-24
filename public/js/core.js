@@ -204,6 +204,7 @@ export function createCore(store, hooks = {}) {
     const doc = { ...prev, id: o, name: str(body.name ?? prev.name, 60), phone: str(body.phone ?? prev.phone, 20), note: str(body.note ?? prev.note, 300), dm: body.dm === undefined ? prev.dm !== false : !!body.dm, updatedAt: Date.now() };
     if (body.prefs !== undefined) doc.prefs = cleanPrefs(body.prefs);
     if (body.about !== undefined) doc.about = str(body.about, 160);
+    if (body.bookOff !== undefined) doc.bookOff = !!body.bookOff;
     if (body.page !== undefined) { if (body.page && !String(doc.name || '').trim()) bad('Сначала впишите имя'); doc.page = !!body.page; if (doc.page && !doc.slug) doc.slug = uid('').slice(-10) + Math.random().toString(36).slice(2, 6); dirAt = 0; }
     if (body.card !== undefined) { const c = str(body.card, 20); doc.card = c === 'plain' || Object.hasOwn(CARD_ART, c) ? c : ''; }
     store.put('profiles', o, doc); dirAt = 0; return { profile: ownProfile(doc) };
@@ -264,9 +265,18 @@ export function createCore(store, hooks = {}) {
     if (!p?.page || p.pageOff || !p.slug || !String(p.name || '').trim()) return null; const st = guestStats(p.id);
     return { slug: p.slug, name: p.name, about: p.about || '', avatar: p.avatar || '', card: p.card || '', verified: verified(p.id), staff: staffRole(p.id), tier: st.tier?.name || '', nights: st.nights, stays: st.stays, achievements: p.achievements || [] };
   };
+  // гостевая книга: все, кто когда-либо останавливался. Только завершённые проживания — кто живёт сейчас, по книге не узнать
+  function guestBook() {
+    const pages = store.all('profiles').map(p => [p.id, pageOf(p)]).filter(x => x[1]), open = new Set(pages.map(x => x[0])), by = new Map();
+    store.all('bookings').filter(b => b.status === 'done').forEach(b => { const k = b.owner || 'n:' + String(b.name || '').trim().toLowerCase(), m = by.get(k) || { n: 0, nights: 0, name: '', at: 0 }; m.n++; m.nights += b.nights || 0; if ((b.createdAt || 0) >= m.at) { m.at = b.createdAt || 0; m.name = b.name; } by.set(k, m); });
+    store.all('profiles').forEach(p => { if (p.adj?.stays > 0 && !by.has(p.id)) by.set(p.id, { n: 0, nights: 0, name: p.name }); });
+    const lived = [...by].filter(([o]) => !open.has(o)).map(([o, m]) => { const p = profileOf(o), st = o.startsWith('n:') ? null : guestStats(o), name = String(p?.name || m.name || '').trim(); if (!name || p?.bookOff || p?.pageOff || (st && !st.stays)) return null;
+      return { slug: '', name, about: '', avatar: '', card: '', verified: verified(o), staff: staffRole(o), tier: st?.tier?.name || '', nights: st?.nights ?? m.nights, stays: st?.stays ?? m.n, achievements: [] }; }).filter(Boolean);
+    return [...pages.map(x => x[1]), ...lived];
+  }
   let dirAt = 0, dirList = [];
   on('GET', '/guests', () => {
-    if (Date.now() - dirAt > 5000) { dirList = store.all('profiles').map(pageOf).filter(Boolean).sort((a, b) => !!b.staff - !!a.staff || b.nights - a.nights || b.achievements.length - a.achievements.length || a.name.localeCompare(b.name, 'ru')).slice(0, 300); dirAt = Date.now(); }
+    if (Date.now() - dirAt > 5000) { dirList = guestBook().sort((a, b) => !!b.staff - !!a.staff || b.nights - a.nights || b.achievements.length - a.achievements.length || a.name.localeCompare(b.name, 'ru')).slice(0, 1000); dirAt = Date.now(); }
     return { guests: dirList };
   });
   on('GET', '/guests/:slug', ({ params }) => { const g = pageOf(store.all('profiles').find(p => p.slug && p.slug === str(params.slug, 30))); if (!g) throw new HttpError(404, 'Гость не открыл свою страницу'); return { guest: g }; });
@@ -389,7 +399,7 @@ export function createCore(store, hooks = {}) {
     for (const d of [...bookings.map(b => 'b:' + b.id), ...orders.map(o => 'o:' + o.id), ...tickets.map(t => 't:' + t.id)]) call('dropCard', d);
     const marks = [...bookings.map(b => b.code), ...tickets.map(t => `от ${t.discord}`), ...tickets.map(t => `обращение ${t.discord}`)].filter(x => x && x.length > 3);
     store.all('log').filter(l => marks.some(m => String(l.text).includes(m))).forEach(l => store.del('log', l.id));
-    owners.forEach(o => { const pr = profileOf(o); if (pr?.lifex?.avatar) call('removeUpload', pr.lifex.avatar); if (pr?.avatar) call('removeAvatar', pr.avatar); store.del('profiles', o); store.del('accounts', o); });
+    owners.forEach(o => { const pr = profileOf(o); if (pr?.lifex?.avatar) call('removeUpload', pr.lifex.avatar); if (pr?.avatar) call('removeAvatar', pr.avatar); store.del('profiles', o); store.del('accounts', o); }); dirAt = 0;
     emit(['bookings', 'orders', 'tickets', 'log', 'reviews']); if (rooms) roomsChanged();
     return { deleted: { bookings: bookings.length, orders: orders.length, tickets: tickets.length } };
   }

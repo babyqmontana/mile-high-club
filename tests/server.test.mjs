@@ -492,3 +492,13 @@ test('страницы гостей: только по желанию, без л
   await assert.rejects(go('GET', '/guests/' + profile.slug, {}, null), /не открыл/); await go('PUT', `/admin/guests/${ref}`, { pageOff: false }, admin); assert.equal((await go('GET', '/guests', {}, null)).guests.length, 1);
   await go('PUT', '/me/profile', { page: false }); assert.equal((await go('GET', '/guests', {}, null)).guests.length, 0); s.close();
 });
+
+test('гостевая книга: все, кто жил; живущие сейчас не видны; отказ и удаление работают', async () => {
+  const s = openStore(path.join(dir, 'book.sqlite')); seed(s); const core = createCore(s, {}), admin = { id: 'a1', username: 'Админ', role: 'admin' }, guestKey = 'ключ-книги';
+  const go = (m, p, body, who = { guestKey }) => core.handle(m, p, { body, ...who }), book = async () => { await go('PUT', '/me/profile', {}, { guestKey: 'сброс' }); return (await go('GET', '/guests', {}, {})).guests; };
+  const room = s.all('rooms').find(r => r.status === 'free'), { booking: b } = await go('POST', '/bookings', { type: room.type, name: 'Сэм', discord: 'sam', phone: '555', date: '2026-12-01', nights: 3, guests: 1 }), act = (act, x = {}) => go('POST', `/admin/bookings/${b.id}/action`, { act, ...x }, { user: admin });
+  await act('confirm', { room: room.id }); await act('checkin'); assert.equal((await book()).length, 0, 'живёт сейчас — в книге нет');
+  await act('checkout'); const [g] = await book(); assert.deepEqual([g.name, g.nights, g.stays, g.slug], ['Сэм', 3, 1, '']); const raw = JSON.stringify(g); for (const x of [room.id, '555', 'sam', guestKey, '2026-12']) assert.ok(!raw.includes(x), x);
+  await go('PUT', '/me/profile', { bookOff: true }); assert.equal((await book()).length, 0); await go('PUT', '/me/profile', { bookOff: false }); assert.equal((await book()).length, 1);
+  await go('POST', '/me/delete', { confirm: 'УДАЛИТЬ' }); assert.equal((await book()).length, 0); s.close();
+});
