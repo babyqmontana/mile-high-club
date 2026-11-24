@@ -60,7 +60,7 @@ function shell() {
   $('#viceBtn').onclick = () => import('./vice.js').then(m => m.open());
   if (document.documentElement.classList.contains('vice')) import('./vice.js').then(m => m.mount());
   // тема сменилась (вылет или возвращение): перерисовываем экран — фон первого экрана и сцены другие
-  document.addEventListener('mhc-vice', () => { mods.tower?.setVice?.(isVice()); paintNav(); render(); });
+  document.addEventListener('mhc-vice', () => { paintNav(); render(); });
   const paintAch = () => { $('#achN').textContent = `${achCount()}/${ACH.length}`; }; paintAch(); onAch(paintAch);
   $('#fab').onclick = openCart; magnet($('#fab'));
   setupApp();
@@ -1214,7 +1214,7 @@ async function boot() {
     let done = 0; const jobs = [document.fonts?.ready].map(p => Promise.resolve(p).catch(() => {}).then(() => set(95)));
     // 3D-модуль грузится параллельно и заставку не держит: атриум показывается картинкой и оживает, когда WebGL готов
     // прогреваем только тот 3D-модуль, что нужен открытой странице: на разделах без 3D (Le Ciel, отдых, кабинет…) three.js больше не качается впустую
-    if (hasWebGL()) { const h = (location.hash || '#home').slice(1).split('?')[0].split('/')[0]; const mod3d = { home: './hero3d.js', stay: './skyline3d.js', cigars: './humidor3d.js' }[h]; if (mod3d) import(mod3d).catch(() => {}); }
+    if (hasWebGL()) { const h = (location.hash || '#home').slice(1).split('?')[0].split('/')[0]; const mod3d = { home: './hero3d.js', stay: isVice() ? './viceshow.js' : './skyline3d.js', cigars: './humidor3d.js' }[h]; if (mod3d) import(mod3d).catch(() => {}); }
     // картинки и шрифты — украшение: если телефон их не отдал быстро, страница всё равно показывается
     // (раньше при повторном открытии без заставки ожидание было бесконечным — видны были только шапка и фон)
     await Promise.race([Promise.all(jobs), new Promise(r => setTimeout(r, 2500))]);

@@ -1379,7 +1379,7 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
   --glass:rgba(12,7,23,.9);--ring:0 0 0 3px rgba(255,45,149,.38);--vice:linear-gradient(100deg,#FFB65C 0%,#FF2D95 22%,#B65CFF 40%,#3EF2E0 55%,#FF2D95 78%,#FFB65C 100%)}
 :root.vice .nav::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--vice);opacity:.8;pointer-events:none}
 :root.vice h1,:root.vice .eyebrow{background:var(--vice);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-:root.vice h1{filter:drop-shadow(0 0 1.1rem rgba(255,45,149,.32))}
+
 :root.vice .btn:not(.ghost):not(.danger){background:linear-gradient(100deg,#FF2D95,#B65CFF 50%,#FF2D95) 0 0/200% 100%;border-color:transparent;color:#fff;animation:vshim 6s linear infinite}
 #viceSky{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;opacity:0;transition:opacity .8s}
 :root.vice #viceSky{opacity:1}
@@ -1387,7 +1387,7 @@ footer .wrap.kon b{font-weight:inherit;cursor:pointer;padding:.2rem .15rem;-webk
 #viceSky .glow{left:-10%;right:-10%;bottom:-20vh;height:70vh;background:radial-gradient(55% 55% at 50% 100%,rgba(255,45,149,.42),rgba(182,92,255,.18) 50%,transparent 78%)}
 #viceSky .sun{left:62%;bottom:-9vmin;width:30vmin;aspect-ratio:1;translate:-50% 0;border-radius:50%;background:radial-gradient(circle at 50% 40%,#FFD9A0 0%,#FF9A8A 45%,#FF5E9A 75%,transparent 76%);opacity:.22;filter:blur(1.5px);
   box-shadow:0 0 6rem 2rem rgba(255,120,150,.25)}
-#viceSky .palm{bottom:-3vh;width:min(20vw,15rem);color:#05020A;opacity:1;filter:drop-shadow(0 0 1.2rem rgba(255,45,149,.35))}
+#viceSky .palm{bottom:-3vh;width:min(20vw,15rem);color:#05020A;opacity:1}
 #viceSky .palm.l{left:-3vw}
 #viceSky .palm.r{right:-4vw;scale:-1.15 1.15;transform-origin:bottom}
 #viceSky svg{display:block;width:100%;height:auto}
