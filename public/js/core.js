@@ -102,7 +102,7 @@ export function createCore(store, hooks = {}) {
   // отзывы: на сайте только одобренные персоналом; рейтинг — по ним же
   function reviewsPublic() {
     const ok = store.all('reviews').filter(r => r.status === 'approved').sort((a, b) => b.createdAt - a.createdAt);
-    return { avg: ok.length ? Math.round(ok.reduce((n, r) => n + r.stars, 0) / ok.length * 10) / 10 : 0, count: ok.length, list: ok.slice(0, 12).map(r => ({ id: r.id, name: r.name, typeName: r.typeName, stars: r.stars, text: r.text, reply: r.reply || '', createdAt: r.createdAt })) };
+    return { avg: ok.length ? Math.round(ok.reduce((n, r) => n + r.stars, 0) / ok.length * 10) / 10 : 0, count: ok.length, list: ok.slice(0, 12).map(r => ({ id: r.id, name: r.name, typeName: r.typeName, stars: r.stars, text: r.text, reply: r.reply || '', createdAt: r.createdAt, verified: verified(r.owner) })) };
   }
   // кабинет гостя: профиль хранится по владельцу (Discord-аккаунт или ключ устройства)
   const profileOf = owner => (owner && store.get('profiles', owner)) || null;
@@ -110,6 +110,8 @@ export function createCore(store, hooks = {}) {
   const ownProfile = p => { if (!p) return null; const { staffNote, adj, ...rest } = p; return rest; };
   // номер гостевой карты: постоянный для владельца, сам ключ по нему не восстановить
   const cardNo = owner => { if (!owner) return null; let h = 2166136261; for (const c of 'mhc:' + owner) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return String(h % 100000000).padStart(8, '0').replace(/(\d{4})(\d{4})/, '$1 $2'); };
+  // подтверждённый гость: личность закреплена за учётной записью (без входа владелец — ключ устройства)
+  const verified = owner => String(owner || '').startsWith('d:');
   const cleanPrefs = v => { const o = {}; if (v && typeof v === 'object') for (const k of Object.keys(PREFS)) if (typeof v[k] === 'string' && Object.hasOwn(PREFS[k].opts, v[k])) o[k] = v[k]; return o; };
   // учётная запись: кто и когда входил через Discord (видят только администраторы)
   function seen(user, login = false) {
@@ -181,7 +183,7 @@ export function createCore(store, hooks = {}) {
   on('GET', '/me/items', ({ user, guestKey }) => {
     seen(user); const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [], profile: null, card: null, stats: guestStats(null), reviews: [], notices: [] };
     const mine = c => store.all(c).filter(d => d.owner === o).sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
-    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: ownProfile(profileOf(o)), card: cardNo(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r) };
+    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: ownProfile(profileOf(o)), card: cardNo(o), verified: verified(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r) };
   });
   // после входа брони, заказы, обращения и профиль с этого устройства переходят в аккаунт
   on('POST', '/me/claim', ({ user, guestKey }) => {
@@ -438,7 +440,7 @@ export function createCore(store, hooks = {}) {
     need(user, 'mod');
     const s = settings();
     return { ...publicData(), me: { ic: icName(user) }, venues: sort(store.all('venues')), team: store.all('team').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), offers: store.all('offers').sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), settingsFull: user.role === 'admin' ? s : null, rooms: roomsSorted(), issues: store.all('issues').sort((a, b) => (b.date || 0) - (a.date || 0)), events: store.all('events').sort((a, b) => b.start - a.start).slice(0, 100),
-      bookings: store.all('bookings').sort((a, b) => b.createdAt - a.createdAt).slice(0, 500).map(forStaff), reviews: store.all('reviews').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300).map(({ owner, ...r }) => r), jobsAll: sort(store.all('jobs')), replyTemplates: s.replyTemplates || null, tickets: store.all('tickets').sort((a, b) => b.lastAt - a.lastAt).slice(0, 300).map(({ owner, ...t }) => t), orders: store.all('orders').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300).map(({ owner, ...o }) => o), log: store.all('log').sort((a, b) => b.at - a.at).slice(0, 120), summary: freeSummary(), discord: hooks.status ? hooks.status() : { connected: false }, senders: senders(), posts: store.all('posts').sort((a, b) => b.at - a.at).slice(0, 30), lifex: { envOk: hooks.lifexEnvOk?.() ?? false, on: hooks.lifexOn?.() ?? false } };
+      bookings: store.all('bookings').sort((a, b) => b.createdAt - a.createdAt).slice(0, 500).map(forStaff), reviews: store.all('reviews').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300).map(({ owner, ...r }) => ({ ...r, verified: verified(owner) })), jobsAll: sort(store.all('jobs')), replyTemplates: s.replyTemplates || null, tickets: store.all('tickets').sort((a, b) => b.lastAt - a.lastAt).slice(0, 300).map(({ owner, ...t }) => ({ ...t, verified: verified(owner) })), orders: store.all('orders').sort((a, b) => b.createdAt - a.createdAt).slice(0, 300).map(({ owner, ...o }) => ({ ...o, verified: verified(owner) })), log: store.all('log').sort((a, b) => b.at - a.at).slice(0, 120), summary: freeSummary(), discord: hooks.status ? hooks.status() : { connected: false }, senders: senders(), posts: store.all('posts').sort((a, b) => b.at - a.at).slice(0, 30), lifex: { envOk: hooks.lifexEnvOk?.() ?? false, on: hooks.lifexOn?.() ?? false } };
   });
   // «Гости»: всё, что гость сообщил сайту. Только администраторы. Вместо ключа владельца наружу уходит случайная метка,
   // она живёт до перезапуска сервера: гостевой ключ — это доступ к кабинету, его не видит даже персонал
@@ -490,7 +492,7 @@ export function createCore(store, hooks = {}) {
     log(`${user.username} удалил данные гостя ${card}`, 'danger', user.username); emit(['guests', 'log']); return r;
   });
   // персонал видит пожелания гостя прямо у брони; ключ владельца из ответа убираем
-  const forStaff = b => { const { owner, ...rest } = b, p = profileOf(owner); return { ...rest, guest: p && (p.prefs || p.staffNote) ? { prefs: p.prefs || {}, staffNote: p.staffNote || '' } : null }; };
+  const forStaff = b => { const { owner, ...rest } = b, p = profileOf(owner); return { ...rest, verified: verified(owner), guest: p && (p.prefs || p.staffNote) ? { prefs: p.prefs || {}, staffNote: p.staffNote || '' } : null }; };
   // отзывы: опубликовать, скрыть, ответить от имени отеля, удалить
   on('POST', '/admin/reviews/:id', ({ params, body, user }) => {
     need(user, 'mod'); const r = store.get('reviews', params.id); if (!r) throw new HttpError(404, 'Отзыв не найден');

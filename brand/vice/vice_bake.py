@@ -23,11 +23,11 @@ except Exception as e: print('BAKE CPU', e)
 KEEP = lambda n: n.startswith(('win', 'store', 'neon', 'lamp', 'far_win'))
 def group(n):
     if KEEP(n): return n
-    if n in ('asphalt', 'sand', 'walk', 'mark'): return 'ground'
-    if n in ('trunk', 'frond'): return 'palms'
+    if n in ('asphalt', 'sand', 'walk', 'mark', 'tile'): return 'ground'
+    if n in ('trunk', 'frond', 'hedge'): return 'palms'
     if n == 'far': return 'far'
     return 'hotels'
-SIZE = {'hotels': RES, 'ground': RES // 2, 'palms': RES // 4, 'far': RES // 4}
+SIZE = {'hotels': RES, 'ground': RES // 2, 'palms': RES // 2, 'far': RES // 4}
 
 dg = bpy.context.evaluated_depsgraph_get(); parts = {}
 for o in list(sc.objects):

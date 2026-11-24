@@ -1,4 +1,4 @@
-import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, confirmBox, oocSwitch, wireOoc, oocTag, icNeedBox, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL, magnet } from './ui.js';
+import { S, $, $$, esc, money, when, hhmm, plural, I, bg, toast, fail, modal, confirmBox, oocSwitch, wireOoc, oocTag, vBadge, icNeedBox, sheet, openSheet, closeSheet, reveal, pushLayer, popLayer, hasWebGL, magnet } from './ui.js';
 import { api, subscribe, authConfig, login, logout, DEMO, pref, guestKey, demoLifex } from './api.js';
 import { play, setSound, soundOn } from './sound.js';
 import { mountWeather } from './wx.js';
@@ -278,7 +278,7 @@ function renderHome() {
   </div>` : ''}
   ${p.reviews?.count ? `<div class="wrap sec" style="padding-top:0">
     <div class="row reveal" style="justify-content:space-between;align-items:flex-end;margin-bottom:1.2rem"><div class="head" style="margin:0"><span class="eyebrow">Отзывы гостей</span><h2>Что говорят гости</h2></div><div class="rv-sum"><b class="num">${p.reviews.avg.toFixed(1)}</b>${stars(Math.round(p.reviews.avg))}<span class="note">${p.reviews.count} ${plural(p.reviews.count, 'отзыв', 'отзыва', 'отзывов')}</span></div></div>
-    <div class="reviews">${p.reviews.list.map(r => `<figure class="rv reveal">${stars(r.stars)}<blockquote>${esc(r.text)}</blockquote><figcaption><b>${esc(r.name)}</b><span class="note">${esc(r.typeName || '')} · ${new Date(r.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span></figcaption>${r.reply ? `<div class="rv-reply"><span class="lbl">Ответ отеля</span>${esc(r.reply)}</div>` : ''}</figure>`).join('')}</div>
+    <div class="reviews">${p.reviews.list.map(r => `<figure class="rv reveal">${stars(r.stars)}<blockquote>${esc(r.text)}</blockquote><figcaption><b>${esc(r.name)}${vBadge(r.verified)}</b><span class="note">${esc(r.typeName || '')} · ${new Date(r.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</span></figcaption>${r.reply ? `<div class="rv-reply"><span class="lbl">Ответ отеля</span>${esc(r.reply)}</div>` : ''}</figure>`).join('')}</div>
   </div>` : ''}
   <div class="wrap sec" style="padding-top:0">${shaftHtml(p, latest)}</div>
   <div class="wrap" style="padding-bottom:4rem"><div class="dc reveal">
@@ -309,8 +309,6 @@ function renderHome() {
     const h = mod.mountHero(heroCanvas, hero); if (!h) return goStatic(); mods.hero = h; const url = heroUrl(s, m); h.setImage(url, m === 'day'); h.onProgress(setP); h.setWeather?.(wxNow?.kind); }).catch(e => { console.warn('hero', e); goStatic(); });
   applyWeather();
 }
-// предзагрузка слоёв главной картинки (те же правила, что в hero3d.layersFor)
-function heroLayers(url) { const b = layerBase(url); return b ? Promise.all(['-far.webp', '-mask.webp'].map(x => preload(b + x))) : null; }
 // планы для параллакса есть у встроенных сцен: атриум отеля и отель в Майами (тема Вайс-Сити)
 function layerBase(url) { const a = /img\/(atrium-night|atrium-day)\.webp$/.exec(url || ''); if (a) return 'img/layers/' + a[1]; const v = /img\/vice\/(night|day)\.webp$/.exec(url || ''); return v ? 'img/vice/' + v[1] : null; }
 // первый экран: в теме Вайс-Сити — сцены Майами (или свои из панели), иначе атриум отеля
@@ -1057,10 +1055,10 @@ addEventListener('mhc-me', e => { setMeTab(e.detail); if (current === 'me') rend
 // рисунок карты: свой выбор гостя, иначе картинка из «Настроек», иначе цвет статуса
 const artSafe = u => (/^(https?:\/\/|\/(?!\/)|img\/|uploads\/|data:image\/)/.test(u || '') ? new URL(u, location.href).href.replace(/['()\\]/g, encodeURIComponent) : '');
 const artUrl = c => (c === 'plain' ? '' : c && CARD_ART[c] ? artSafe(CARD_ART[c].img) : artSafe(S.pub?.settings?.guestCard));
-function guestCardHtml(p, st, no) {
+function guestCardHtml(p, st, no, ok) {
   const nx = st.next, from = st.tier ? st.tier.nights : 0, pct = nx ? Math.max(0, Math.min(100, Math.round((st.nights - from) / Math.max(1, nx.nights - from) * 100))) : 100, t = String(st.tier?.name || '').toLowerCase();
   const art = artUrl(p.card);
-  return `<div class="gcard${art ? ' art' : ''} t-${/silver|сереб/.test(t) ? 'silver' : /gold|золот/.test(t) ? 'gold' : st.tier ? 'vip' : 'base'}"${art ? ` style="--art:url('${esc(art)}')"` : ''} aria-label="Гостевая карта"><div class="gc-top"><span class="gc-brand">THE MILE HIGH CLUB</span><span class="gc-tier">${st.tier ? esc(st.tier.name) : 'Гость'}</span></div><img class="gc-mark" src="img/logo.webp?v=3" alt="" width="120" height="72"><div><b class="gc-name">${esc(p.name || 'Имя гостя')}</b><span class="gc-no num">${esc(no || '•••• ••••')}</span></div><div class="gc-foot"><div class="gc-bar"><i style="width:${pct}%"></i></div><span>${nx ? `${st.nights} из ${nx.nights} ночей до «${esc(nx.name)}»` : `${st.nights} ${plural(st.nights, 'ночь', 'ночи', 'ночей')} в отеле`}</span></div></div>`;
+  return `<div class="gcard${art ? ' art' : ''} t-${/silver|сереб/.test(t) ? 'silver' : /gold|золот/.test(t) ? 'gold' : st.tier ? 'vip' : 'base'}"${art ? ` style="--art:url('${esc(art)}')"` : ''} aria-label="Гостевая карта"><div class="gc-top"><span class="gc-brand">THE MILE HIGH CLUB</span><span class="gc-tier">${st.tier ? esc(st.tier.name) : 'Гость'}</span></div><img class="gc-mark" src="img/logo.webp?v=3" alt="" width="120" height="72"><div><b class="gc-name">${esc(p.name || 'Имя гостя')}${vBadge(ok)}</b><span class="gc-no num">${esc(no || '•••• ••••')}</span></div><div class="gc-foot"><div class="gc-bar"><i style="width:${pct}%"></i></div><span>${nx ? `${st.nights} из ${nx.nights} ночей до «${esc(nx.name)}»` : `${st.nights} ${plural(st.nights, 'ночь', 'ночи', 'ночей')} в отеле`}</span></div></div>`;
 }
 function meRoom(live, st, p) {
   const now = Date.now(), open = S.pub.venues.map(v => ({ v, s: venueState(v, S.pub.events, now) })).filter(x => ['open', 'live', 'event', 'calm'].includes(x.s.state)).slice(0, 4), ev = (S.pub.events || []).filter(e => e.status !== 'cancelled' && e.start > now && e.start < now + 36 * 3600e3).sort((a, b) => a.start - b.start)[0];
@@ -1116,8 +1114,8 @@ function renderMe() {
   if (!TABS.some(t => t[0] === meTab)) meTab = 'room';
   const tab = meTab === 'room' ? meRoom(live, st, p) : meTab === 'stays' ? meStays(past, st) : meTab === 'orders' ? meOrders(it, inRoom) : meTab === 'desk' ? meDesk(it, live, chatT) : meCard(p, u, st);
   view('me').innerHTML = `<div class="wrap sec gme"><p class="sr-only" role="status" aria-atomic="true" id="meLive"></p>
-    <header class="g-hero"><div class="g-hi"><span class="eyebrow">Гость Mile High Club</span><h2>${hello}${who ? ', ' + esc(who) : ''}</h2><p>${lead}</p><div class="row">${inRoom ? `<button class="btn sm" data-roomsvc="${esc(inRoom.room || '')}">Заказать в номер</button>` : live.length ? '' : '<a class="btn sm" href="#stay">Выбрать номер</a>'}${u && u.role !== 'guest' ? '<a class="btn sm ghost" href="#admin">Панель персонала</a>' : ''}${u ? '' : `<button class="btn sm ghost" id="meIn">${I.discord} Войти</button>`}</div></div>
-      ${guestCardHtml(p, st, it.card)}</header>
+    <header class="g-hero"><div class="g-hi"><span class="eyebrow">Гость Mile High Club</span><h2>${hello}${who ? ', ' + esc(who) + vBadge(it.verified) : ''}</h2><p>${lead}</p><div class="row">${inRoom ? `<button class="btn sm" data-roomsvc="${esc(inRoom.room || '')}">Заказать в номер</button>` : live.length ? '' : '<a class="btn sm" href="#stay">Выбрать номер</a>'}${u && u.role !== 'guest' ? '<a class="btn sm ghost" href="#admin">Панель персонала</a>' : ''}${u ? '' : `<button class="btn sm ghost" id="meIn">${I.discord} Войти</button>`}</div></div>
+      ${guestCardHtml(p, st, it.card, it.verified)}</header>
     <nav class="g-tabs" role="tablist" aria-label="Разделы кабинета">${TABS.map(([k, n, c]) => `<button type="button" role="tab" id="gt-${k}" aria-controls="gp" aria-selected="${k === meTab}" tabindex="${k === meTab ? 0 : -1}" data-gt="${k}">${mi(k)}${n}${c ? ` <span class="badge">${c}</span>` : ''}</button>`).join('')}</nav>
     <div class="g-pane" id="gp" role="tabpanel" aria-labelledby="gt-${meTab}">${tab}</div></div>`;
   $$('#main [data-gt]').forEach(b => { b.onclick = () => { if (b.dataset.gt === meTab) return; setMeTab(b.dataset.gt); play('soft'); renderMe(); $('#gp')?.classList.add('in'); $(`#gt-${meTab}`)?.focus({ preventScroll: true }); };

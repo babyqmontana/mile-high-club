@@ -78,13 +78,16 @@ M = {
     'neon_cyan': mat('neon_cyan', CYAN, .4, 0, CYAN, NEON_K),
     'neon_violet': mat('neon_violet', VIOLET, .4, 0, VIOLET, NEON_K),
     'lamp': mat('lamp', hexc('#fff1d6'), .3, 0, hexc('#ffd59a'), 9 if NIGHT else .5),
-    'asphalt': mat('asphalt', hexc('#2a2530'), .32 if NIGHT else .55, .1),
-    'walk': mat('walk', hexc('#d9c7b8'), .7),
-    'sand': mat('sand', hexc('#e9cfa7'), .95),
+    'asphalt': mat('asphalt', hexc('#221d2a'), .16 if NIGHT else .55, .1),
+    'walk': mat('walk', hexc('#8f7f88') if NIGHT else hexc('#d9c7b8'), .3 if NIGHT else .7),
+    'tile': mat('tile', hexc('#5a3f5e') if NIGHT else hexc('#e0a9b4'), .28),
+    'hedge': mat('hedge', hexc('#2f6b45'), .9),
+    'awn_a': mat('awn_a', hexc('#ff6fae'), .8), 'awn_b': mat('awn_b', hexc('#fff3e6'), .8), 'awn_c': mat('awn_c', hexc('#47cfc0'), .8),
+    'sand': mat('sand', hexc('#6b5574') if NIGHT else hexc('#e9cfa7'), .42 if NIGHT else .95),
     'metal': mat('metal', hexc('#2b2730'), .35, .8),
-    'trunk': mat('trunk', hexc('#5b4636') if not NIGHT else hexc('#1d1420'), .9),
-    'frond': mat('frond', hexc('#2f6b4a') if not NIGHT else hexc('#0f1a1c'), .7),
-    'far': mat('far', hexc('#f2a28f') if not NIGHT else hexc('#2a1440'), .9, 0, hexc('#ffb38a') if not NIGHT else hexc('#3a1858'), .25),
+    'trunk': mat('trunk', hexc('#5b4636') if not NIGHT else hexc('#5a463f'), .9),
+    'frond': mat('frond', hexc('#2f6b4a') if not NIGHT else hexc('#2f6a4e'), .7),
+    'far': mat('far', hexc('#f2a28f') if not NIGHT else hexc('#2a1440'), .9, 0, hexc('#ffb38a') if not NIGHT else hexc('#4d2160'), .25 if not NIGHT else .85),
     'far_win': mat('far_win', hexc('#ffd2a8'), .5, 0, hexc('#ffc58a'), 1.6 if NIGHT else 0),
     'chrome': mat('chrome', hexc('#e8e6ee'), .15, 1),
     'car': mat('car', hexc('#ff5fa2'), .25, .3),
@@ -147,6 +150,29 @@ def window(cx, cz, w, h, y=0., lit=.42, col=MID):
     t = .1
     for s_ in (-1, 1): box((cx + s_ * (w / 2 + t / 2), y - .07, cz), (t, .2, h + t * 2), M['trim'], col)
     box((cx, y - .07, cz + h / 2 + t / 2), (w, .2, t), M['trim'], col); box((cx, y - .16, cz - h / 2 - .07), (w + .4, .4, .12), M['trim'], col)
+def balcony(cx, z, w, m, col=MID):
+    box((cx, -.5, z), (w, 1.0, .14), M['trim'], col); box((cx, -.96, z + .62), (w, .07, .07), m, col)
+    n = max(3, int(w / .3))
+    for i in range(n + 1): box((cx - w / 2 + w * i / n, -.96, z + .34), (.045, .045, .56), M['trim'], col)
+    for s_ in (-1, 1): box((cx + s_ * w / 2, -.5, z + .62), (.06, .95, .06), m, col)
+def awning(cx, z, w, a, b, col=MID):
+    n = max(4, int(w / .36)); st = w / n
+    for i in range(n): box((cx - w / 2 + st * (i + .5), -.72, z), (st * .98, 1.5, .06), M[a if i % 2 else b], col, rot=(math.radians(24), 0, 0)); box((cx - w / 2 + st * (i + .5), -1.4, z - .42), (st * .98, .05, .26), M[a if i % 2 else b], col)
+def parasol(x, y, a, b, col=MID):
+    cyl((x, y, 1.2), .05, 2.4, M['trim'], col)
+    me = bpy.data.meshes.new('par'); n = 12; vs = [(0, 0, .55)] + [(1.25 * math.cos(k / n * math.tau), 1.25 * math.sin(k / n * math.tau), 0) for k in range(n)]
+    me.from_pydata(vs, [], [(0, 1 + k, 1 + (k + 1) % n) for k in range(n)]); me.materials.append(M[a]); me.materials.append(M[b])
+    me.polygons.foreach_set('material_index', [k % 2 for k in range(n)])
+    for mi, name in ((0, a), (1, b)):
+        m2 = bpy.data.meshes.new('p2'); keep = [(0, 1 + k, 1 + (k + 1) % n) for k in range(n) if k % 2 == mi]; m2.from_pydata(vs, [], keep); m2.materials.append(M[name]); o = bpy.data.objects.new('p2', m2); col.objects.link(o); o.location = (x, y, 2.15)
+    cyl((x, y, .72), .45, .05, M['trim'], col); cyl((x, y, .36), .04, .7, M['metal'], col)
+    for dx in (-.75, .75): box((x + dx, y, .42), (.4, .4, .06), M[a], col); box((x + dx * 1.22, y, .68), (.06, .4, .5), M[a], col)
+def hedge(x, y, w, col=MID):
+    box((x, y, .22), (w, .6, .44), M['trim'], col)
+    for i in range(int(w / .42)):
+        me = bpy.data.meshes.get('ico') or _ico(); put(me, (x - w / 2 + .25 + i * .42, y, .62 + .06 * (i % 2)), (.32, .3, .3), M['hedge'], col)
+def _ico():
+    me = bpy.data.meshes.new('ico'); bm = bmesh.new(); bmesh.ops.create_icosphere(bm, subdivisions=1, radius=1); bm.to_mesh(me); bm.free(); me.materials.append(None); return me
 def storefronts(x0, w, col=MID):
     n = max(1, int(w // 3)); step = (w - .6) / n
     for k in range(n):
@@ -177,7 +203,8 @@ def deco_hotel(x0, w, floors, body, accent, neon, col=MID, skip=None, round_left
                 ww = (w - 1.2) / n
                 cx = x0 + .6 + ww * (k + .5)
                 if skip and skip[0] < cx + ww / 2 and cx - ww / 2 < skip[1]: continue   # здесь выступает башня
-                window(cx, y + .85, ww - .6, 1.75, 0, .42, col)
+                window(cx, y + .85, ww - .6, 1.75, 0, .58, col)
+                if k % 2 == f % 2 and not portholes: balcony(cx, y - .18, ww - .35, accent, col)
         box((x0 + w / 2, -.55, y + 2.05), (w + .3, 1.1, .18), M['trim'], col)                       # бровь
         box((x0 + w / 2, -1.08, y + 2.0), (w + .3, .06, .06), M[neon] if f == floors - 1 else M['trim'], col)
     # парапет ступенями и неоновая кромка крыши
@@ -243,7 +270,8 @@ def far_city():
         box((x, y, h / 2), (w, 6, h), M['far'], FAR)
         if NIGHT:
             for r in range(3, int(h), 3):
-                if random.random() < .5: box((x + random.uniform(-w / 3, w / 3), y - 3.05, r), (1.2, .1, .8), M['far_win'], FAR)
+                for _ in range(3):
+                    if random.random() < .42: box((x + random.uniform(-w / 2.4, w / 2.4), y - 3.05, r), (.55, .1, .7), M['far_win'], FAR)
 
 def retro_sun():
     if NIGHT: return
@@ -331,8 +359,27 @@ for x in range(-34, 46, 8):
 for x in (-30, -21, -11.5, -4.5, 15.5, 24, 33, 42): palm(x, -3.0, random.uniform(7.5, 10.5), MID, lean=random.uniform(-.08, .08), rot=random.uniform(0, 6), fs=1.35)
 car(4.5, -6.2)
 # ближний план: парапет набережной и две большие пальмы по краям кадра
-box((0, -12.4, .55), (200, .45, 1.1), M['trim'], NEAR)
-box((0, -12.15, 1.13), (200, .06, .06), M['neon_cyan'] if NIGHT else M['trim'], NEAR)
+box((0, -12.4, .1), (200, .5, .2), M['trim'], NEAR); box((0, -12.4, .86), (200, .4, .14), M['trim'], NEAR)
+for k in range(-58, 59): box((k * .95, -12.4, .49), (.16, .16, .62), M['trim'], NEAR)
+for k in range(-9, 10): box((k * 6.1, -12.4, .56), (.5, .5, 1.1), M['trim'], NEAR); cyl((k * 6.1, -12.4, 1.22), .2, .22, M['lamp'], NEAR)
+box((0, -12.15, .96), (200, .05, .05), M['neon_cyan'] if NIGHT else M['trim'], NEAR)
+# мозаика набережной: волны плиткой
+for i in range(-60, 61):
+    for j in range(5):
+        if (i + (j if (i // 4) % 2 else -j)) % 4 == 0: box((i * .95, -13.2 - j * 1.1, .145), (.93, 1.06, .012), M['tile'], NEAR)
+# жизнь у входов: маркизы, столики под зонтами, живая изгородь, подсветка пальм снизу
+for x, w_, a in ((-22, 8.6, 'awn_a'), (22.9, 9.0, 'awn_c'), (35, 8.4, 'awn_a')): awning(x, 3.55, w_, a, 'awn_b') if x != 22.9 else None
+for x in (-13.6, -11.2, -7.4, 19.4, 21.6, 26.6): parasol(x, -1.9, 'awn_a' if x < 0 else 'awn_c', 'awn_b')
+for x in (-25, -19, 1.5, 14.6, 32, 38): hedge(x, -2.2, 3.2)
+if NIGHT:
+    for i, x in enumerate((-30, -21, -11.5, -4.5, 15.5, 24, 33, 42)):
+        L = bpy.data.lights.new('up', 'SPOT'); L.energy = 1500; L.color = PINK if i % 3 == 0 else CYAN if i % 3 == 1 else AMBER; L.spot_size = 1.0; L.spot_blend = .8; L.shadow_soft_size = .2
+        o = bpy.data.objects.new('up', L); MID.objects.link(o); o.location = (x, -3.9, .3); o.rotation_euler = (math.radians(174), 0, 0)
+    for x, c in ((-17.5, VIOLET), (27.0, PINK)):
+        L = bpy.data.lights.new('up', 'SPOT'); L.energy = 1700; L.color = c; L.spot_size = 1.1; L.spot_blend = .8; o = bpy.data.objects.new('up', L); NEAR.objects.link(o); o.location = (x, -17.6, .4); o.rotation_euler = (math.radians(174), 0, 0)
+# терраса на крыше главного отеля: зонты и перила видны над карнизом
+for x in (-1.2, 1.4, 3.8):
+    cyl((x, 2.0, 19.2), .05, 2.6, M['trim']); parasol_top = put(_mesh_cyl(10), (x, 2.0, 20.5), (1.2, 1.2, .12), M['awn_a'], MID)
 palm(-17.5, -16.5, 15.5, NEAR, lean=.14, rot=.4, fs=1.9)
 palm(27.0, -17.5, 17.0, NEAR, lean=-.12, rot=1.3, fs=2.0)
 
