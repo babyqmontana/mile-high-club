@@ -15,22 +15,25 @@ export function createInteractions({ core, resolveRole }) {
     const now = Date.now(), open = core.store.all('tickets').filter(t => t.discordId === i.user.id && t.status !== 'closed').length;
     if (open >= 3) return i.reply({ content: 'У вас уже три открытых обращения — дождитесь ответа по ним.', flags: EPH });
     if (now - (lastAt.get(i.user.id) || 0) < 120e3) return i.reply({ content: 'Новое обращение можно открыть через пару минут.', flags: EPH });
-    lastAt.set(i.user.id, now);
     await i.deferReply({ flags: EPH });
+    lastAt.set(i.user.id, now);
+    try {
     const user = { id: i.user.id, username: i.user.username, role: await resolveRole(i.user.id) };
     const { ticket } = await core.handle('POST', '/tickets', { user, body: { name: i.fields.getTextInputValue('name'), topic, text: i.fields.getTextInputValue('text') } });
     const r = await core.handle('POST', `/tickets/${ticket.id}/mode`, { user, body: { mode: 'discord' } });
-    return say(i, r.ticket.channel ? `Обращение открыто: <#${r.ticket.channel}>` : 'Обращение принято, управляющие ответят.');
+    return await say(i, r.ticket.channel ? `Обращение открыто: <#${r.ticket.channel}>` : 'Обращение принято, управляющие ответят.');
+    } catch (e) { lastAt.delete(i.user.id); throw e; } // не открылось — ждать две минуты не нужно
   };
 
   // закрыть может персонал или сам автор обращения: транскрипт и удаление канала делает core через бота
   const closeTicket = async i => {
+    // Discord ждёт ответ 3 секунды: сначала подтверждаем нажатие, потом проверяем права
+    await i.deferReply({ flags: EPH });
     const role = await resolveRole(i.user.id);
     const t = core.store.all('tickets').find(x => x.channel === i.channelId && x.status !== 'closed');
-    if (!t) return i.reply({ content: 'Это обращение уже закрыто.', flags: EPH });
+    if (!t) return say(i, 'Это обращение уже закрыто.');
     const own = t.discordId === i.user.id;
-    if (role === 'guest' && !own) return i.reply({ content: 'Закрыть обращение может его автор или администрация.', flags: EPH });
-    await i.deferReply({ flags: EPH });
+    if (role === 'guest' && !own) return say(i, 'Закрыть обращение может его автор или администрация.');
     const user = { id: i.user.id, username: i.member?.displayName || i.user.username, role };
     await core.handle('POST', role === 'guest' ? `/tickets/${t.id}/close` : `/admin/tickets/${t.id}/close`, { user });
   };

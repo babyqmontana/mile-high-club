@@ -6,6 +6,7 @@ import { buildBlueprint, overwritesFor, TEXT, VOICE, CATEGORY, ANNOUNCEMENT } fr
 import { planSetup, snapshotGuild, applyPlan, planCleanup } from '../server/discord/plan.js';
 import { helpdeskBoard, postPayload, eventAnnouncement, transcriptHtml, feedCard } from '../server/discord/embeds.js';
 import { buildCommands, createInteractions } from '../server/discord/commands.js';
+import { syncBoard } from '../server/discord/board.js';
 import { createCore, seed, roomGameFloor, weatherNow } from '../public/js/core.js';
 
 const EVERYONE = 'everyone', BOT = 'bot-user', STAFF = ['role-staff'], TIERS = { admin: ['role-admin'], director: ['role-dir'], staff: STAFF, dev: ['role-dev'] };
@@ -464,4 +465,31 @@ test('отклик на вакансию из Discord уходит персон�
   const got = [], { core } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan3', notify: async (k, d) => { got.push([k, d.topic]); } });
   await createInteractions({ core, resolveRole: async () => 'guest' })(fakeModal('mhc:job:send', { name: 'Джон', topic: 'Повар', text: 'Опыт три года' }));
   assert.ok(got.some(([k, t]) => k === 'ticket_discord' && /^Трудоустройство: Повар/.test(t)));
+});
+
+// --- кнопки обращений после смены бота ---
+function boardChannel(list) {
+  const all = new Map(), sent = []; let n = 1;
+  const add = (author, ids) => { const id = 'm' + n++; const m = { id, author: { id: author, bot: author !== 'human' }, edits: 0, components: ids.length ? [{ components: ids.map(customId => ({ customId })) }] : [], edit: async () => { if (author !== 'new-bot') throw Object.assign(new Error('Cannot edit'), { code: 50005 }); m.edits++; }, delete: async () => { all.delete(id); } }; all.set(id, m); return m; };
+  list.forEach(([a, ids]) => add(a, ids));
+  return { all, sent, messages: { fetch: async q => { if (typeof q !== 'string') return all; if (!all.has(q)) throw new Error('Unknown Message'); return all.get(q); } }, send: async p => { sent.push(p); return add('new-bot', ['mhc:ticket', 'mhc:job']); } };
+}
+test('кнопки от прежнего бота заменяются, даже если база хранит их как свои', async () => {
+  const B = ['mhc:ticket', 'mhc:job'], c = boardChannel([['old-bot', B], ['human', []]]), p = helpdeskBoard();
+  const first = await syncBoard(boardChannel([]), 'old-bot', p, null); // хеш прежнего бота совпадает с нынешним
+  const r = await syncBoard(c, 'new-bot', p, { id: 'm1', hash: first.hash });
+  assert.equal(r.action, 'sent'); assert.equal(c.sent.length, 1); assert.deepEqual([...c.all.keys()], ['m2', r.id]);
+  const again = await syncBoard(c, 'new-bot', p, r); assert.equal(again.action, 'ok'); assert.equal(c.sent.length, 1);
+  c.all.delete(r.id); assert.equal((await syncBoard(c, 'new-bot', p, r)).action, 'sent');
+});
+test('кнопки: своё сообщение находится без записи в базе, дубль убирается', async () => {
+  const B = ['mhc:ticket', 'mhc:job'], c = boardChannel([['new-bot', B], ['new-bot', B], ['new-bot', ['mhc:close']]]);
+  const r = await syncBoard(c, 'new-bot', helpdeskBoard(), null);
+  assert.equal(r.action, 'edited'); assert.equal(c.sent.length, 0); assert.equal(c.all.size, 2);
+});
+test('закрытие: Discord получает ответ до проверки прав', async () => {
+  const { core } = makeCore({}); const order = [];
+  const b = { ...fakeButton('nochan', 'u1') }, d = b.deferReply; b.deferReply = async x => { order.push('defer'); b.deferred = true; return d?.(x); };
+  await createInteractions({ core, resolveRole: async () => { order.push('role'); return 'guest'; } })(b);
+  assert.deepEqual(order, ['defer', 'role']);
 });

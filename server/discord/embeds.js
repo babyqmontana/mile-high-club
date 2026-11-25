@@ -17,12 +17,14 @@ export function helpdeskBoard() {
   };
 }
 
-// Первое сообщение тикета: кнопка закрытия работает только у администрации
+export const closeRow = () => ({ type: 1, components: [btn('mhc:close', 'Закрыть обращение', 4, '🔒')] });
+
+// Первое сообщение тикета: закрыть может автор или администрация
 export function ticketOpened(t, memberId) {
   return {
     content: `<@${memberId}>, управляющие скоро ответят.`,
-    embeds: [{ title: `🎫 ${cut(t.topic, 240)}`, color: PALETTE.gold, description: cut(t.text, 3900), fields: [{ name: 'Имя', value: t.name || '—', inline: true }, { name: 'Discord', value: t.discord, inline: true }], footer: { text: 'Закрыть обращение может только администрация. История сохранится.' } }],
-    components: [{ type: 1, components: [btn('mhc:close', 'Закрыть обращение', 4, '🔒')] }]
+    embeds: [{ title: `🎫 ${cut(t.topic, 240)}`, color: PALETTE.gold, description: cut(t.text, 3900), fields: [{ name: 'Имя', value: t.name || '—', inline: true }, { name: 'Discord', value: t.discord, inline: true }], footer: { text: 'Закрыть может автор или администрация. История сохранится.' } }],
+    components: [closeRow()]
   };
 }
 
