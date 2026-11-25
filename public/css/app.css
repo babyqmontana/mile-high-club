@@ -37,8 +37,8 @@ html{-webkit-text-size-adjust:100%;scroll-padding-top:calc(var(--nav) + 0.75rem)
 @media(min-width:1800px){html{font-size:calc(16px + (100vw - 1800px) * .0045)}}
 @media(min-width:3000px){html{font-size:calc(21px + (100vw - 3000px) * .004)}}
 /* место под полосу прокрутки всегда занято: на коротких вкладках она пропадала, и вся вёрстка прыгала вбок */
-html{overflow-y:scroll;scrollbar-gutter:stable}
-body{margin:0;background:var(--bg);color:var(--fg);font:400 1rem/1.6 var(--body);overflow-x:hidden;-webkit-font-smoothing:antialiased;transition:background-color .6s,color .6s}
+html{overflow-x:hidden;overflow-y:scroll;scrollbar-gutter:stable}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 1rem/1.6 var(--body);-webkit-font-smoothing:antialiased;transition:background-color .6s,color .6s}
 img{max-width:100%;display:block}
 a{color:inherit}
 button,input,select,textarea{font:inherit;color:inherit}
