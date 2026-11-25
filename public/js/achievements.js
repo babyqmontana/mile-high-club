@@ -43,14 +43,42 @@ export const has = id => !!got[id];
 export const count = () => LIST.filter(a => got[a.id]).length;
 export const onChange = fn => listeners.add(fn);
 export const ids = () => Object.keys(got).filter(id => LIST.some(a => a.id === id));
-// найденные на другом устройстве секреты приходят из аккаунта: добавляем без всплывашек
-export function merge(list) { let n = 0; for (const id of list || []) if (!got[id] && LIST.some(a => a.id === id)) { got[id] = Date.now(); n++; } if (n) { save(); listeners.forEach(f => f()); } return n; }
+// коллекция из аккаунта — главная: найденное на другом устройстве и выданное администратором добавляется, снятое — убирается
+let off = new Set(), linked = false, queue = [], showing = false;
+const full = () => LIST.every(a => a.id === 'platinum' || a.season || got[a.id]);
+export function merge(list, removed) {
+  off = new Set(removed || []); let n = 0; const fresh = [];
+  for (const id of off) if (got[id]) { delete got[id]; n++; }
+  for (const id of list || []) if (!got[id] && !off.has(id) && LIST.some(a => a.id === id)) { got[id] = Date.now(); fresh.push(id); n++; }
+  if (n) save();
+  if (linked && fresh.length && fresh.length <= 3) { queue.push(...fresh); next(); }   // пришло при открытом сайте — покажем, как обычную находку
+  linked = true; if (n) listeners.forEach(f => f());
+  if (fresh.length && full()) unlock('platinum');
+  return n;
+}
+// знак коллекционера: растёт вместе с коллекцией — металл, лучи, звёзды, лавр, самоцвет, корона
+const RANKS = [[1, 'Наблюдатель'], [5, 'Знаток'], [10, 'Исследователь'], [16, 'Хранитель'], [21, 'Посвящённый'], [25, 'Легенда отеля']];
+const METAL = [['#4a4148', '#2b252b', '#8d828b'], ['#d08a52', '#7a4218', '#f3c79b'], ['#dfe4ec', '#7d8694', '#ffffff'], ['#f7c948', '#9a6411', '#fff0b8'], ['#f7b50a', '#8a3f12', '#ffe7a6'], ['#b98cff', '#4a1f8a', '#efe2ff'], ['#ff5fae', '#f7b50a', '#fff3dc']];
+let eN = 0;
+export function emblem(list = ids(), big = false) {
+  const set = new Set(list), n = LIST.filter(a => set.has(a.id)).length, top = set.has('platinum') || n >= LIST.length, lv = top ? RANKS.length : Math.min(RANKS.length - 1, RANKS.filter(r => n >= r[0]).length), nx = RANKS[lv] || null;
+  const [c1, c2, c3] = METAL[lv], id = 'em' + (++eN), P = (r, a) => `${(50 + Math.cos(a) * r).toFixed(1)} ${(50 + Math.sin(a) * r).toFixed(1)}`, T = Math.PI * 2;
+  const pet = 8 + lv * 3, scallop = Array.from({ length: pet * 2 }, (_, k) => P(k % 2 ? 33 : 33 + 2 + lv * .9, k / (pet * 2) * T - Math.PI / 2)).join('L');
+  const rays = lv >= 4 ? `<g class="em-rays">${Array.from({ length: lv >= 6 ? 24 : lv >= 5 ? 16 : 12 }, (_, k, m) => k).map((k, _, m) => { const a = k / m.length * T; return `<path d="M${P(39, a - .03)}L${P(k % 2 ? 46 : 49, a)}L${P(39, a + .03)}z"/>`; }).join('')}</g>` : '';
+  const laurel = lv >= 4 ? `<g fill="${c3}" opacity=".9">${[-1, 1].map(s => [0, 1, 2, 3, 4].map(k => { const a = Math.PI / 2 + s * (.35 + k * .34), x = 50 + Math.cos(a) * 27, y = 50 + Math.sin(a) * 27; return `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="4.4" ry="1.8" transform="rotate(${(a * 180 / Math.PI + 90 - s * 28).toFixed(0)} ${x.toFixed(1)} ${y.toFixed(1)})"/>`; }).join('')).join('')}</g>` : '';
+  const star = (x, y, r) => `<path d="M${Array.from({ length: 10 }, (_, k) => { const a = k / 10 * T - Math.PI / 2, q = k % 2 ? r * .45 : r; return `${(x + Math.cos(a) * q).toFixed(1)} ${(y + Math.sin(a) * q).toFixed(1)}`; }).join('L')}z"/>`;
+  const stars = lv >= 2 && lv < 6 ? `<g fill="${c3}">${Array.from({ length: Math.min(3, lv - 1) }, (_, k, m) => k).map((k, _, m) => star(50 + (k - (m.length - 1) / 2) * 11, 31 + Math.abs(k - (m.length - 1) / 2) * 2.4, 3.6)).join('')}</g>` : '';
+  const crown = lv >= 6 ? `<path d="M34 34l3-14 7 7 6-11 6 11 7-7 3 14z" fill="${c3}" stroke="${c2}" stroke-width="1.2" stroke-linejoin="round"/>` : '';
+  const core = lv >= 5 ? `<path d="M50 40l10 9-10 16-10-16z" fill="${c3}"/><path d="M40 49h20M50 40l-4 9 4 16 4-16z" fill="none" stroke="${c2}" stroke-width="1.3" stroke-linejoin="round"/>` : `<g fill="none" stroke="${lv ? c2 : c3}" stroke-width="3.4" stroke-linecap="round"><circle cx="50" cy="46" r="6.2"/><path d="M50 52.5v13M50 60h5M50 65.5h4"/></g>`;
+  const name = lv ? RANKS[lv - 1][1] : 'Новичок';
+  return { lv, n, name, next: nx && !top ? { name: nx[1], left: lv === RANKS.length - 1 ? null : nx[0] - n } : null,
+    svg: `<svg class="emb${big ? ' big' : ''}" data-lv="${lv}" viewBox="0 0 100 100" role="img" aria-label="Знак коллекционера: ${name}"><title>${name} · секретов отеля: ${n}</title><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c3}"/><stop offset=".35" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><g fill="${c1}">${rays}</g><path d="M${scallop}z" fill="url(#${id})"/><circle cx="50" cy="50" r="29.5" fill="${lv ? `url(#${id})` : c2}" stroke="${c3}" stroke-opacity=".7" stroke-width="1.4"/>${lv >= 3 ? `<circle cx="50" cy="50" r="25.5" fill="none" stroke="${c2}" stroke-opacity=".55" stroke-width="1" stroke-dasharray="1.5 2.5"/>` : ''}${laurel}${stars}${core}${crown}</svg>` };
+}
 
-let queue = [], showing = false;
 export function unlock(id) {
-  if (got[id] || !LIST.some(a => a.id === id)) return false;
+  if (got[id] || off.has(id) || !LIST.some(a => a.id === id)) return false;
   got[id] = Date.now(); save(); queue.push(id); next(); listeners.forEach(f => f());
-  if (id !== 'platinum' && LIST.every(a => a.id === 'platinum' || a.season || got[a.id])) setTimeout(() => unlock('platinum'), 1800);
+  if (id !== 'platinum' && full()) setTimeout(() => unlock('platinum'), 1800);
   return true;
 }
 function next() {
@@ -99,10 +127,15 @@ export function markSeen() { try { pref.set(SEEN, JSON.stringify(ids())); } catc
 export function rarityStats() { return [1, 2, 3].map(r => { const all = LIST.filter(a => (a.r || 1) === r); return { r, name: ({ 1: 'Обычные', 2: 'Редкие', 3: 'Легендарные' })[r], got: all.filter(a => got[a.id]).length, total: all.length }; }); }
 export const rarityChips = () => `<div class="rchips">${rarityStats().map(s => `<span class="rchip" data-r="${s.r}"><i></i>${s.name}<b class="num">${s.got}/${s.total}</b></span>`).join('')}</div>`;
 
+// знак и подпись «что дальше»; новая ступень один раз красиво проявляется
+export function emblemBlock(plain) {
+  const e = emblem(ids(), true); let up = false; if (!plain) { let was = 0; try { was = +(pref.get('mhc-emb') || 0); } catch { } up = e.lv > was; if (e.lv !== was) pref.set('mhc-emb', String(e.lv)); }
+  return `<div class="embrow${up ? ' up' : ''}">${e.svg}<span><b>${e.name}</b><small>${!e.next ? 'Высшая ступень коллекции' : e.next.left === null ? `Соберите все секреты: «${e.next.name}»` : `До «${e.next.name}»: ещё ${e.next.left}`}</small></span></div>`;
+}
 export function openCabinet() {
   const n = count(), was = seenCount(), seen = seenSet();
   let k = 0; const order = [...LIST].sort((a, b) => (!!got[b.id] - !!got[a.id]) || ((got[b.id] || 0) - (got[a.id] || 0)));
-  modal(`<div class="cab"><div><span class="eyebrow">Секреты отеля</span><h3><span class="num" data-count="${n}" data-from="${was}">${was}</span> из ${LIST.length}${n > was ? ` <span class="newn">+${n - was}</span>` : ''}</h3>${bar(n, LIST.length, was)}${rarityChips()}<p class="note">Секреты спрятаны по всему сайту, у каждого своя редкость. Прогресс хранится в этом браузере, а после входа через Discord — и в аккаунте. Сезонные для «Платинового гостя» не нужны.</p></div>
+  modal(`<div class="cab"><div>${emblemBlock(true)}<span class="eyebrow">Секреты отеля</span><h3><span class="num" data-count="${n}" data-from="${was}">${was}</span> из ${LIST.length}${n > was ? ` <span class="newn">+${n - was}</span>` : ''}</h3>${bar(n, LIST.length, was)}${rarityChips()}<p class="note">Секреты спрятаны по всему сайту, у каждого своя редкость. Прогресс хранится в этом браузере, а после входа через Discord — и в аккаунте. Сезонные для «Платинового гостя» не нужны.</p></div>
     <div class="clist">${order.map(a => got[a.id] ? `<div class="ci on${seen.has(a.id) ? '' : ' fresh'}" data-r="${a.r || 1}" style="--i:${k++}"><span class="ai">${a.i}</span><span><b>${esc(a.t)}${seen.has(a.id) ? '' : ' <em class="newtag">Новое</em>'}</b><em class="rar">${RARITY[a.r || 1]}${a.season ? ' · сезонное' : ''}</em><small>${esc(a.d)}</small></span><time>${new Date(got[a.id]).toLocaleDateString('ru-RU')}</time></div>`
       : `<div class="ci" data-r="${a.r || 1}" style="--i:${k++}"><span class="ai">?</span><span><b>Скрытое достижение</b><em class="rar">${RARITY[a.r || 1]}${a.season ? ' · сезонное' : ''}</em><small>${esc(a.h)}</small></span></div>`).join('')}</div>
     <div class="row" style="justify-content:flex-end"><button class="btn sm ghost" data-close="">Закрыть</button></div></div>`, { wide: true, onMount: box => { grow(box); markSeen(); listeners.forEach(f => f()); } });

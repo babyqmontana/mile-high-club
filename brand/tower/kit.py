@@ -62,9 +62,9 @@ def cyl(x, y, z, r, h, m, seg=20, r2=None, rot=(0, 0, 0)):
     me = bpy.data.meshes.new('c'); bm.to_mesh(me); bm.free(); me.materials.append(m); me.uv_layers.new(name='UVMap'); return add(me, P(x, y, z), rot)
 def rod(a, b, r, m, seg=6):
     a, b = Vector(P(*a)), Vector(P(*b)); d = b - a; o = cyl(0, 0, 0, r, d.length, m, seg); o.location = a; o.rotation_euler = d.to_track_quat('Z', 'Y').to_euler(); return o
-def panel(x, y, z, w, h, m, cell, n):     # вертикальная картинка лицом к улице
+def panel(x, y, z, w, h, m, cell, n, ry=0):   # вертикальная картинка лицом к улице
     u0, u1 = cell / n, (cell + 1) / n
-    return add(mesh([(-w / 2, 0, 0), (w / 2, 0, 0), (w / 2, 0, h), (-w / 2, 0, h)], [(0, 1, 2, 3)], m, uv=[(u0, 0), (u1, 0), (u1, 1), (u0, 1)]), P(x, y, z))
+    return add(mesh([(-w / 2, 0, 0), (w / 2, 0, 0), (w / 2, 0, h), (-w / 2, 0, h)], [(0, 1, 2, 3)], m, uv=[(u0, 0), (u1, 0), (u1, 1), (u0, 1)]), P(x, y, z), (0, 0, ry))
 def light(x, y, z, e, col, r=.1):
     L = bpy.data.lights.new('l', 'POINT'); L.energy = e; L.color = lin(col); L.shadow_soft_size = r; o = bpy.data.objects.new('l', L); sc.collection.objects.link(o); o.location = P(x, y, z); return o
 
@@ -73,18 +73,6 @@ white = mat('white', '#f1ede6', .5, noise=1.4); glassd = mat('glassd', '#141d2a'
 lobby = mat('lobby', '#000', .3, 0, None, 1.5, tex=os.path.join(os.path.dirname(HERE), 'vice', 'tex', 'store-night.png'))
 leaf = mat('leaf', '#2c4a2c', .9, noise=9); leaf2 = mat('leaf2', '#3a5a34', .9, noise=9); bark = mat('bark', '#4a3a2c', .95); soil = mat('soil', '#2a221c', 1); asphalt = mat('asphalt', '#26262b', .45, noise=3); tileA, tileB = mat('tileA', '#8b8580', .6, noise=3), mat('tileB', '#4c4a4c', .55, noise=3); red = mat('red', '#6e1020', .9)
 
-def palm(x, z, h, y=0.):
-    n = 9
-    for i in range(n):
-        t = i / n; rod((x + .05 * math.sin(t * 2), y + h * t, z), (x + .05 * math.sin((t + 1 / n) * 2), y + h * (t + 1 / n) + .01, z), .055 - .022 * t, bark, 7)
-    tx, ty = x + .05 * math.sin(2), y + h
-    for k in range(12):
-        a = k / 12 * math.tau + random.uniform(-.15, .15); L = random.uniform(.6, .78); dr = random.uniform(.25, .6); v, f = [], []
-        for i in range(9):
-            t = i / 8; r = t * L; yy = .3 * math.sin(t * 2.1) * L - dr * t * t * L; w = .105 * math.sin(math.pi * (.12 + .86 * t)) * (1 if i % 2 else .45)
-            v += [(r, -w, yy - .03), (r, 0, yy), (r, w, yy - .03)]
-            if i: b = i * 3; f += [(b - 3, b, b + 1, b - 2), (b - 2, b + 1, b + 2, b - 1)]
-        add(mesh(v, f, leaf if k % 2 else leaf2), P(tx, ty, z), (0, 0, a))
 def bush(x, y, z, r):
     for k in range(4):
         bm = bmesh.new(); bmesh.ops.create_icosphere(bm, subdivisions=2, radius=r * random.uniform(.6, 1))
@@ -106,7 +94,7 @@ for k in range(nb):                                                             
     box(x - st / 2, 0, FZ + .06, .16, 1.18, .16, stone2); box(x, 1.02, FZ + .05, st - .16, .05, .06, bronze); cyl(x - st / 2, .62, FZ + .17, .025, .12, warm2, 8)
 box(X1 - .15, 0, FZ + .06, .16, 1.18, .16, stone2)
 for k in range(5):                                                                                                   # правый торец
-    z = FZ - .4 - k * .8; box(X1 + .04, .06, z, .05, .95, .6, mat('sidew', '#5a3424', .3, 0, '#ffb070', .55)); box(X1 + .05, 0, z + .4, .12, 1.18, .14, stone2)
+    z = FZ - .4 - k * .8; panel(X1 + .012, .06, z, .62, .95, lobby, [0, 2, 1][k % 3], 4, math.pi / 2); box(X1 + .03, 1.02, z, .06, .05, .64, bronze); box(X1 + .05, 0, z + .4, .12, 1.18, .14, stone2)
 # козырёк: белая волна на тросах, снизу ряды светильников, как на референсе
 cx0, cx1, N = 1.05, 5.55, 24; v, f = [], []
 for i in range(N + 1):
@@ -128,7 +116,7 @@ light(3.3, 2.6, 3.4, 9, '#ffe2bd', .4); light(0, 3.2, 6.5, 10, '#cdbcff', .6); l
 # вращающиеся двери и ковёр с латунными стойками
 cyl(3.3, 0, FZ + .16, .3, .86, mat('rev', '#5a3a22', .2, 0, '#ffb870', .9), 24); cyl(3.3, .86, FZ + .16, .33, .08, bronze, 24); cyl(3.3, .84, FZ + .16, .29, .02, warm2, 24)
 for s in (-1, 1): box(3.3 + s * .02, .02, FZ + .16, .012, .82, .6, bronze, s * .8)
-box(3.3, .016, 3.1, .62, .012, 2.6, red)
+box(3.3, .016, 3.1, .62, .014, 2.6, red)
 for k in range(5):
     for s in (-1, 1):
         z = 2.1 + k * .5; cyl(3.3 + s * .42, 0, z, .035, .012, bronze, 10); cyl(3.3 + s * .42, 0, z, .012, .3, bronze, 8); cyl(3.3 + s * .42, .3, z, .024, .03, bronze, 8)
@@ -146,13 +134,11 @@ box(gx, 0, gz + .01, 1.5, .82, .03, darkm)
 for s in (-1, 1): box(gx + s * .85, 0, gz + .12, .2, 1.0, .28, stone2)
 box(gx, .9, gz + .12, 1.95, .22, .3, stone2); box(gx, .88, gz + .2, 1.5, .02, .03, warm2)
 for k in range(3): box(gx - .4 + k * .4, .97, gz + .28, .1, .05, .01, mat('arrow', '#fff', .5, 0, '#54ff9a', 6))
-box(gx, .004, gz + 1.1, 1.5, .01, 2.1, asphalt)
+box(gx, .008, gz + 1.1, 1.5, .012, 2.1, asphalt)
 light(gx, .7, gz + .4, 2.2, '#ffd9a0')
-# площадь: полосатая плитка, водное зеркало с подсветкой, клумбы, скамьи, деревья, фонари
+# площадь: ровная плитка, водное зеркало с подсветкой, клумбы, скамьи, деревья, фонари
 PX0, PX1, PZ0, PZ1 = -6.6, 9.4, FZ, 7.6
-box((PX0 + PX1) / 2, -.06, (PZ0 + PZ1) / 2 + .02, PX1 - PX0, .06, PZ1 - PZ0, tileB)
-for k in range(14):
-    z = PZ0 + .3 + k * .42; box((PX0 + PX1) / 2 + (k % 3 - 1) * .7, .001, z, PX1 - PX0 - 1.6, .006, .2, tileA)
+box((PX0 + PX1) / 2, -.06, (PZ0 + PZ1) / 2 + .02, PX1 - PX0, .072, PZ1 - PZ0, tileB)
 box((PX0 + PX1) / 2, -.05, PZ1 + .15, PX1 - PX0, .075, .3, stone2); box((PX0 + PX1) / 2, -.06, PZ1 + 1.2, PX1 - PX0 + 4, .05, 1.8, asphalt)
 for k in range(13): box(PX0 + 1 + k * 1.2, -.008, PZ1 + 1.2, .5, .004, .05, mat('mark', '#d8d2c0', .8))
 wx, wz = .2, 4.7
@@ -172,8 +158,6 @@ for x, z, w in ((-2.6, 3.4, 1.6), (-2.6, 5.9, 1.6), (6.1, 3.2, 1.8), (6.1, 5.6, 
     tree(x, .16, z, .9); box(x, .1, z + .52, w * .8, .035, .2, mat('wood', '#6a4a30', .7))
 for x in (-5.8, -1.0, 1.9, 4.8, 8.4):
     cyl(x, 0, 6.9, .03, 1.35, steel, 8); box(x, 1.33, 6.75, .06, .03, .36, steel); box(x, 1.315, 6.65, .05, .012, .14, warm2); light(x, 1.25, 6.6, 1.9, '#ffcf98', .05)
-for k in range(6): palm(X1 + .65, FZ - .1 - k * .75, random.uniform(2.3, 2.9))
-for k in range(3): palm(8.9, 3 + k * 1.5, random.uniform(1.9, 2.4))
 # решётчатые мачты «песочные часы» с фиолетовыми кольцами (без логотипов)
 for px, pz in ((-5.4, 5.6), (8.2, 6.4)):
     H, lv = 3.1, 9; pr_ = None
@@ -194,8 +178,8 @@ def car(x, z, col, ry=0):
     for dz in (-.11, .11): X, Z = f_(.39, dz); box(X, .1, Z, .01, .03, .07, warm2, -ry); X, Z = f_(-.39, dz); box(X, .1, Z, .01, .03, .07, mat('tail', '#400', .5, 0, '#ff2030', 8), -ry)
 car(1.9, 3.3, '#16161c'); car(4.9, 3.0, '#7a1420', .15); car(-1.2, 8.4, '#c8c2b4'); car(3.6, 8.9, '#1c2a4a', math.pi); car(7.5, 8.4, '#3a3a40')
 
-for k in range(9):                                                                                                   # задняя стена: окна служебного входа
-    x = X0 + .7 + k * 1.1; box(x, .25, -2.21, .7, .5, .04, mat('sidew')); box(x, .2, -2.23, .8, .03, .06, stone2)
+for k in range(9):                                                                                                   # задняя стена: те же витрины
+    x = X0 + .5 + k * 1.1; panel(x, .06, -2.212, .86, .95, lobby, [1, 0, 2][k % 3], 4, math.pi); box(x, 1.02, -2.23, .9, .05, .06, bronze); box(x + .55, 0, -2.24, .14, 1.18, .12, stone2)
 # ---------- roofA: мост над короной и вертолётная площадка ----------
 CUR = 'roofA'; OY = CROWN
 box(0, 0, 0, W * 1.02, .3, D * 1.02, mat('roofd', '#23262d', .8, noise=3)); box(0, .28, 0, W * 1.03, .05, D * 1.03, steel)
@@ -237,7 +221,6 @@ for k in range(3): box(bx - .1, .3 + k * .18, bz - 1.25, 1.5, .015, .06, gold)
 box(bx - .1, .86, bz - 1.05, 2.0, .04, .7, mat('mech'))
 for s in (-1, 1): box(bx - .1 + s * .9, .06, bz - .75, .04, .82, .04, bronze)
 for k in range(5): cyl(bx - .8 + k * .36, .06, bz - .62, .05, .2, bronze, 10)
-for x, z in ((-1.2, -.3), (-1.2, 1.2), (1.2, -1.2), (1.2, 1.25)): box(bx + x, .06, bz + z, .22, .16, .22, stone2); palm(bx + x, bz + z, .55, .2)
 for a, b in (((-1.3, 1.35), (1.3, 1.35)), ((-1.3, -.5), (1.3, -.5)), ((1.3, -.5), (1.3, 1.35))):
     for k in range(13): t = k / 12; cyl(bx + a[0] + (b[0] - a[0]) * t, .95 - .16 * math.sin(math.pi * t), bz + a[1] + (b[1] - a[1]) * t, .014, .028, warm2, 6)
 light(bx, 1.0, bz, 2.4, '#ffcf98'); light(bx - .35, .5, bz + .55, 1.6, '#35d6e8'); light(bx - .1, .75, bz - .8, 2, '#ffb868')

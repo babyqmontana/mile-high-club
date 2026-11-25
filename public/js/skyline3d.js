@@ -151,7 +151,7 @@ function ledTex() { const c = document.createElement('canvas'); c.width = 4; c.h
 
 // --- запечённое в Blender (Cycles): панорамы города для отражений, фасад офисов, интерьер номера, тень от комплекса.
 // ~85 КБ webp, грузятся после первого кадра; пока не пришли или не загрузились — башня рисуется как раньше.
-const BAKE = {}, BAKE_URL = 'img/tower/', BAKE_V = '?v=9'; // ?v — сброс кэша браузера при обновлении ассетов
+const BAKE = {}, BAKE_URL = 'img/tower/', BAKE_V = '?v=10'; // ?v — сброс кэша браузера при обновлении ассетов
 // кровельный набор из Blender (баки, вентиляция, мачты, карнизы, короны, градирни, техэтаж, гондола мойки фасада)
 let KIT = null;
 function loadKit() {
@@ -308,9 +308,7 @@ function groundMaterial(block, road) {
       col=mix(col,vec3(.13,.11,.1),walk);
       float lane=rd*step(.9,max(dr.x,dr.y))*step(min(dr.x,dr.y),.03)*step(.5,fract((dr.x<dr.y?p.y:p.x)*.9));
       col+=vec3(.95,.72,.25)*lane*.5;
-      float oth=max(dr.x,dr.y), al=dr.x<dr.y?p.x:p.y, fw=fwidth(al)*4.; // пешеходные переходы у перекрёстков
-      col+=vec3(.42,.4,.36)*rd*step(.92,oth)*step(oth,1.2)*step(.5,fract(al*4.))*clamp(1.4-fw*2.,0.,1.);
-      col=mix(col,vec3(.07,.062,.07)+.018*step(.5,fract(vWp.x*.8))*step(.5,fract(vWp.z*.8)),inS*(1.-walk));
+      col=mix(col,vec3(.07,.062,.07),inS*(1.-walk));
       col+=vec3(.34,.19,.075)*(rd*.55+walk)*(.55+.45*smoothstep(.2,.8,abs(fract((dr.x<dr.y?p.y:p.x)/2.3)-.5)*2.))*(1.-uDay); // улицы под фонарями
       col*=mix(1.,2.2,uDay);
       col=mix(col,mix(vec3(.32,.3,.31),vec3(.86,.85,.84),uDay)*(1.-rd*.35),uSnow*(1.-lane));
@@ -418,6 +416,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
       lots.push({ x: cx + ox, z: cz + oz, w: sw * (.9 + rnd() * .1), d: sd * (.9 + rnd() * .1), h: tall });
     }
   }
+  [[-1, -1, 1.3], [1, -1, .9], [-1, 1, .8], [1, 1, 1.5]].forEach(([a, b, h]) => lots.push({ x: 14 + a * 1.18, z: -7 + b * 1.18, w: 1.95, d: 1.95, h })); // квартал у подножия круглой башни
   const box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, .5, 0);
   const tiers = []; lots.forEach(l => { tiers.push(l); if (l.h > 8 && rnd() < .6) { const k = .62 + rnd() * .15; tiers.push({ x: l.x, z: l.z, w: l.w * k, d: l.d * k, h: l.h * (1.12 + rnd() * .18), top: true }); } });
   const city = new THREE.InstancedMesh(box, cityM, tiers.length), M = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), Sc = new THREE.Vector3();
@@ -462,12 +461,6 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
       by.forEach((list, m) => g.add(new THREE.Mesh(mergeGeos(list), m)));
     }, green = new THREE.MeshStandardMaterial({ color: 0x2f4428, roughness: 1 });
     podium(rtG, RT[0], RT[1], 4.5, 4.5, 1 / .74);
-    // зелёная площадь с круглым фонтаном и деревьями у её подножия
-    const PK = [14, -7], flat = (geo, color, y, extra) => { const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: .95, ...extra })); m.rotation.x = -Math.PI / 2; m.position.set(PK[0], GROUND + y, PK[1]); world.add(m); return m; };
-    flat(new THREE.PlaneGeometry(4.7, 4.7), 0x3d4a33, .03); flat(new THREE.RingGeometry(1.0, 1.4, 40), 0x5a5048, .045); flat(new THREE.CircleGeometry(.8, 32), 0x2a6a80, .05, { roughness: .1, emissive: 0x1c6a80, emissiveIntensity: .5 });
-    [0, Math.PI / 2].forEach(a => { const m = flat(new THREE.PlaneGeometry(4.7, .34), 0x5a5048, .04); m.rotation.z = a; });
-    const treesN = 20, trees = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.3, 1), new THREE.MeshStandardMaterial({ color: 0x33492c, roughness: 1 }), treesN);
-    for (let k = 0; k < treesN; k++) { const a = k / treesN * Math.PI * 2, r = 1.75 + (k % 3) * .22; M.compose(V.set(PK[0] + Math.cos(a) * r, GROUND + .4, PK[1] + Math.sin(a) * r), Q.identity(), Sc.set(1, 1.2 + (k % 4) * .15, 1)); trees.setMatrixAt(k, M); } world.add(trees);
     // отель «Баннер»: светлая пластина с короной слева за отелем
     const bnG = new THREE.Group(); world.add(bnG); sinkers.push({ g: bnG, x: -14, z: -14, h: 19 });
     const bannerTex = bandTex.clone(); bannerTex.repeat.set(4, 40); bannerTex.needsUpdate = true;

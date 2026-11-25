@@ -73,6 +73,15 @@ export async function logout() {
   await fetch('/auth/logout', { method: 'POST' }); location.hash = '#home'; location.reload();
 }
 
+// портрет: вырезаем квадрат 320×320 и сжимаем ещё в браузере — служебные данные фото на сервер не попадают
+export async function uploadAvatar(file) {
+  const url = URL.createObjectURL(file), img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('Не получилось открыть картинку')); i.src = url; }).finally(() => setTimeout(() => URL.revokeObjectURL(url), 1000));
+  const c = document.createElement('canvas'), q = Math.min(img.naturalWidth, img.naturalHeight); c.width = c.height = 320;
+  c.getContext('2d').drawImage(img, (img.naturalWidth - q) / 2, (img.naturalHeight - q) / 2.6, q, q, 0, 0, 320, 320);
+  if (DEMO) { const d = await demoInit(), owner = d.user ? 'd:' + d.user.id : 'g:' + guestKey, p = d.store.get('profiles', owner) || { id: owner, dm: true }; d.store.put('profiles', owner, { ...p, avatar: c.toDataURL('image/webp', .86), avOff: undefined }); listeners.forEach(fn => fn(['me', 'guests'])); return; }
+  const blob = await new Promise(ok => c.toBlob(ok, 'image/webp', .86)), fd = new FormData(); fd.append('file', blob, 'avatar.webp');
+  const r = await fetch('/api/me/avatar', { method: 'POST', body: fd, credentials: 'same-origin' }), j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Не удалось загрузить');
+}
 export async function upload(files) {
   files = [...files];
   if (DEMO) {

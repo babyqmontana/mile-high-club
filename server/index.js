@@ -167,6 +167,23 @@ app.post('/api/admin/upload', staffOnly, uploadSlot, (req, res, next) => upload.
   res.json({ files: out });
 });
 
+// портрет гостя: только вошедшим, одна картинка до 1 МБ, не чаще 6 раз в час; тип проверяется по содержимому
+hooks.removeAvatar = url => { const m = /^\/uploads\/(av-[a-f0-9]{16}\.(png|jpg|webp))$/.exec(url || ''); if (m) fs.rmSync(path.join(UPLOADS, m[1]), { force: true }); };
+const avatarUp = multer({ storage: multer.memoryStorage(), limits: { files: 1, fileSize: 1024 * 1024, fields: 2, parts: 4 } });
+app.post('/api/me/avatar', async (req, res, next) => {
+  try {
+    const user = await currentUser(req, res); if (!user) return res.status(401).json({ error: 'Портрет можно загрузить после входа' });
+    if (core.avatarBan('d:' + user.id)) return res.status(403).json({ error: 'Загрузка портрета отключена администрацией' });
+    if (limitedBy('av:' + user.id, 6, 3600e3)) return res.status(429).json({ error: 'Слишком часто. Попробуйте позже' });
+    req.user = user; next();
+  } catch (e) { next(e); }
+}, uploadSlot, (req, res, next) => avatarUp.single('file')(req, res, e => e ? res.status(400).json({ error: e.code === 'LIMIT_FILE_SIZE' ? 'Картинка больше 1 МБ' : 'Картинка не принята' }) : next()), (req, res) => {
+  const f = req.file, ext = f && ['jpg', 'png', 'webp'].find(x => MAGIC[x](f.buffer)); if (!ext) return res.status(400).json({ error: 'Подойдёт картинка JPG, PNG или WebP' });
+  const name = `av-${crypto.randomBytes(8).toString('hex')}.${ext}`; fs.writeFileSync(path.join(UPLOADS, name), f.buffer);
+  try { core.setAvatar('d:' + req.user.id, '/uploads/' + name); } catch (e) { fs.rmSync(path.join(UPLOADS, name), { force: true }); return res.status(400).json({ error: e.message }); }
+  res.json({ avatar: '/uploads/' + name });
+});
+
 /* ---- поток изменений ---- */
 const perIp = new Map(), MAX_STREAMS = 5000, MAX_PER_IP = 12;
 app.get('/api/stream', (req, res) => {

@@ -199,6 +199,7 @@ export async function startBot({ core, store, env, hooks }) {
     // гость отключил личные сообщения в кабинете — карточка персоналу обновляется, гостю не пишем
     if (d.quiet) return;
     const cabinet = site ? ` Кабинет: ${site}/#me` : '';
+    if (kind === 'avatar_removed') { const m = await findMember(d.discord, d.discordId); if (m) m.send(`${d.text}${cabinet}`).catch(() => {}); return; }
     if (kind === 'ticket_reply') { const m = await findMember(d.discord, d.discordId); if (m) m.send(`Управляющий ответил на обращение «${d.topic}»: ${String(d.replyText || '').slice(0, 1500)}${cabinet}`).catch(() => {}); }
     if (kind === 'ticket_closed' && d.mode === 'site') { const m = await findMember(d.discord, d.discordId); if (m) m.send(`Ваше обращение «${d.topic}» закрыто. Если вопрос остался, откройте новое.${cabinet}`).catch(() => {}); }
     if (kind === 'booking_message' && d.replyText) { const m = await findMember(d.discord, d.discordId); if (m) m.send(`Отель ответил по брони ${d.code}: ${String(d.replyText).slice(0, 1500)}${cabinet}`).catch(() => {}); }
