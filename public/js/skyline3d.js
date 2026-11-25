@@ -534,7 +534,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     vertexShader: 'varying vec3 p;varying float wy;void main(){p=position;wy=(modelMatrix*vec4(position,1.)).y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
     fragmentShader: `uniform vec3 uF;uniform float uDay,uT;varying vec3 p;varying float wy;void main(){
       float a=atan(p.z,p.x),w=sin(a*3.+uT*.011)*.5+sin(a*7.-uT*.017+1.3)*.3+sin(a*13.+uT*.02)*.2,e=p.y/214.;
-      float up=exp(-pow(max(e+.012,0.)/(.034+.012*w),2.)),dn=exp(-pow(min(e+.03,0.)/.062,2.));
+      float n=smoothstep(-.02,-.5,p.z/214.),up=exp(-pow(max(e+.012+.062*n,0.)/(.034+.012*w-.008*n),2.))*(1.-.25*n),dn=exp(-pow(min(e+.03,0.)/.062,2.));
       vec3 c=mix(mix(uF*1.15,vec3(.27,.11,.25),.75),uF,uDay);c+=vec3(.05,.015,.035)*(1.-uDay)*smoothstep(-.05,.03,e);
       gl_FragColor=vec4(c+(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.,up*dn*(.9+.07*w)*smoothstep(42.,33.,abs(p.y))*smoothstep(-.6,11.,wy));}` }));
   haze.frustumCulled = false; haze.renderOrder = -1; world.add(haze);
@@ -544,10 +544,44 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     const n = 220, pos = [], idx = []; const hgt = a => { const north = Math.max(0, -Math.sin(a) * 1.15 + .32); return Math.min(1, north) * H * (.55 + .2 * Math.sin(a * 5 + seed) + .16 * Math.sin(a * 11 + seed * 2.3) + .09 * Math.sin(a * 23 + seed) + .05 * Math.sin(a * 47)); };
     for (let k = 0; k <= n; k++) { const a = k / n * 6.28319, x = Math.cos(a) * R, z = Math.sin(a) * R; pos.push(x, GROUND - 4, z, x, GROUND + Math.max(0, hgt(a)), z); if (k) { const q = k * 2; idx.push(q - 2, q, q - 1, q - 1, q, q + 1); } }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
-    const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.DoubleSide, uniforms: { uC: { value: new THREE.Vector3(...col) }, uF: skyU.uFog, uDay: skyU.uDay, uH: { value: H } }, vertexShader: 'varying float y;void main(){y=position.y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', fragmentShader: 'uniform vec3 uC,uF;uniform float uH,uDay;varying float y;void main(){gl_FragColor=vec4(mix(mix(uF,vec3(.25,.1,.23),.75*(1.-uDay)),uC,smoothstep(-1.,uH*.55,y)),1.);}' })); m.renderOrder = -1; world.add(m);
+    const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.DoubleSide, uniforms: { uC: { value: new THREE.Vector3(...col) }, uF: skyU.uFog, uDay: skyU.uDay, uH: { value: H } }, vertexShader: 'varying float y;void main(){y=position.y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', fragmentShader: 'uniform vec3 uC,uF;uniform float uH,uDay;varying float y;void main(){gl_FragColor=vec4(mix(mix(uF,vec3(.25,.1,.23),.75*(1.-uDay)),uC,smoothstep(1.,uH*.5,y)),1.);}' })); m.renderOrder = -1; world.add(m);
     return hgt;
   };
-  ridge(330, 62, [.115, .062, .16], 1.7); ridge(270, 46, [.08, .042, .125], 4.1); ridge(215, 31, [.05, .027, .088], 2.6);
+  ridge(330, 62, [.115, .062, .16], 1.7); ridge(270, 46, [.08, .042, .125], 4.1); const near = ridge(215, 31, [.05, .027, .088], 2.6);
+  // холмы с особняками: дома стоят на уступах вдоль дорог-серпантинов, у каждого свои окна, у части — бассейн.
+  // Пять сеток на всё: уступы, деревья, стены, окна, бассейны; огни дорог идут вместе с остальными дальними огнями
+  {
+    const at = (a, y, r, f) => f(Math.cos(a) * r, y, Math.sin(a) * r, Math.atan2(-Math.cos(a), -Math.sin(a))), walls = [], glass = [], pools = [], trees = [], earth = [], plate = (w, h, d, x, y, z, ry, dx = 0, dy = 0, dz = 0) => { const q = new THREE.BoxGeometry(w, h, d); q.translate(dx, dy + h / 2, dz); q.rotateY(ry); q.translate(x, y, z); return q; };
+    [.5, .68, .85].forEach((lvl, n) => {
+      for (let a = -2.95; a < -.2; ) {
+        const top = near(a), y = GROUND + top * (lvl + .05 * Math.sin(a * 19 + n * 2)); a += .012 + rf() * .02; if (top < 12 || y < 12.5) continue;
+        at(a, y - .3, 213.6, (x, yy, z) => farList.push(x, yy, z, 1, .68, .38, .6, 500 + rf() * 60));                       // фонарь дороги
+        if (rf() < .3) continue;
+        const w = 1.3 + rf() * 1.3, h = .5 + rf() * .2, two = rf() < .4;
+        at(a, y, 213.2, (x, yy, z, ry) => {
+          walls.push(plate(w, h, 1.1, x, yy, z, ry), plate(w + .3, .07, 1.3, x, yy, z, ry, 0, h)); earth.push(plate(w + 1.2, .9, 1.5, x, yy, z, ry, 0, -.9));
+          const panes = (pw, px, py, pz) => { const m = Math.max(2, Math.round(pw / .42)); for (let q = 0; q < m; q++) if (rf() < .72) glass.push(plate(pw / m * .72, h * .46, .06, x, yy, z, ry, px + (q + .5) / m * pw - pw / 2, py, pz)); };
+          panes(w * .9, 0, h * .26, .56); if (two) { walls.push(plate(w * .5, h * .9, .9, x, yy, z, ry, w * .18, h)); panes(w * .44, w * .18, h * 1.25, .46); }
+          if (rf() < .25) pools.push(plate(.7, .06, .4, x, yy, z, ry, -w * .6, .01, .7));
+          for (let q = 2 + (rf() * 3 | 0); q--;) { const th = .7 + rf() * .9, c = new THREE.ConeGeometry(.16 + rf() * .16, th, 5); c.translate((rf() - .5) * (w + 2.4), th / 2 - .3, rf() < .5 ? .9 : -.8); c.rotateY(ry); c.translate(x, yy, z); trees.push(c); }
+        });
+        a += .009;
+      }
+    });
+    [[earth, 0x0d0716], [trees, 0x150c20], [walls, 0x241730], [glass, 0xb98450], [pools, 0x2c7f90]].forEach(([l, c]) => l.length && world.add(new THREE.Mesh(mergeGeos(l), new THREE.MeshBasicMaterial({ color: c, fog: false, toneMapped: false }))));
+  }
+  // обсерватория на гребне: фасад с арками в тёплой подсветке и три тёмных купола — читается силуэтом
+  let obs = -1.28; for (let a = -1.75; a < -.9; a += .01) if (near(a) > near(obs)) obs = a;
+  const oy = GROUND + near(obs) - .4; {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 48; const g = c.getContext('2d'); const wl = g.createLinearGradient(0, 48, 0, 0); wl.addColorStop(0, '#8a5a34'); wl.addColorStop(1, '#33223a'); g.fillStyle = wl; g.fillRect(0, 0, 256, 48); g.fillStyle = '#1b1222'; g.fillRect(0, 0, 256, 4);
+    for (let x = 8; x < 250; x += 15) { g.fillStyle = '#ffc47a'; g.beginPath(); g.arc(x + 4, 22, 4, Math.PI, 0); g.rect(x, 22, 8, 18); g.fill(); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; const gr = new THREE.Group(), box = (w, h, d, x, y) => { const q = new THREE.BoxGeometry(w, h, d); q.translate(x, y + h / 2, 0); return q; }, dome = (r, x, y) => { const q = new THREE.SphereGeometry(r, 18, 8, 0, 6.283, 0, 1.571); q.translate(x, y, 0); return q; };
+    gr.add(new THREE.Mesh(mergeGeos([box(17, 2.4, 4, 0, 0), box(5.4, 4, 5, 0, 0), box(3.4, 3.1, 4.4, -7.4, 0), box(3.4, 3.1, 4.4, 7.4, 0)]), new THREE.MeshBasicMaterial({ map: t, color: 0x6b5a6c, fog: false, toneMapped: false })));
+    gr.add(new THREE.Mesh(mergeGeos([dome(2.5, 0, 4), dome(1.5, -7.4, 3.1), dome(1.5, 7.4, 3.1)]), new THREE.MeshBasicMaterial({ color: 0x1b1228, fog: false, toneMapped: false })));
+    gr.scale.setScalar(.55); gr.position.set(Math.cos(obs) * 212, oy - .9, Math.sin(obs) * 212); gr.lookAt(0, oy - .9, 0); const hill = new THREE.CylinderGeometry(10, 17, 5, 24, 1); hill.translate(0, -2.5, 0); hill.scale(1, 1, .2); gr.add(new THREE.Mesh(hill, new THREE.MeshBasicMaterial({ color: 0x0d0716, fog: false, toneMapped: false })));
+    world.add(gr);
+  }
+  await breathe();
   // океан на юге: отражает зарево неба, дальше растворяется в той же дымке; дорожки — от колеса обозрения и судов
   const SEA_L = [[34, SEA + 34, 1, .42, .72], [-64, SEA + 96, 1, .78, .5], [92, SEA + 120, 1, .8, .55], [-150, SEA + 60, 1, .5, .34], [6, SEA + 150, .75, .85, 1]];
   const seaU = { uT: far.uT, uF: skyU.uFog, uDay: skyU.uDay, uL: { value: SEA_L.map(l => new THREE.Vector2(l[0], l[1])) }, uC: { value: SEA_L.map(l => new THREE.Vector3(l[2], l[3], l[4])) } };
@@ -592,7 +626,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('aC', new THREE.BufferAttribute(C, 4)); g.setAttribute('aF', new THREE.BufferAttribute(F, 1));
     const m = new THREE.Points(g, new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { ...far, uPx: { value: dpr } },
       vertexShader: `attribute vec4 aC;attribute float aF;uniform float uT,uPx;varying vec3 c;void main(){vec3 p=position;if(aF>=999.){float a=(aF-1000.)/48.*6.28319+uT*.12;float r=mod(aF,2.)<1.?7.6:5.4;p.xy+=vec2(cos(a),sin(a))*r;}
-        vec4 mv=modelViewMatrix*vec4(p,1.);float d=-mv.z;float tw=.92+.08*sin(uT*.9+aF*7.);c=aC.rgb*aC.a*tw*2.1*exp(-d*d*.000016)*(aF>=999.?1.:1.-smoothstep(80.,165.,d));gl_PointSize=clamp(260./d,1.7,4.)*uPx;gl_Position=projectionMatrix*mv;}`,
+        vec4 mv=modelViewMatrix*vec4(p,1.);float d=-mv.z;float tw=.92+.08*sin(uT*.9+aF*7.);c=aC.rgb*aC.a*tw*2.1*exp(-d*d*.000016)*(aF>=999.?1.:aF>=500.?.9:1.-smoothstep(80.,165.,d));gl_PointSize=clamp(260./d,1.7,4.)*uPx;gl_Position=projectionMatrix*mv;}`,
       fragmentShader: 'uniform float uK;varying vec3 c;void main(){vec2 q=gl_PointCoord-.5;gl_FragColor=vec4(c*uK*smoothstep(.5,.12,length(q)),1.);}' })); m.frustumCulled = false; world.add(m); }
   await breathe();
   // самолёты на посадке и полицейский вертолёт с лучом
