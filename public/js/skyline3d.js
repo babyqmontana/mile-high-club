@@ -5,7 +5,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // фиолетовые светодиоды по рёбрам и вывеска с верблюдом. Этажи отеля горят по статусам номеров.
 // Вокруг — даунтаун: кварталы, дороги с машинами, фонари, холмы, дымка и облака,
 // которые прячут дальний план, чтобы внимание оставалось на отеле.
-const STATUS = { free: '#f7b50a', booked: '#f0177a', occupied: '#ef5617', cleaning: '#3a2c2e', repair: '#3a2c2e' };
+const STATUS = { free: '#f7b50a', booked: '#f0177a', occupied: '#ef5617', cleaning: '#b3a792', repair: '#6d5a7a' };
+import { TOWER } from './core.js';
 const FH = 0.46, W = 4.4, D = 3.0, COLS = 56;
 
 // --- геометрия «кольца» этажа: стены по контуру, U идёт по периметру (окна не растягиваются) ---
@@ -704,11 +705,11 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
   const setbackAt = () => 1;
   // видимая часть главной башни: от стыка с объёмом B по задней грани, левой, передней и кусок правой до стыка
   const hotelPath = () => { const w = W / 2, d = D / 2, bx = VOL.B.x - VOL.B.w / 2, bz = VOL.B.z + VOL.B.d / 2; return [[bx, -d], [-w, -d], [-w, d], [w, d], [w, bz]]; };
-  let lift = null, lift0 = null, ledM = null, officeMats = [], venues = [], venueMeshes = [], hoverV = null;
+  let syncFloors = null, lift = null, lift0 = null, ledM = null, officeMats = [], venues = [], venueMeshes = [], hoverV = null;
   function build(rooms) {
-    root.traverse(o => { if (o.isMesh || o.isPoints || o.isLine) { o.geometry?.dispose?.(); const ms = [].concat(o.material || []); ms.forEach(mm => { mm.map?.dispose?.(); mm.emissiveMap?.dispose?.(); }); } }); root.clear(); lift0 = lift ? lift.position.y : null; lift = null; floors = []; hotel = []; officeMats = [];
-    const hF = [...new Set(rooms.map(r => r.floor))].sort((a, b) => a - b), maxF = hF.at(-1) ?? 26;
-    const n = Math.max(44, maxF + 12), podH = 3;
+    const keep = new Set([...Object.values(FACADE || {}), ...Object.values(HOTEL || {}).flatMap(h => [h.geo, h.mat, h.mat.map])]); // общие текстуры и модели переживают пересборку
+    root.traverse(o => { if (o.isMesh || o.isPoints || o.isLine) { if (!keep.has(o.geometry)) o.geometry?.dispose?.(); [].concat(o.material || []).forEach(mm => { if (keep.has(mm)) return; [mm.map, mm.emissiveMap].forEach(t => t && !keep.has(t) && t.dispose()); mm.dispose(); }); } }); root.clear(); lift0 = lift ? lift.position.y : null; lift = null; floors = []; hotel = []; officeMats = [];
+    const n = 44, podH = 3; // высота башни не зависит от номеров: лимиты этажей в core.js (TOWER)
     topY = n * FH;
     const roofM0 = new THREE.MeshStandardMaterial({ color: 0x0d1015, metalness: .1, roughness: .95, envMapIntensity: .25 });
     const atlas = facadeTex() || glassAtlas(), steel = new THREE.MeshStandardMaterial({ color: 0x1d232b, metalness: .4, roughness: .65, envMapIntensity: .3 });
@@ -719,14 +720,26 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
       for (let i = from; i < to; i++) { if (skip?.(i)) continue; geos.push(ringGeoAtlas(pts, FH, i * FH, (i * 5 + (pts[0][0] * 3 | 0)) & 7)); }
       if (geos.length) root.add(new THREE.Mesh(mergeGeos(geos), glassM()));
     };
-    // A: номера отеля — отдельные этажи с подсветкой по статусам, остальные в общей сетке
-    for (let i = podH; i < n; i++) {
-      const f = i + 1; if (!hF.includes(f)) continue;
-      const m = new THREE.Mesh(ringGeo(hotelPath(), FH * .86, 0, true), emis(floorCanvas(rooms.filter(r => r.floor === f), 0, null, null, dim), 1)); m.position.y = i * FH; m.userData = { floor: f, hotel: true, s: 1 };
-      root.add(m); floors.push(m); hotel.push(m);
-      const sl = new THREE.Mesh(slabRing(outline(1), 0, FH * .14), steel); sl.position.y = i * FH + FH * .86; root.add(sl); m.userData.slab = sl;
-    }
-    officeBlock(outline(1), podH, n, i => hF.includes(i + 1) || venues.some(v => v.floor === i + 1 && v.floor > podH));
+    // A: номера отеля — отдельные этажи с подсветкой по статусам, остальные в общей сетке. Номера и этажи
+    // добавляются и убираются на месте: меняются только затронутые этажи, без пересборки здания и без мерцания
+    const officeA = new THREE.Mesh(new THREE.BufferGeometry(), glassM()); officeA.frustumCulled = false; root.add(officeA); let officeKey = null;
+    syncFloors = (rooms, first) => {
+      let fresh = false;
+      const want = new Map(); rooms.forEach(r => { if (r.floor >= TOWER.minFloor && r.floor <= TOWER.maxFloor && !venues.some(v => v.floor === r.floor)) want.set(r.floor, [...(want.get(r.floor) || []), r]); });
+      hotel.filter(m => !want.has(m.userData.floor)).forEach(m => { root.remove(m, m.userData.slab); m.geometry.dispose(); m.userData.slab.geometry.dispose(); m.material.map.dispose(); m.material.dispose(); });
+      hotel = hotel.filter(m => want.has(m.userData.floor));
+      want.forEach((list, f) => {
+        const key = list.map(r => r.id + r.status).join(), old = hotel.find(m => m.userData.floor === f);
+        if (old) { if (old.userData.key !== key) { old.userData.key = key; floorCanvas(list, 0, hiRoom, hovRoom, dim, old.material.map); } return; }
+        const m = new THREE.Mesh(ringGeo(hotelPath(), FH * .86, 0, true), emis(floorCanvas(list, 0, hiRoom, hovRoom, dim), first ? 1 : 0)), sl = new THREE.Mesh(slabRing(outline(1), 0, FH * .14), steel);
+        m.position.y = (f - 1) * FH; sl.position.y = m.position.y + FH * .86; m.material.fog = steel.fog = false; m.userData = { floor: f, hotel: true, s: 1, key, slab: sl }; root.add(m, sl); hotel.push(m); fresh = true;
+      });
+      hotel.sort((a, b) => a.userData.floor - b.userData.floor); floors = hotel; if (fresh && !first) relight(); // новый этаж получает те же отражения и свет, что остальные
+      const ok = [...want.keys()].sort().join() + '|' + venues.map(v => v.floor).join(); if (ok === officeKey) return; officeKey = ok;
+      const geos = []; for (let i = podH; i < n; i++) if (!want.has(i + 1) && !venues.some(v => v.floor === i + 1 && v.floor > podH)) geos.push(ringGeoAtlas(outline(1), FH, i * FH, (i * 5 + (outline(1)[0][0] * 3 | 0)) & 7));
+      officeA.geometry.dispose(); officeA.geometry = mergeGeos(geos);
+    };
+    syncFloors(rooms, true);
     // этажи площадок: свой свет и цвет, наведение и клик ведут на страницу площадки
     venueMeshes = [];
     const vf = new Map(venues.filter(v => v.floor > podH && v.floor <= n).map(v => [v.floor, v]));
@@ -839,7 +852,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     applyWx(); relight();
     root.position.y = GROUND; world.position.y = 0;
     if (BAKE.shadow && !HOTEL) root.add(shadowM ??= contactShadow());
-    built = JSON.stringify(rooms.map(r => [r.id, r.floor])) + venueKey();
+    built = venueKey();
   }
   const venueKey = () => JSON.stringify(venues.map(v => [v.id, v.floor, v.kind]));
   let hiRoom = null, hovRoom = null, rotTarget = null;
@@ -858,8 +871,8 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
   let wantRooms = null, assetsIn = false;
   function update(rooms, floor) {
     wantRooms = [rooms, floor]; if (!assetsIn) { curRooms = rooms; sel = floor; return; } // собираем здание один раз, когда всё приехало
-    const k = JSON.stringify(rooms.map(r => [r.id, r.floor])) + venueKey();
-    if (k !== built) build(rooms); else if (rooms.map(r => r.status).join() !== curRooms.map(r => r.status).join()) retexture(rooms);
+    if (!rooms.some(r => r.id === hiRoom)) hiRoom = null; if (!rooms.some(r => r.id === hovRoom)) hovRoom = null;
+    if (built !== venueKey()) build(rooms); else syncFloors(rooms);
     curRooms = rooms; sel = floor;
     const fm = hotel.find(m => m.userData.floor === sel); camTargetY = fm ? fm.position.y + root.position.y : topY * .5;
     if (fm && hl) { hl.position.y = fm.position.y - FH * .01; hl.scale.setScalar(fm.userData.s); }
@@ -934,7 +947,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     venueMeshes.forEach(m => { const L = m.userData.light, t2 = hoverV === m.userData.venue ? 1.2 : .85; if (L.emissiveIntensity != null) L.emissiveIntensity += (t2 - L.emissiveIntensity) * Math.min(1, dt * 8); else L.opacity += ((hoverV === m.userData.venue ? .95 : .55) - L.opacity) * Math.min(1, dt * 8); });
     // фокус на выбранном этаже: он горит ярче, а остальные приглушаются (как подсветка выбора на топовых 3D-сайтах)
     floors.forEach(m => { const on = m.userData.floor === sel, hv = m.userData.floor === hover; const target = on ? 1.25 : hv && m.userData.hotel ? 1.18 : m.userData.hotel ? .95 : officeK; m.material.emissiveIntensity += (target - m.material.emissiveIntensity) * Math.min(1, dt * 8); const sc = on ? 1.04 : 1; m.scale.x += (sc - m.scale.x) * Math.min(1, dt * 8); m.scale.z = m.scale.x; m.userData.slab?.scale.set(m.scale.x, 1, m.scale.x); });
-    if (hl) { const vis = sel !== null ? 1 : 0, pz = .94 + .06 * Math.sin(t / 900); const s = hl.userData.shell.uniforms.uOp; s.value += (vis * pz - s.value) * Math.min(1, dt * 6); hl.userData.trim.opacity += (vis * pz * .85 - hl.userData.trim.opacity) * Math.min(1, dt * 6); }
+    if (hl) { const vis = hotel.some(m => m.userData.floor === sel) ? 1 : 0, pz = .94 + .06 * Math.sin(t / 900); const s = hl.userData.shell.uniforms.uOp; s.value += (vis * pz - s.value) * Math.min(1, dt * 6); hl.userData.trim.opacity += (vis * pz * .85 - hl.userData.trim.opacity) * Math.min(1, dt * 6); }
     if (lift) { const u = lift.userData, fm = hotel.find(m => m.userData.floor === sel), ty = Math.max(u.y0, Math.min(u.y1, fm ? fm.position.y + FH * .45 : u.y0)); lift.position.y += (ty - lift.position.y) * Math.min(1, dt * 1.8); }
     if (beacon) beacon.material.color.setHSL(0.05, .9, 0.42 + Math.max(0, Math.sin(t / 420)) * 0.18);
     beacons.material.opacity = .55 + .45 * Math.sin(t / 500);

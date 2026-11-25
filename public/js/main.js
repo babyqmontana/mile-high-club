@@ -357,6 +357,7 @@ async function renderStay() {
   if (mods.tower?.isShowcase) { mods.tower.destroy(); mods.tower = null; }
   const p = S.pub, floors = [...new Set(p.rooms.map(r => r.floor))].sort((a, b) => b - a);
   if (selFloor === null || !floors.includes(selFloor)) selFloor = floors[0] ?? null;
+  if (selRoom && !p.rooms.some(r => r.id === selRoom && r.floor === selFloor)) { selRoom = null; mods.tower?.focusRoom?.(null); } // номер убрали из отеля или перенесли
   markFloor(selFloor);
   const v = view('stay');
   if (!v.querySelector('.tower')) {
@@ -369,7 +370,7 @@ async function renderStay() {
             <path d="M14 104 A86 86 0 0 1 186 104" fill="none" stroke="url(#hbr)" stroke-width="2.4"/><g id="hTicks"></g>
             <g id="hNeedle" class="needle"><path d="M100 104 L98 34 L100 22 L102 34 Z" fill="url(#hbr)"/><circle cx="100" cy="104" r="7" fill="url(#hbr)"/><circle cx="100" cy="104" r="2.5" fill="#0d0809"/></g></svg>
             <div><b class="num" id="hNum">—</b><small id="hSub"></small></div></div>
-          <div class="legend tl"><span><i style="background:var(--gold)"></i>Свободен</span><span><i style="background:var(--pink)"></i>Забронирован</span><span><i style="background:var(--violet)"></i>Заселён</span><span><i style="background:var(--mut)"></i>Уборка</span></div></div>
+          <div class="legend tl"><span><i style="background:var(--gold)"></i>Свободен</span><span><i style="background:var(--pink)"></i>Забронирован</span><span><i style="background:var(--violet)"></i>Заселён</span><span><i style="background:var(--st-cleaning)"></i>Уборка</span><span><i style="background:var(--st-repair)"></i>Ремонт</span></div></div>
         <aside class="liftp"><div class="lhead"><span class="eyebrow">Лифт</span><span class="note" id="lfState">на месте</span></div>
           <div class="lbtns" id="lfBtns" role="group" aria-label="Этаж"></div>
           <div class="ldoors open" id="lfDoors"><div class="linner" id="lfInner"></div><i class="door l"></i><i class="door r"></i></div>

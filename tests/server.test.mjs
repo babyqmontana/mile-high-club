@@ -108,17 +108,17 @@ test('этаж правится целиком: новый номер этажа
   const admin = { id: 'a', username: 'A', role: 'admin' }, mod = { id: 'm', username: 'M', role: 'mod' }, guest = { id: 'g', username: 'G', role: 'guest' };
   const b = (await core.handle('POST', '/bookings', { body: { type: 'dlx', name: 'Гость', discord: 'g', date: '2026-12-01', nights: 2 }, user: guest })).booking;
   await core.handle('POST', `/admin/bookings/${b.id}/action`, { body: { act: 'confirm', room: '2201' }, user: admin });
-  await assert.rejects(core.handle('PUT', '/admin/floors/22', { body: { floor: 40 }, user: mod }), /прав|доступ/i);
+  await assert.rejects(core.handle('PUT', '/admin/floors/22', { body: { floor: 28 }, user: mod }), /прав|доступ/i);
   const n22 = s.all('rooms').filter(r => r.floor === 22).length, type = s.all('types').at(-1).id;
-  const res = await core.handle('PUT', '/admin/floors/22', { body: { floor: 40, type }, user: admin });
+  const res = await core.handle('PUT', '/admin/floors/22', { body: { floor: 28, type }, user: admin });
   assert.equal(res.rooms.length, n22);
   assert.equal(s.all('rooms').filter(r => r.floor === 22).length, 0);
-  assert.ok(s.get('rooms', '4001') && !s.get('rooms', '2201'));
-  assert.ok(s.all('rooms').filter(r => r.floor === 40).every(r => r.type === type));
-  assert.equal(s.get('bookings', b.id).room, '4001');
+  assert.ok(s.get('rooms', '2801') && !s.get('rooms', '2201'));
+  assert.ok(s.all('rooms').filter(r => r.floor === 28).every(r => r.type === type));
+  assert.equal(s.get('bookings', b.id).room, '2801');
   // перенумерация не затирает чужие номера
-  await core.handle('POST', '/admin/rooms', { body: { id: '4101', floor: 41, type }, user: admin });
-  await assert.rejects(core.handle('PUT', '/admin/floors/40', { body: { floor: 41 }, user: admin }), /заняты/);
+  await core.handle('POST', '/admin/rooms', { body: { id: '2901', floor: 29, type }, user: admin });
+  await assert.rejects(core.handle('PUT', '/admin/floors/28', { body: { floor: 29 }, user: admin }), /заняты/);
   s.close();
 });
 
@@ -501,4 +501,17 @@ test('гостевая книга: все, кто жил; живущие сей�
   await act('checkout'); const [g] = await book(); assert.deepEqual([g.name, g.nights, g.stays, g.slug], ['Сэм', 3, 1, '']); const raw = JSON.stringify(g); for (const x of [room.id, '555', 'sam', guestKey, '2026-12']) assert.ok(!raw.includes(x), x);
   await go('PUT', '/me/profile', { bookOff: true }); assert.equal((await book()).length, 0); await go('PUT', '/me/profile', { bookOff: false }); assert.equal((await book()).length, 1);
   await go('POST', '/me/delete', { confirm: 'УДАЛИТЬ' }); assert.equal((await book()).length, 0); s.close();
+});
+
+test('лимиты башни: этажи, номера на этаже, площадки; лишнее не сохраняется', async () => {
+  const s = openStore(path.join(dir, 'lim.sqlite')); seed(s); const core = createCore(s, {}), admin = { id: 'a', username: 'A', role: 'admin' }, type = s.all('types')[0].id, n = () => s.all('rooms').length, go = (m, p, body) => core.handle(m, p, { body, user: admin });
+  const no = async (m, p, body, re) => { const was = JSON.stringify(s.all('rooms')); await assert.rejects(go(m, p, body), re); assert.equal(JSON.stringify(s.all('rooms')), was, p); };
+  for (const floor of [3, 42, 300, -1, 0, 20.5, 'абв', '']) await no('POST', '/admin/floors', { floor, count: 1, type }, /этаж/i);
+  await no('POST', '/admin/rooms', { id: '3801', floor: 38, type }, /Sky Pool/); await no('PUT', '/admin/floors/20', { floor: 40 }, /Night Pool/); await no('PUT', '/admin/rooms/2001', { floor: 50 }, /с 4 по 41/);
+  await no('POST', '/admin/floors', { floor: 10, count: 15, type }, /14 номеров/); await no('POST', '/admin/floors', { floor: 20, count: 7, type }, /не больше 6/); await no('POST', '/admin/floors', { floor: 10, count: 0, type }, /сколько/);
+  await go('POST', '/admin/floors', { floor: 20, count: 6, start: 2009, type }); await no('POST', '/admin/rooms', { id: '2015', floor: 20, type }, /предел/); await no('PUT', '/admin/rooms/2101', { floor: 20 }, /предел/); await no('PUT', '/admin/floors/22', { floor: 20 }, /предел/);
+  await go('PUT', '/admin/rooms/2101', { type }); await go('PUT', '/admin/rooms/2101', { floor: 21, type });
+  for (let f = 4; new Set(s.all('rooms').map(r => r.floor)).size < 16; f++) await go('POST', '/admin/floors', { floor: f, count: 1, type });
+  await no('POST', '/admin/rooms', { id: '1901', floor: 19, type }, /не больше 16/); await go('PUT', '/admin/floors/4', { floor: 19 }); const k = n(); await go('DELETE', '/admin/floors/19'); assert.equal(n(), k - 1); await go('POST', '/admin/rooms', { id: '1802', floor: 18, type });
+  await assert.rejects(go('PUT', '/admin/venues/ciel', { floor: '20 этаж' }), /номера/); await go('PUT', '/admin/venues/ciel', { floor: '29 этаж' }); s.close();
 });
