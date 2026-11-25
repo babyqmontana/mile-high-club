@@ -328,7 +328,7 @@ function groundMaterial(block, road, uF) {
       col=mix(col,mix(vec3(.32,.3,.31),vec3(.86,.85,.84),uDay)*(1.-rd*.35),uSnow*(1.-lane));
       gl_FragColor=vec4(col,1.);
       #include <fog_fragment>
-      vec2 gv=vWp.xz-cameraPosition.xz;float gd=length(gv);gl_FragColor.rgb=mix(gl_FragColor.rgb,mix(uF,vec3(.25,.1,.23),.75*(1.-uDay)*smoothstep(-.6,.05,gv.y/gd)),smoothstep(110.,360.,gd));
+      vec2 gv=vWp.xz-cameraPosition.xz;float gd=length(gv);gl_FragColor.rgb=mix(gl_FragColor.rgb,mix(uF,vec3(.25,.1,.23),.75*(1.-uDay)),smoothstep(95.,300.,gd));
     }`
   });
 }
@@ -528,6 +528,16 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     const w = rf(); farList.push(x, GROUND + .4 + rf() * .5, z, 1, w < .8 ? .6 : .78, w < .8 ? .28 : .56, .4 + rf() * .6, rf() * 60);
   }
   await breathe();
+  // дымка у горизонта: одно кольцо вокруг камеры перед холмами и дальним океаном. Края земли, воды и холмов тонут в ней,
+  // город и отель ближе — их она не трогает. Без текстур, один вызов отрисовки
+  const haze = new THREE.Mesh(new THREE.CylinderGeometry(196, 196, 76, 64, 1, true), new THREE.ShaderMaterial({ side: THREE.BackSide, transparent: true, depthWrite: false, fog: false, uniforms: { uF: skyU.uFog, uDay: skyU.uDay, uT: skyU.uTime },
+    vertexShader: 'varying vec3 p;varying float wy;void main(){p=position;wy=(modelMatrix*vec4(position,1.)).y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+    fragmentShader: `uniform vec3 uF;uniform float uDay,uT;varying vec3 p;varying float wy;void main(){
+      float a=atan(p.z,p.x),w=sin(a*3.+uT*.011)*.5+sin(a*7.-uT*.017+1.3)*.3+sin(a*13.+uT*.02)*.2,e=p.y/196.;
+      float up=exp(-pow(max(e+.012,0.)/(.034+.012*w),2.)),dn=exp(-pow(min(e+.03,0.)/.062,2.));
+      vec3 c=mix(mix(uF*1.15,vec3(.27,.11,.25),.75),uF,uDay);c+=vec3(.05,.015,.035)*(1.-uDay)*smoothstep(-.05,.03,e);
+      gl_FragColor=vec4(c+(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.,up*dn*(.9+.07*w)*smoothstep(38.,30.,abs(p.y))*smoothstep(-.6,11.,wy));}` }));
+  haze.frustumCulled = false; haze.renderOrder = -1; world.add(haze);
   // окна дальних кварталов
   for (let k = 0; k < 2600; k++) { const a = rf() * 6.283, d = 70 + rf() * 180, x = Math.cos(a) * d, z = Math.sin(a) * d; if (inSea(x, z) || z < -165) continue; farList.push(x, GROUND + 1 + rf() * rf() * 13, z, 1, .78, .5, .35 + rf() * .6, rf() * 60); }
   await breathe();
@@ -536,7 +546,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     const n = 220, pos = [], idx = []; const hgt = a => { const north = Math.max(0, -Math.sin(a) * 1.15 + .32); return Math.min(1, north) * H * (.55 + .2 * Math.sin(a * 5 + seed) + .16 * Math.sin(a * 11 + seed * 2.3) + .09 * Math.sin(a * 23 + seed) + .05 * Math.sin(a * 47)); };
     for (let k = 0; k <= n; k++) { const a = k / n * 6.28319, x = Math.cos(a) * R, z = Math.sin(a) * R; pos.push(x, GROUND - 4, z, x, GROUND + Math.max(0, hgt(a)), z); if (k) { const q = k * 2; idx.push(q - 2, q, q - 1, q - 1, q, q + 1); } }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
-    const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.DoubleSide, uniforms: { uC: { value: new THREE.Vector3(...col) }, uF: skyU.uFog, uH: { value: H } }, vertexShader: 'varying float y;void main(){y=position.y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', fragmentShader: 'uniform vec3 uC,uF;uniform float uH;varying float y;void main(){gl_FragColor=vec4(mix(uF,uC,smoothstep(-1.,uH*.55,y)),1.);}' })); m.renderOrder = -1; world.add(m);
+    const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.DoubleSide, uniforms: { uC: { value: new THREE.Vector3(...col) }, uF: skyU.uFog, uDay: skyU.uDay, uH: { value: H } }, vertexShader: 'varying float y;void main(){y=position.y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', fragmentShader: 'uniform vec3 uC,uF;uniform float uH,uDay;varying float y;void main(){gl_FragColor=vec4(mix(mix(uF,vec3(.25,.1,.23),.75*(1.-uDay)),uC,smoothstep(-1.,uH*.55,y)),1.);}' })); m.renderOrder = -1; world.add(m);
     for (let k = 0; k < houses; k++) { const a = -(.25 + rf() * 2.65), top = hgt(a); if (top < 5) continue; const y = GROUND + top * (.15 + rf() * .72), r2 = R - 1.5; farList.push(Math.cos(a) * r2, y, Math.sin(a) * r2, 1, .74, .44, .5 + rf() * .9, rf() * 60); }
     return hgt;
   };
@@ -552,7 +562,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     gr.add(new THREE.Mesh(mergeGeos([box(17, 2.4, 4, 0, 0), box(5.4, 4, 5, 0, 0), box(3.4, 3.1, 4.4, -7.4, 0), box(3.4, 3.1, 4.4, 7.4, 0)]), new THREE.MeshBasicMaterial({ map: t, color: 0x6b5a6c, fog: false, toneMapped: false })));
     gr.add(new THREE.Mesh(mergeGeos([dome(2.5, 0, 4), dome(1.5, -7.4, 3.1), dome(1.5, 7.4, 3.1)]), new THREE.MeshBasicMaterial({ color: 0x1b1228, fog: false, toneMapped: false })));
     gr.position.set(Math.cos(obs) * 211, oy, Math.sin(obs) * 211); gr.lookAt(0, oy, 0);
-    const hill = new THREE.CylinderGeometry(13, 34, 16, 40, 1); hill.translate(0, -8, 0); hill.scale(1, 1, .35); gr.add(new THREE.Mesh(hill, new THREE.MeshBasicMaterial({ color: 0x140b22, fog: false, toneMapped: false }))); world.add(gr);
+    const hill = new THREE.CylinderGeometry(13, 34, 16, 40, 1); hill.translate(0, -8, 0); hill.scale(1, 1, .35); gr.add(new THREE.Mesh(hill, new THREE.MeshBasicMaterial({ color: 0x3d1c39, fog: false, toneMapped: false }))); world.add(gr);
   }
   const mast = []; [-.62, -1.75, -2.2].forEach(a => { const y = GROUND + near(a), x = Math.cos(a) * 212, z = Math.sin(a) * 212; mast.push(x, y - 1, z, x, y + 13, z); for (const q of [13, 8.5, 4.5]) farList.push(x, y + q, z, 1, .12, .1, 2.2, -1); });
   const mastG = new THREE.BufferGeometry(); mastG.setAttribute('position', new THREE.Float32BufferAttribute(mast, 3)); world.add(new THREE.LineSegments(mastG, new THREE.LineBasicMaterial({ color: 0x2a1a38, fog: false })));
@@ -901,7 +911,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     introT += dt; const it = Math.min(1, introT / 3.4);                                        // первое появление: кран от площади вверх к общему плану
     if (it < 1) { const k = 1 - Math.pow(1 - it, 3.2), q = 1 - k; dist *= 1 - .52 * q; ly -= (ly - 3) * q * .9; yw -= .85 * q; e2 -= .1 * q; fov += 12 * q; }
     if (Math.abs(cam.fov - fov) > .01) { cam.fov = fov; cam.updateProjectionMatrix(); }
-    cam.position.set(lxx + Math.sin(yw) * dist * Math.cos(e2), Math.max(GROUND + 1.2, ly + 1.5 + Math.sin(e2) * dist), Math.cos(yw) * dist * Math.cos(e2)); cam.lookAt(lxx, ly, 0); sky.position.copy(cam.position);
+    cam.position.set(lxx + Math.sin(yw) * dist * Math.cos(e2), Math.max(GROUND + 1.2, ly + 1.5 + Math.sin(e2) * dist), Math.cos(yw) * dist * Math.cos(e2)); cam.lookAt(lxx, ly, 0); sky.position.copy(cam.position); haze.position.copy(cam.position);
     SINK.uCamP.value.set(cam.position.x, cam.position.y - GROUND, cam.position.z); sinkers.forEach(k => { k.g.scale.y = Math.max(.02, sinkJs(k.x, k.z, k.h) / k.h); });
     venueMeshes.forEach(m => { const L = m.userData.light, t2 = hoverV === m.userData.venue ? 1.2 : .85; if (L.emissiveIntensity != null) L.emissiveIntensity += (t2 - L.emissiveIntensity) * Math.min(1, dt * 8); else L.opacity += ((hoverV === m.userData.venue ? .95 : .55) - L.opacity) * Math.min(1, dt * 8); });
     // фокус на выбранном этаже: он горит ярче, а остальные приглушаются (как подсветка выбора на топовых 3D-сайтах)
