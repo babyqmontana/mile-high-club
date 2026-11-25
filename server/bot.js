@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildBlueprint, allTiers, DIRECTOR_ROLE } from './discord/layout.js';
 import { planSetup, snapshotGuild, snapshotRoles, applyPlan, planCleanup } from './discord/plan.js';
-import { helpdeskBoard, postPayload, eventAnnouncement, ticketOpened, closeRow, archiveCard, transcriptHtml, feedCard } from './discord/embeds.js';
+import { helpdeskBoard, postPayload, eventAnnouncement, ticketOpened, closeRow, cabinetRow, archiveCard, transcriptHtml, feedCard } from './discord/embeds.js';
 import { syncBoard } from './discord/board.js';
 import { applyProfile } from './discord/profile.js';
 import { buildCommands, createInteractions } from './discord/commands.js';
@@ -78,7 +78,7 @@ export async function startBot({ core, store, env, hooks }) {
     const cat = await channel('catDesk');
     t.discordId = m.id; // сообщения из канала разделяются на гостя и персонал по этому id
     const ch = await guild.channels.create({ name: `🎫・${(m.user.username || 'гость').slice(0, 20)}-${t.id.slice(-4)}`, type: ChannelType.GuildText, parent: cat?.id, permissionOverwrites: [...staffOverwrites(), botOverwrite(), { id: m.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] }] });
-    await ch.send(ticketOpened(t, m.id));
+    await ch.send(ticketOpened(t, m.id, { site, linked: t.owner === 'd:' + m.id && core.linked(m.id) }));
     return ch.id;
   };
 
@@ -110,7 +110,9 @@ export async function startBot({ core, store, env, hooks }) {
     return log;
   };
   // ответ из панели сайта уходит в тикет-канал
-  hooks.ticketReply = async (t, text, by, ooc) => { const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) throw new Error('канал тикета не найден'); await c.send({ content: `**${by}** (с сайта): ${oocTag(ooc)}${text}`, allowedMentions: { parse: [] } }); };
+  hooks.ticketReply = async (t, text, by, ooc, guest) => { const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) throw new Error('канал тикета не найден'); await c.send({ content: `${guest ? '💬 ' : ''}**${by}** (с сайта): ${oocTag(ooc)}${text}`.slice(0, 2000), allowedMentions: { parse: [] } }); return true; };
+  // гость вошёл на сайт через Discord, пока тикет открыт
+  hooks.ticketLinked = async t => { const c = await ticketChannel(t.channel); if (c) await c.send({ content: '🔗 Discord привязан к сайту: переписка и уведомления теперь есть и в кабинете.', components: cabinetRow(site), allowedMentions: { parse: [] } }); };
   // --- Канал-мост беседы в Discord (бронь или заявка с сайта) ---
   // Персонал видит и отвечает прямо из Discord — сайт открывать не нужно. Гость пишет на сайте, бот дублирует сюда;
   // сотрудник пишет в канал — попадает гостю на сайт и в ЛС. Канал только для персонала (гость взаимодействует на сайте).
@@ -373,7 +375,7 @@ export async function startBot({ core, store, env, hooks }) {
 
   // функции берём сразу, а не через общий объект hooks: его может изменить сервер, а кнопки должны работать всегда
   const resolveRole = hooks.resolveRole;
-  const interact = createInteractions({ core, resolveRole });
+  const interact = createInteractions({ core, resolveRole, site });
   client.on(Events.InteractionCreate, i => { if (i.guildId === env.GUILD_ID) interact(i); });
 
   // Если бот не смог подключиться к серверу, клиент гасим: иначе он продолжал бы принимать нажатия кнопок,

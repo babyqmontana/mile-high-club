@@ -120,7 +120,18 @@ export function createCore(store, hooks = {}) {
     if (!prev && !login) return;                                  // запись появляется при входе: удалённая гостем сама не возвращается
     if (prev && !login && now - prev.lastAt < 600e3 && prev.username === user.username && prev.role === user.role) return;
     store.put('accounts', id, { id, username: str(user.username, 60), avatar: /^https:\/\/cdn\.discordapp\.com\//.test(user.avatar || '') ? user.avatar : '', role: user.role, firstAt: prev?.firstAt || now, lastAt: now, logins: (prev?.logins || 0) + (login ? 1 : 0) });
+    if (!prev) linkNote(id);
   }
+  // вход на сайт через Discord: тикеты, открытые до него, появляются в кабинете, в канал приходит отметка
+  const linked = discordId => !!(discordId && store.get('accounts', 'd:' + discordId));
+  const linkNote = owner => store.all('tickets').filter(t => t.owner === owner && t.mode === 'discord' && t.channel && t.status !== 'closed' && chatOpen(t, { id: owner.slice(2) })).forEach(t => call('ticketLinked', t));
+  // переписку из Discord показываем только тому, чей это Discord: ник в форме без входа может указать кто угодно
+  const chatOpen = (t, user) => t.mode === 'site' || (t.mode === 'discord' && !!user && t.discordId === user.id);
+  const chatOf = (t, user) => {
+    if (!chatOpen(t, user)) return { ...t, messages: [], unlinked: t.mode === 'discord' };
+    const first = t.mode === 'discord' && t.messages[0]?.text !== t.text ? [{ from: 'guest', text: t.text, at: t.createdAt }] : [];
+    return { ...t, chat: true, messages: [...first, ...t.messages] };
+  };
   // игровое (IC) имя: персонал и гости подписываются им, а не ником Discord. Задаётся в профиле
   const icName = (user, guestKey) => String(profileOf(ownerOf(user, guestKey))?.name || '').trim();
   const staffName = user => icName(user) || user.username;
@@ -184,7 +195,7 @@ export function createCore(store, hooks = {}) {
   on('GET', '/me/items', ({ user, guestKey }) => {
     seen(user); const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [], profile: null, card: null, stats: guestStats(null), reviews: [], notices: [] };
     const mine = c => store.all(c).filter(d => d.owner === o).sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
-    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: ownProfile(profileOf(o)), card: cardNo(o), verified: verified(o), staff: staffRole(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r) };
+    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => chatOf(t, user)), orders: mine('orders'), profile: ownProfile(profileOf(o)), card: cardNo(o), verified: verified(o), staff: staffRole(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r) };
   });
   // после входа брони, заказы, обращения и профиль с этого устройства переходят в аккаунт
   on('POST', '/me/claim', ({ user, guestKey }) => {
@@ -195,7 +206,7 @@ export function createCore(store, hooks = {}) {
     store.all('notices').filter(n => n.owner === from).forEach(n => store.put('notices', n.id, { ...n, owner: to }));
     const gp = profileOf(from);
     if (gp) { const up = profileOf(to) || { id: to }; store.put('profiles', to, { ...gp, ...Object.fromEntries(Object.entries(up).filter(([, v]) => v !== '' && v != null)), lifex: up.lifex || gp.lifex, id: to, achievements: [...new Set([...(gp.achievements || []), ...(up.achievements || [])])].slice(0, 40), updatedAt: Date.now() }); store.del('profiles', from); }
-    if (moved) emit(['bookings', 'orders', 'tickets']);
+    if (moved) { emit(['bookings', 'orders', 'tickets']); linkNote(to); }
     return { moved };
   });
   on('PUT', '/me/profile', ({ body, user, guestKey }) => {
@@ -466,12 +477,18 @@ export function createCore(store, hooks = {}) {
     if (t.mode === 'site') call('bridge', { kind: 'ticket', doc: t, from: 'guest', text: t.text });
     return { ticket: t, fallback };
   });
-  on('POST', '/tickets/:id/messages', ({ params, body, user, guestKey }) => {
-    const t = myTicket(params.id, user, guestKey); const text = str(body.text, 2000); if (!text) bad('Пустое сообщение');
+  on('POST', '/tickets/:id/messages', async ({ params, body, user, guestKey }) => {
+    let t = myTicket(params.id, user, guestKey); const text = str(body.text, 2000); if (!text) bad('Пустое сообщение');
     if (t.status === 'closed') bad('Обращение закрыто');
     const staff = !isOwner(t, user, guestKey) && user && ROLES[user.role] >= 1;
     const by = icName(user, guestKey); if (!by) needIc();
     const ooc = !!body.ooc; // OOC — разговор игроков вне роли, на сайте и в Discord помечается отдельно
+    // гость пишет в тикет Discord с сайта: сначала сообщение уходит в канал, потом сохраняется
+    if (!staff && t.mode === 'discord') {
+      if (!chatOpen(t, user)) bad('Чтобы отвечать с сайта, войдите через Discord');
+      if (!(await call('ticketReply', t, text, by, ooc, true))) bad('Discord не принял сообщение. Напишите прямо в канале обращения');
+      t = store.get('tickets', t.id) || t; if (t.status === 'closed') bad('Обращение закрыто');
+    }
     t.messages.push({ from: staff ? 'staff' : 'guest', text, at: Date.now(), by, ooc });
     if (t.messages.length > 300) t.messages = t.messages.slice(-300);
     t.lastAt = Date.now(); t.lastFrom = staff ? 'staff' : 'guest'; store.put('tickets', t.id, t); emit(['tickets']);
@@ -782,7 +799,7 @@ export function createCore(store, hooks = {}) {
 
   // имя сотрудника, написавшего прямо в Discord: игровое из профиля, если задано
   const icOf = discordId => String(profileOf('d:' + discordId)?.name || '').trim();
-  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, bookingMessage, matchVenue, settings, log, store, linkLifex, icOf, seen, setAvatar, avatarBan };
+  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, bookingMessage, linked, matchVenue, settings, log, store, linkLifex, icOf, seen, setAvatar, avatarBan };
 }
 
 /* ---------- стартовые данные ---------- */

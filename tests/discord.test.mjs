@@ -493,3 +493,36 @@ test('закрытие: Discord получает ответ до проверк�
   await createInteractions({ core, resolveRole: async () => { order.push('role'); return 'guest'; } })(b);
   assert.deepEqual(order, ['defer', 'role']);
 });
+
+// --- тикет из Discord и кабинет на сайте ---
+test('тикет из Discord виден в кабинете, ответ с сайта уходит в канал, без привязки — предупреждение', async () => {
+  const out = [], notes = [], { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async t => { t.discordId = 'u7'; return 'chan7'; }, ticketReply: async (...a) => { out.push(a.slice(1)); return true; }, ticketLinked: async t => { notes.push(t.id); } });
+  const modal = () => ({ ...fakeModal('mhc:ticket:send', { name: 'Джон', topic: 'Вопрос', text: 'Помогите' }), user: { id: 'u7', username: 'john' } });
+  const reply = async () => { const said = [], m = modal(); m.deferReply = async () => { m.deferred = true; }; m.editReply = async x => said.push(x); await createInteractions({ core, resolveRole: async () => 'guest', site: 'https://h.test' })(m); return said.at(-1); };
+  const a = await reply(); assert.match(a.content, /chan7/); assert.match(a.content, /не получите уведомления/); assert.match(a.components[0].components[0].url, /auth\/discord\?next=me/);
+  core.seen({ id: 'u7', username: 'john', role: 'guest' }, true); assert.equal(notes.length, 1); core.seen({ id: 'u7', username: 'john', role: 'guest' }, true); assert.equal(notes.length, 1);
+  const b = await reply(); assert.match(b.content, /кабинете/); assert.match(b.components[0].components[0].url, /#me/);
+  const user = { id: 'u7', username: 'john', role: 'guest' }, t = store.all('tickets').sort((x, y) => x.createdAt - y.createdAt)[0];
+  core.ticketMessage(t.id, { from: 'staff', by: 'Мэри', text: 'Слушаю', at: Date.now() });
+  const it = await core.handle('GET', '/me/items', { user }), mine = it.tickets.find(x => x.id === t.id);
+  assert.equal(mine.chat, true); assert.deepEqual(mine.messages.map(m => m.text), ['Помогите', 'Слушаю']); assert.ok(it.notices.some(n => /Слушаю/.test(n.text)));
+  await core.handle('POST', `/tickets/${t.id}/messages`, { user, body: { text: 'Спасибо' } }); assert.deepEqual(out, [['Спасибо', 'Джон', false, true]]);
+  assert.equal(store.get('tickets', t.id).messages.at(-1).from, 'guest');
+});
+test('чужой ник без входа: переписки из Discord на сайте нет, писать туда нельзя', async () => {
+  const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async t => { t.discordId = 'victim'; return 'c1'; }, ticketReply: async () => true });
+  const { ticket } = await core.handle('POST', '/tickets', { guestKey: 'k9', body: { discord: 'victim', name: 'Ник', text: 'привет' } });
+  await core.handle('POST', `/tickets/${ticket.id}/mode`, { guestKey: 'k9', body: { mode: 'discord' } });
+  core.ticketMessage(ticket.id, { from: 'staff', by: 'М', text: 'тайна', at: 1 });
+  const x = (await core.handle('GET', '/me/items', { guestKey: 'k9' })).tickets[0]; assert.equal(x.unlinked, true); assert.equal(x.messages.length, 0);
+  await assert.rejects(core.handle('POST', `/tickets/${ticket.id}/messages`, { guestKey: 'k9', body: { text: 'х' } }), /войдите через Discord/);
+  core.seen({ id: 'evil', username: 'e' }, true); await core.handle('POST', '/me/claim', { user: { id: 'evil', username: 'e', role: 'guest' }, guestKey: 'k9' });
+  assert.equal((await core.handle('GET', '/me/items', { user: { id: 'evil', username: 'e', role: 'guest' } })).tickets[0].messages.length, 0);
+});
+test('Discord не принял сообщение гостя — на сайте оно не сохраняется', async () => {
+  const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'c1', ticketReply: async () => { throw new Error('нет канала'); } });
+  const user = { id: 'u1', username: 'a', role: 'guest' }, { ticket } = await core.handle('POST', '/tickets', { user, body: { name: 'Джон', text: 'т' } });
+  await core.handle('POST', `/tickets/${ticket.id}/mode`, { user, body: { mode: 'discord' } });
+  await assert.rejects(core.handle('POST', `/tickets/${ticket.id}/messages`, { user, body: { text: 'х' } }), /не принял/);
+  assert.equal(store.get('tickets', ticket.id).messages.length, 0);
+});

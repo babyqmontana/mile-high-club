@@ -56,6 +56,7 @@ function shell() {
   { let n = 0, tmr = 0; $('.brand').addEventListener('click', () => { clearTimeout(tmr); tmr = setTimeout(() => { n = 0; $('.brand').style.removeProperty('--wob'); }, 2500); n++; const b = $('.brand'); b.style.setProperty('--wob', Math.min(n, 7)); b.classList.remove('wob'); void b.offsetWidth; b.classList.add('wob'); if (n >= 7) { n = 0; unlock('logo'); } }); }
   $('#achBtn').onclick = () => openCabinet();
   // гость сам закрывает обращение — из чата на сайте или из списка (тикет в Discord уходит в архив)
+  document.addEventListener('click', e => { if (e.target.closest?.('[data-dclink]')) login('guest', 'me'); });
   document.addEventListener('click', async e => { const b = e.target.closest?.('[data-tclose]'); if (!b) return;
     if (!await confirmBox('Закрыть обращение?', 'Переписка сохранится в кабинете. Если вопрос останется — откройте новое.', 'Закрыть')) return;
     b.disabled = true; try { await api('POST', `/tickets/${b.dataset.tclose}/close`); play('soft'); toast('Обращение закрыто'); await loadItems(); } catch (err) { fail(err); b.disabled = false; } });
@@ -933,6 +934,9 @@ function paintCheck(member) {
   $('#tRe') && ($('#tRe').onclick = async () => { try { const r = await api('POST', `/tickets/${curTicket.id}/recheck`); paintCheck(r.member); if (r.member === false) toast('Пока не видим вас на сервере'); } catch (e) { fail(e); } });
 }
 // Шаг 3 рисуется и при повторной отрисовке страницы, иначе блок заявки остаётся пустым
+const hasChat = t => t.mode === 'site' || t.chat;
+// тикет в Discord без входа через Discord: переписка и уведомления на сайт не приходят
+const linkWarn = t => (!t.unlinked || t.status === 'closed' ? '' : S.me ? '<div class="note">Тикет открыт на другой Discord: переписка видна только там.</div>' : `<div class="note">Уведомления на сайте не придут: Discord к нему не присоединён.</div><div><button type="button" class="btn sm discord" data-dclink>${I.discord} Войти через Discord</button></div>`);
 function paintDone() {
   const m = ticketMode;
   $('#tBox').innerHTML = `<div class="steps"><i class="on"></i><i class="on"></i><i class="on"></i></div><div class="success"><span class="mark">${I.check}</span><h3>${m === 'discord' ? 'Тикет открыт' : 'Чат открыт'}</h3><p class="mut">${m === 'discord' ? 'Бот создал канал тикета и добавил вас. Загляните в Discord.' : 'Управляющие получили уведомление и ответят в чате справа.'}</p><button class="btn ghost" id="tNew">Новая заявка</button></div>`;
@@ -947,10 +951,10 @@ async function setMode(m) {
 let openTicketId = null;
 function paintChat() {
   const col = $('#tChatCol'); if (!col) return;
-  const mine = S.items.tickets; const t = mine.find(x => x.id === openTicketId && x.mode === 'site') || null;
+  const mine = S.items.tickets; const t = mine.find(x => x.id === openTicketId && hasChat(x)) || null;
   const focused = col.contains(document.activeElement); const draft = $('#chatIn')?.value || '';
   col.innerHTML = `${t ? `<div class="chat"><header><div><b>${esc(t.topic)}</b><div class="note">Чат с управляющими</div></div><div class="row" style="gap:.4rem;flex-wrap:nowrap"><span class="chip ${t.status === 'closed' ? 'm' : 'ok'}">${TICKET_STATUS[t.status]}</span>${t.status !== 'closed' ? `<button type="button" class="btn sm ghost" data-tclose="${esc(t.id)}">Закрыть</button>` : ''}</div></header><div class="msgs" id="msgs"><div class="msg sys">Обращение открыто ${when(t.createdAt)}</div>${(t.messages || []).map(m => `<div class="msg ${m.from === 'guest' ? 'me' : ''}${m.ooc ? ' ooc' : ''}">${oocTag(m)}${esc(m.text)}<small>${m.from === 'staff' ? esc(m.by || 'Управляющий') : 'Вы'} · ${when(m.at)}</small></div>`).join('')}</div>${t.status === 'closed' ? `<div class="compose note">Обращение закрыто${t.closedByGuest ? ' вами' : t.closedBy ? ': ' + esc(t.closedBy) : ''}. Если вопрос остался — откройте новое.</div>` : (S.items.profile?.name ? `<form class="compose" id="chatF">${oocSwitch('t:' + t.id)}<input id="chatIn" placeholder="Сообщение" autocomplete="off" aria-label="Сообщение"><button class="btn sm" data-sfx="">Отправить</button></form>` : icNeedBox())}</div>` : ''}
-    <div class="card pad stack"><h3 style="font-size:1.05rem">Мои обращения</h3>${mine.length ? `<div class="list">${mine.map(x => `<div class="item"><div class="top"><b>${esc(x.topic)}</b><span class="chip ${x.status === 'open' ? 'ok' : x.status === 'checking' ? 'warn' : 'm'}">${TICKET_STATUS[x.status]}</span></div><span class="note">${x.mode === 'discord' ? 'Ведётся в Discord' : x.mode === 'site' ? 'Чат на сайте' : 'Ожидает выбора'} · ${when(x.createdAt)}${x.lastFrom === 'staff' && x.mode === 'site' ? ' · <b style="color:var(--pink)">новый ответ</b>' : ''}</span><div class="row" style="gap:.4rem">${x.mode === 'site' ? `<button class="btn sm ghost" data-open="${esc(x.id)}">Открыть чат</button>` : ''}${x.status === 'open' ? `<button class="btn sm ghost" data-tclose="${esc(x.id)}">Закрыть</button>` : ''}</div></div>`).join('')}</div>` : '<p class="note">Пока пусто.</p>'}</div>`;
+    <div class="card pad stack"><h3 style="font-size:1.05rem">Мои обращения</h3>${mine.length ? `<div class="list">${mine.map(x => `<div class="item"><div class="top"><b>${esc(x.topic)}</b><span class="chip ${x.status === 'open' ? 'ok' : x.status === 'checking' ? 'warn' : 'm'}">${TICKET_STATUS[x.status]}</span></div><span class="note">${x.mode === 'discord' ? (x.chat ? 'Discord и сайт' : 'Ведётся в Discord') : x.mode === 'site' ? 'Чат на сайте' : 'Ожидает выбора'} · ${when(x.createdAt)}${x.lastFrom === 'staff' && hasChat(x) ? ' · <b style="color:var(--pink)">новый ответ</b>' : ''}</span><div class="row" style="gap:.4rem">${linkWarn(x)}${hasChat(x) ? `<button class="btn sm ghost" data-open="${esc(x.id)}">Открыть чат</button>` : ''}${x.status === 'open' ? `<button class="btn sm ghost" data-tclose="${esc(x.id)}">Закрыть</button>` : ''}</div></div>`).join('')}</div>` : '<p class="note">Пока пусто.</p>'}</div>`;
   if ($('#chatIn')) { $('#chatIn').value = draft; if (focused) $('#chatIn').focus(); }
   const ms = $('#msgs'); if (ms) ms.scrollTop = ms.scrollHeight;
   markRead(t);
@@ -1092,7 +1096,7 @@ function meDesk(it, live, chatT) {
   const lines = live.filter(b => (b.messages || []).some(m => m.from !== 'system'));
   return `<div class="row" style="justify-content:space-between;margin-bottom:1rem"><p class="mut">Консьерж на связи круглосуточно. Вопрос о проживании лучше задать в переписке брони: её видит ваш управляющий.</p><a class="btn sm" href="#contact">Написать консьержу</a></div>
     ${lines.length ? `<div class="list" style="margin-bottom:1rem">${lines.map(b => { const m = b.messages.filter(x => x.from !== 'system').at(-1); return `<div class="item${bkUnread(b) ? ' unread' : ''}"><div class="top"><b>${b.room ? 'Номер ' + esc(b.room) : esc(b.typeName)}</b>${bkUnread(b) ? '<span class="chip p">Новый ответ</span>' : `<span class="note">${when(m.at)}</span>`}</div><span class="note">${m.from === 'guest' ? 'Вы: ' : ''}${esc(m.text.slice(0, 120))}</span><div><button class="btn sm ghost" data-go="room" data-bk="${esc(b.id)}">Открыть переписку</button></div></div>`; }).join('')}</div>` : ''}
-    ${it.tickets.length ? `<div class="list">${it.tickets.map(t => `<div class="item${unreadOf(t) ? ' unread' : ''}"><div class="top"><b>${esc(t.topic)}${unreadOf(t) ? ' <span class="chip p">Новый ответ</span>' : ''}</b><span class="chip ${t.status === 'open' ? 'ok' : 'm'}">${TICKET_STATUS[t.status]}</span></div><span class="note">${t.mode === 'site' ? 'Переписка здесь' : t.mode === 'discord' ? 'Ответ придёт в Discord' : ''} · ${when(t.createdAt)}</span>${t.mode === 'site' ? `<div><button class="btn sm ghost" data-chat="${esc(t.id)}" aria-expanded="${t.id === meTicket}">${t.id === meTicket ? 'Свернуть' : 'Открыть переписку'}</button></div>` : ''}${t.id === meTicket && chatT ? meChat(chatT) : ''}</div>`).join('')}</div>` : lines.length ? '' : '<div class="empty">Обращений пока нет.</div>'}`;
+    ${it.tickets.length ? `<div class="list">${it.tickets.map(t => `<div class="item${unreadOf(t) ? ' unread' : ''}"><div class="top"><b>${esc(t.topic)}${unreadOf(t) ? ' <span class="chip p">Новый ответ</span>' : ''}</b><span class="chip ${t.status === 'open' ? 'ok' : 'm'}">${TICKET_STATUS[t.status]}</span></div><span class="note">${t.mode === 'site' ? 'Переписка здесь' : t.chat ? 'Переписка здесь и в Discord' : t.mode === 'discord' ? 'Ответ придёт в Discord' : ''} · ${when(t.createdAt)}</span>${linkWarn(t)}${hasChat(t) ? `<div><button class="btn sm ghost" data-chat="${esc(t.id)}" aria-expanded="${t.id === meTicket}">${t.id === meTicket ? 'Свернуть' : 'Открыть переписку'}</button></div>` : ''}${t.id === meTicket && chatT ? meChat(chatT) : ''}</div>`).join('')}</div>` : lines.length ? '' : '<div class="empty">Обращений пока нет.</div>'}`;
 }
 function meCard(p, u, st) {
   const pr = p.prefs || {};
@@ -1148,7 +1152,7 @@ let lxOpen = false;
 function renderMe() {
   if (lxOn === null) { lxOn = false; authConfig().then(c => { lxOn = !!c.lifex; if (lxOn && current === 'me') renderMe(); }); }
   const it = S.items, u = S.me, p = it.profile || {}, st = it.stats || { nights: 0, stays: 0 };
-  const chatT = it.tickets.find(t => t.id === meTicket && t.mode === 'site') || null;
+  const chatT = it.tickets.find(t => t.id === meTicket && hasChat(t)) || null;
   if (p.name && p.phone) unlock('passport'); if (p.lifex) unlock('lifex'); if (st.tier) unlock('loyal');
   const draft = $('#meChatIn')?.value || '', focused = $('#meChatIn') === document.activeElement;
   // недописанная карта гостя переживает фоновое обновление
@@ -1287,7 +1291,7 @@ function bkWatch() {
 async function loadItems() { itemsDirty = false; try { S.items = await api('GET', '/me/items'); const pr = S.items.profile; if (pr) achMerge(pr.achievements, pr.achOff); } catch { } bkWatch(); paintNav(); paintBell(); prefill(); if (current === 'contact') paintChat(); if (current === 'me') renderMe(); }
 // прочитанные ответы персонала помним в браузере: id обращения → время последнего просмотра
 const seenT = () => { try { return JSON.parse(pref.get('mhc-read') || '{}') || {}; } catch { return {}; } };
-const unreadOf = t => t.mode === 'site' && t.lastFrom === 'staff' && t.lastAt > (seenT()[t.id] || 0);
+const unreadOf = t => hasChat(t) && t.lastFrom === 'staff' && t.lastAt > (seenT()[t.id] || 0);
 function markRead(t) { if (!t || !unreadOf(t)) return; unlock('concierge'); const s = seenT(); s[t.id] = t.lastAt; pref.set('mhc-read', JSON.stringify(s)); }
 // колокольчик: уведомления о брони, заказах, ответах и отзывах; новое — всплывает подсказкой
 const BELL = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>';

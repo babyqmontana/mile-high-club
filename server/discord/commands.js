@@ -1,14 +1,16 @@
 // В Discord остаются только обращения. Брони, меню, афиша и управление живут на сайте.
 
+import { cabinetRow, linkText } from './embeds.js';
+
 export const buildCommands = () => [{ name: 'обращение', description: 'Написать отелю: откроется закрытый канал' }];
 
 const input = (custom_id, label, opts = {}) => ({ type: 1, components: [{ type: 4, custom_id, label, style: opts.long ? 2 : 1, required: true, max_length: opts.long ? 1000 : 60 }] });
 const ticketModal = (id, title, topicLabel) => ({ custom_id: id, title, components: [input('name', 'Имя персонажа'), input('topic', topicLabel), input('text', 'Сообщение', { long: true })] });
 
-/** ctx: { core, resolveRole } */
-export function createInteractions({ core, resolveRole }) {
+/** ctx: { core, resolveRole, site } */
+export function createInteractions({ core, resolveRole, site = '' }) {
   const EPH = 64; // MessageFlags.Ephemeral: видно только нажавшему (вместо устаревшего ephemeral: true)
-  const say = (i, content) => (i.deferred || i.replied ? i.editReply({ content }) : i.reply({ content, flags: EPH }));
+  const say = (i, content, components = []) => (i.deferred || i.replied ? i.editReply({ content, components }) : i.reply({ content, flags: EPH }));
   // защита от спама: не чаще раза в 2 минуты и не больше 3 открытых обращений на человека
   const lastAt = new Map();
   const openTicket = async (i, topic) => {
@@ -21,7 +23,8 @@ export function createInteractions({ core, resolveRole }) {
     const user = { id: i.user.id, username: i.user.username, role: await resolveRole(i.user.id) };
     const { ticket } = await core.handle('POST', '/tickets', { user, body: { name: i.fields.getTextInputValue('name'), topic, text: i.fields.getTextInputValue('text') } });
     const r = await core.handle('POST', `/tickets/${ticket.id}/mode`, { user, body: { mode: 'discord' } });
-    return await say(i, r.ticket.channel ? `Обращение открыто: <#${r.ticket.channel}>` : 'Обращение принято, управляющие ответят.');
+    const linked = core.linked(i.user.id);
+    return await say(i, `${r.ticket.channel ? `Обращение открыто: <#${r.ticket.channel}>` : 'Обращение принято, управляющие ответят.'}\n${linked ? '🔗' : '⚠️'} ${linkText(linked)}`, cabinetRow(site, linked));
     } catch (e) { lastAt.delete(i.user.id); throw e; } // не открылось — ждать две минуты не нужно
   };
 
