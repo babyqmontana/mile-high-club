@@ -518,55 +518,36 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
   const lamp = []; for (let a = -9; a <= 9; a++) for (let b = -60; b <= 60; b += 2.3) { const r = a * BLOCK + BLOCK / 2; [[r + ROAD / 2 + .15, b], [b, r + ROAD / 2 + .15]].forEach(([x, z]) => { if (Math.hypot(x, z) < 70 && !(x > SUPER.x0 + .6 && x < SUPER.x1 - .6 && z > SUPER.z0 + .6 && z < SUPER.z1 - .6) && !nearFreeway(x, z, 1.5)) lamp.push(x, GROUND + .55, z); }); }
   const lampG = new THREE.BufferGeometry(); lampG.setAttribute('position', new THREE.Float32BufferAttribute(lamp, 3));
   const lamps = new THREE.Points(lampG, new THREE.PointsMaterial({ map: dotTex, color: 0xffc46a, size: .55, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })); world.add(lamps);
-  // ---------- горизонт Лос-Сантоса: ковёр огней, холмы с домами и мачтами, океан с пирсом, самолёты и вертолёт ----------
+  // ---------- горизонт Лос-Сантоса: ковёр огней, холмы, океан с пирсом, самолёты и вертолёт ----------
   await breathe();
   const far = { uT: { value: 0 }, uK: { value: 1 } }, farList = [], rf = (() => { let q = 4711; return () => (q = q * 16807 % 2147483647) / 2147483647; })();
   const SEA = 118, inSea = (x, z) => z > SEA + Math.sin(x * .031) * 9 + Math.sin(x * .011 + 2) * 12;
   // улицы до горизонта: бесконечная янтарная сетка, как над Лос-Сантосом ночью
   for (let l = -46; l <= 46; l++) for (let b = -330; b <= 330; b += 4.6) for (const ax of [0, 1]) {
-    const c = l * 7 + 3.5, x = ax ? c : b + rf() * 3, z = ax ? b + rf() * 3 : c, d = Math.hypot(x, z); if (d < 58 || d > 325 || inSea(x, z) || (z < -150 && rf() < .8) || rf() > (d < 130 ? .8 : .55)) continue;
-    const w = rf(); farList.push(x, GROUND + .4 + rf() * .5, z, 1, w < .8 ? .6 : .78, w < .8 ? .28 : .56, .4 + rf() * .6, rf() * 60);
+    const c = l * 7 + 3.5, x = ax ? c : b + rf() * 3, z = ax ? b + rf() * 3 : c, d = Math.hypot(x, z); if (d < 58 || d > 150 || inSea(x, z) || rf() > (d < 110 ? .75 : .5)) continue; // только вдоль улиц и по земле; дальше всё в дымке
+    const w = rf(); farList.push(x, GROUND + .45, z, 1, w < .8 ? .6 : .78, w < .8 ? .28 : .56, .4 + rf() * .6, rf() * 60);
   }
   await breathe();
   // дымка у горизонта: одно кольцо вокруг камеры перед холмами и дальним океаном. Края земли, воды и холмов тонут в ней,
   // город и отель ближе — их она не трогает. Без текстур, один вызов отрисовки
-  const haze = new THREE.Mesh(new THREE.CylinderGeometry(196, 196, 76, 64, 1, true), new THREE.ShaderMaterial({ side: THREE.BackSide, transparent: true, depthWrite: false, fog: false, uniforms: { uF: skyU.uFog, uDay: skyU.uDay, uT: skyU.uTime },
+  const haze = new THREE.Mesh(new THREE.CylinderGeometry(214, 214, 84, 64, 1, true), new THREE.ShaderMaterial({ side: THREE.BackSide, transparent: true, depthWrite: false, fog: false, uniforms: { uF: skyU.uFog, uDay: skyU.uDay, uT: skyU.uTime },
     vertexShader: 'varying vec3 p;varying float wy;void main(){p=position;wy=(modelMatrix*vec4(position,1.)).y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
     fragmentShader: `uniform vec3 uF;uniform float uDay,uT;varying vec3 p;varying float wy;void main(){
-      float a=atan(p.z,p.x),w=sin(a*3.+uT*.011)*.5+sin(a*7.-uT*.017+1.3)*.3+sin(a*13.+uT*.02)*.2,e=p.y/196.;
+      float a=atan(p.z,p.x),w=sin(a*3.+uT*.011)*.5+sin(a*7.-uT*.017+1.3)*.3+sin(a*13.+uT*.02)*.2,e=p.y/214.;
       float up=exp(-pow(max(e+.012,0.)/(.034+.012*w),2.)),dn=exp(-pow(min(e+.03,0.)/.062,2.));
       vec3 c=mix(mix(uF*1.15,vec3(.27,.11,.25),.75),uF,uDay);c+=vec3(.05,.015,.035)*(1.-uDay)*smoothstep(-.05,.03,e);
-      gl_FragColor=vec4(c+(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.,up*dn*(.9+.07*w)*smoothstep(38.,30.,abs(p.y))*smoothstep(-.6,11.,wy));}` }));
+      gl_FragColor=vec4(c+(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.,up*dn*(.9+.07*w)*smoothstep(42.,33.,abs(p.y))*smoothstep(-.6,11.,wy));}` }));
   haze.frustumCulled = false; haze.renderOrder = -1; world.add(haze);
-  // окна дальних кварталов
-  for (let k = 0; k < 2600; k++) { const a = rf() * 6.283, d = 70 + rf() * 180, x = Math.cos(a) * d, z = Math.sin(a) * d; if (inSea(x, z) || z < -165) continue; farList.push(x, GROUND + 1 + rf() * rf() * 13, z, 1, .78, .5, .35 + rf() * .6, rf() * 60); }
   await breathe();
   // холмы: три гряды, дальние светлее — воздушная перспектива; на юге их нет, там океан
-  const ridge = (R, H, col, seed, houses) => {
+  const ridge = (R, H, col, seed) => {
     const n = 220, pos = [], idx = []; const hgt = a => { const north = Math.max(0, -Math.sin(a) * 1.15 + .32); return Math.min(1, north) * H * (.55 + .2 * Math.sin(a * 5 + seed) + .16 * Math.sin(a * 11 + seed * 2.3) + .09 * Math.sin(a * 23 + seed) + .05 * Math.sin(a * 47)); };
     for (let k = 0; k <= n; k++) { const a = k / n * 6.28319, x = Math.cos(a) * R, z = Math.sin(a) * R; pos.push(x, GROUND - 4, z, x, GROUND + Math.max(0, hgt(a)), z); if (k) { const q = k * 2; idx.push(q - 2, q, q - 1, q - 1, q, q + 1); } }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
     const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.DoubleSide, uniforms: { uC: { value: new THREE.Vector3(...col) }, uF: skyU.uFog, uDay: skyU.uDay, uH: { value: H } }, vertexShader: 'varying float y;void main(){y=position.y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', fragmentShader: 'uniform vec3 uC,uF;uniform float uH,uDay;varying float y;void main(){gl_FragColor=vec4(mix(mix(uF,vec3(.25,.1,.23),.75*(1.-uDay)),uC,smoothstep(-1.,uH*.55,y)),1.);}' })); m.renderOrder = -1; world.add(m);
-    for (let k = 0; k < houses; k++) { const a = -(.25 + rf() * 2.65), top = hgt(a); if (top < 5) continue; const y = GROUND + top * (.15 + rf() * .72), r2 = R - 1.5; farList.push(Math.cos(a) * r2, y, Math.sin(a) * r2, 1, .74, .44, .5 + rf() * .9, rf() * 60); }
     return hgt;
   };
-  ridge(330, 62, [.115, .062, .16], 1.7, 0); ridge(270, 46, [.08, .042, .125], 4.1, 240); const near = ridge(215, 31, [.05, .027, .088], 2.6, 620);
-  // серпантин по склону, обсерватория и мачты на вершинах
-  for (let k = 0; k < 130; k++) { const a = -(1.0 + k / 130 * .9), y = GROUND + near(a) * (.25 + .4 * (k / 130) + .07 * Math.sin(k * .35)); farList.push(Math.cos(a) * 212, y, Math.sin(a) * 212, 1, .66, .34, .85, k * .3); }
-  await breathe();
-  // обсерватория на гребне: фасад с арками в тёплой подсветке и три тёмных купола — читается силуэтом
-  const obs = -1.28, oy = GROUND + near(obs) - .4; {
-    const c = document.createElement('canvas'); c.width = 256; c.height = 48; const g = c.getContext('2d'); const wl = g.createLinearGradient(0, 48, 0, 0); wl.addColorStop(0, '#8a5a34'); wl.addColorStop(1, '#33223a'); g.fillStyle = wl; g.fillRect(0, 0, 256, 48); g.fillStyle = '#1b1222'; g.fillRect(0, 0, 256, 4);
-    for (let x = 8; x < 250; x += 15) { g.fillStyle = '#ffc47a'; g.beginPath(); g.arc(x + 4, 22, 4, Math.PI, 0); g.rect(x, 22, 8, 18); g.fill(); }
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; const gr = new THREE.Group(), box = (w, h, d, x, y) => { const q = new THREE.BoxGeometry(w, h, d); q.translate(x, y + h / 2, 0); return q; }, dome = (r, x, y) => { const q = new THREE.SphereGeometry(r, 18, 8, 0, 6.283, 0, 1.571); q.translate(x, y, 0); return q; };
-    gr.add(new THREE.Mesh(mergeGeos([box(17, 2.4, 4, 0, 0), box(5.4, 4, 5, 0, 0), box(3.4, 3.1, 4.4, -7.4, 0), box(3.4, 3.1, 4.4, 7.4, 0)]), new THREE.MeshBasicMaterial({ map: t, color: 0x6b5a6c, fog: false, toneMapped: false })));
-    gr.add(new THREE.Mesh(mergeGeos([dome(2.5, 0, 4), dome(1.5, -7.4, 3.1), dome(1.5, 7.4, 3.1)]), new THREE.MeshBasicMaterial({ color: 0x1b1228, fog: false, toneMapped: false })));
-    gr.position.set(Math.cos(obs) * 211, oy, Math.sin(obs) * 211); gr.lookAt(0, oy, 0);
-    const hill = new THREE.CylinderGeometry(13, 34, 16, 40, 1); hill.translate(0, -8, 0); hill.scale(1, 1, .35); gr.add(new THREE.Mesh(hill, new THREE.MeshBasicMaterial({ color: 0x3d1c39, fog: false, toneMapped: false }))); world.add(gr);
-  }
-  const mast = []; [-.62, -1.75, -2.2].forEach(a => { const y = GROUND + near(a), x = Math.cos(a) * 212, z = Math.sin(a) * 212; mast.push(x, y - 1, z, x, y + 13, z); for (const q of [13, 8.5, 4.5]) farList.push(x, y + q, z, 1, .12, .1, 2.2, -1); });
-  const mastG = new THREE.BufferGeometry(); mastG.setAttribute('position', new THREE.Float32BufferAttribute(mast, 3)); world.add(new THREE.LineSegments(mastG, new THREE.LineBasicMaterial({ color: 0x2a1a38, fog: false })));
-  await breathe();
+  ridge(330, 62, [.115, .062, .16], 1.7); ridge(270, 46, [.08, .042, .125], 4.1); ridge(215, 31, [.05, .027, .088], 2.6);
   // океан на юге: отражает зарево неба, дальше растворяется в той же дымке; дорожки — от колеса обозрения и судов
   const SEA_L = [[34, SEA + 34, 1, .42, .72], [-64, SEA + 96, 1, .78, .5], [92, SEA + 120, 1, .8, .55], [-150, SEA + 60, 1, .5, .34], [6, SEA + 150, .75, .85, 1]];
   const seaU = { uT: far.uT, uF: skyU.uFog, uDay: skyU.uDay, uL: { value: SEA_L.map(l => new THREE.Vector2(l[0], l[1])) }, uC: { value: SEA_L.map(l => new THREE.Vector3(l[2], l[3], l[4])) } };
@@ -587,7 +568,10 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
         c=mix(c,vec3(.3,.46,.52)+.06*wave,uDay*.85);
         gl_FragColor=vec4(mix(hz,c,vis)+(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.,1.);}` }));
   sea.rotation.x = -Math.PI / 2; sea.position.set(0, GROUND + .06, SEA + 280); world.add(sea);
-  SEA_L.slice(1).forEach(([x, z, r, g, b], k) => [-1.1, 0, 1.1].forEach((o, n) => farList.push(x + o * 1.3, GROUND + 1 + (n === 1 ? 1.1 : 0), z, r, g, b, 1.5, k * 9 + n)));
+  // суда: корпус и рубка, огни стоят на них, дорожки в воде — от них же
+  const hulls = []; SEA_L.slice(1).forEach(([x, z, r, g, b], k) => { const bx = (w, h, d, dx, y) => { const q = new THREE.BoxGeometry(w, h, d); q.translate(x + dx, GROUND + y, z); hulls.push(q); };
+    bx(7, .9, 1.7, 0, .5); bx(2, 1.1, 1.3, 1.6, 1.5); bx(.1, 1.8, .1, -1.2, 1.8); farList.push(x + 1.6, GROUND + 1.7, z - .75, r, g, b, 1.5, k * 9, x - 1.2, GROUND + 2.7, z, 1, .9, .7, 1, k * 9 + 1); });
+  world.add(new THREE.Mesh(mergeGeos(hulls), new THREE.MeshBasicMaterial({ color: 0x1b1129, fog: false, toneMapped: false })));
   for (let x = -260; x <= 260; x += 3.2) { const z = SEA + Math.sin(x * .031) * 9 + Math.sin(x * .011 + 2) * 12 - 1.2; farList.push(x, GROUND + .7, z, 1, .7, .36, 1.1, x); }
   const PX = 34, PZ = SEA + Math.sin(PX * .031) * 9 + Math.sin(PX * .011 + 2) * 12; for (let k = 0; k < 34; k++) for (const o of [-1.4, 1.4]) farList.push(PX + o, GROUND + .9, PZ + k * 1.3, 1, .8, .55, 1, k);
   await breathe();
@@ -608,7 +592,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('aC', new THREE.BufferAttribute(C, 4)); g.setAttribute('aF', new THREE.BufferAttribute(F, 1));
     const m = new THREE.Points(g, new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { ...far, uPx: { value: dpr } },
       vertexShader: `attribute vec4 aC;attribute float aF;uniform float uT,uPx;varying vec3 c;void main(){vec3 p=position;if(aF>=999.){float a=(aF-1000.)/48.*6.28319+uT*.12;float r=mod(aF,2.)<1.?7.6:5.4;p.xy+=vec2(cos(a),sin(a))*r;}
-        vec4 mv=modelViewMatrix*vec4(p,1.);float d=-mv.z;float tw=aF<0.?step(0.,sin(uT*2.4)):.92+.08*sin(uT*.9+aF*7.);c=aC.rgb*aC.a*tw*2.1*exp(-d*d*.000016);gl_PointSize=clamp(260./d,1.7,4.)*uPx;gl_Position=projectionMatrix*mv;}`,
+        vec4 mv=modelViewMatrix*vec4(p,1.);float d=-mv.z;float tw=.92+.08*sin(uT*.9+aF*7.);c=aC.rgb*aC.a*tw*2.1*exp(-d*d*.000016)*(aF>=999.?1.:1.-smoothstep(80.,165.,d));gl_PointSize=clamp(260./d,1.7,4.)*uPx;gl_Position=projectionMatrix*mv;}`,
       fragmentShader: 'uniform float uK;varying vec3 c;void main(){vec2 q=gl_PointCoord-.5;gl_FragColor=vec4(c*uK*smoothstep(.5,.12,length(q)),1.);}' })); m.frustumCulled = false; world.add(m); }
   await breathe();
   // самолёты на посадке и полицейский вертолёт с лучом
