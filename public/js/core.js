@@ -120,7 +120,18 @@ export function createCore(store, hooks = {}) {
     if (!prev && !login) return;                                  // запись появляется при входе: удалённая гостем сама не возвращается
     if (prev && !login && now - prev.lastAt < 600e3 && prev.username === user.username && prev.role === user.role) return;
     store.put('accounts', id, { id, username: str(user.username, 60), avatar: /^https:\/\/cdn\.discordapp\.com\//.test(user.avatar || '') ? user.avatar : '', role: user.role, firstAt: prev?.firstAt || now, lastAt: now, logins: (prev?.logins || 0) + (login ? 1 : 0) });
+    if (!prev) linkNote(id);
   }
+  // вход на сайт через Discord: тикеты, открытые до него, появляются в кабинете, в канал приходит отметка
+  const linked = discordId => !!(discordId && store.get('accounts', 'd:' + discordId));
+  const linkNote = owner => store.all('tickets').filter(t => t.owner === owner && t.mode === 'discord' && t.channel && t.status !== 'closed' && chatOpen(t, { id: owner.slice(2) })).forEach(t => call('ticketLinked', t));
+  // переписку из Discord показываем только тому, чей это Discord: ник в форме без входа может указать кто угодно
+  const chatOpen = (t, user) => t.mode === 'site' || (t.mode === 'discord' && !!user && t.discordId === user.id);
+  const chatOf = (t, user) => {
+    if (!chatOpen(t, user)) return { ...t, messages: [], unlinked: t.mode === 'discord' };
+    const first = t.mode === 'discord' && t.messages[0]?.text !== t.text ? [{ from: 'guest', text: t.text, at: t.createdAt }] : [];
+    return { ...t, chat: true, messages: [...first, ...t.messages] };
+  };
   // игровое (IC) имя: персонал и гости подписываются им, а не ником Discord. Задаётся в профиле
   const icName = (user, guestKey) => String(profileOf(ownerOf(user, guestKey))?.name || '').trim();
   const staffName = user => icName(user) || user.username;
@@ -184,7 +195,7 @@ export function createCore(store, hooks = {}) {
   on('GET', '/me/items', ({ user, guestKey }) => {
     seen(user); const o = ownerOf(user, guestKey); if (!o) return { bookings: [], tickets: [], orders: [], profile: null, card: null, stats: guestStats(null), reviews: [], notices: [] };
     const mine = c => store.all(c).filter(d => d.owner === o).sort((a, b) => b.createdAt - a.createdAt).slice(0, 30);
-    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => ({ ...t, messages: t.mode === 'site' ? t.messages : [] })), orders: mine('orders'), profile: ownProfile(profileOf(o)), card: cardNo(o), verified: verified(o), staff: staffRole(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r) };
+    return { bookings: mine('bookings'), tickets: mine('tickets').map(t => chatOf(t, user)), orders: mine('orders'), profile: ownProfile(profileOf(o)), card: cardNo(o), verified: verified(o), staff: staffRole(o), stats: guestStats(o), notices: store.all('notices').filter(n => n.owner === o).sort((a, b) => b.at - a.at).slice(0, 30).map(({ owner, ...n }) => n), reviews: store.all('reviews').filter(r => r.owner === o).map(({ owner, ...r }) => r) };
   });
   // после входа брони, заказы, обращения и профиль с этого устройства переходят в аккаунт
   on('POST', '/me/claim', ({ user, guestKey }) => {
@@ -195,7 +206,7 @@ export function createCore(store, hooks = {}) {
     store.all('notices').filter(n => n.owner === from).forEach(n => store.put('notices', n.id, { ...n, owner: to }));
     const gp = profileOf(from);
     if (gp) { const up = profileOf(to) || { id: to }; store.put('profiles', to, { ...gp, ...Object.fromEntries(Object.entries(up).filter(([, v]) => v !== '' && v != null)), lifex: up.lifex || gp.lifex, id: to, achievements: [...new Set([...(gp.achievements || []), ...(up.achievements || [])])].slice(0, 40), updatedAt: Date.now() }); store.del('profiles', from); }
-    if (moved) emit(['bookings', 'orders', 'tickets']);
+    if (moved) { emit(['bookings', 'orders', 'tickets']); linkNote(to); }
     return { moved };
   });
   on('PUT', '/me/profile', ({ body, user, guestKey }) => {
@@ -466,12 +477,18 @@ export function createCore(store, hooks = {}) {
     if (t.mode === 'site') call('bridge', { kind: 'ticket', doc: t, from: 'guest', text: t.text });
     return { ticket: t, fallback };
   });
-  on('POST', '/tickets/:id/messages', ({ params, body, user, guestKey }) => {
-    const t = myTicket(params.id, user, guestKey); const text = str(body.text, 2000); if (!text) bad('Пустое сообщение');
+  on('POST', '/tickets/:id/messages', async ({ params, body, user, guestKey }) => {
+    let t = myTicket(params.id, user, guestKey); const text = str(body.text, 2000); if (!text) bad('Пустое сообщение');
     if (t.status === 'closed') bad('Обращение закрыто');
     const staff = !isOwner(t, user, guestKey) && user && ROLES[user.role] >= 1;
     const by = icName(user, guestKey); if (!by) needIc();
     const ooc = !!body.ooc; // OOC — разговор игроков вне роли, на сайте и в Discord помечается отдельно
+    // гость пишет в тикет Discord с сайта: сначала сообщение уходит в канал, потом сохраняется
+    if (!staff && t.mode === 'discord') {
+      if (!chatOpen(t, user)) bad('Чтобы отвечать с сайта, войдите через Discord');
+      if (!(await call('ticketReply', t, text, by, ooc, true))) bad('Discord не принял сообщение. Напишите прямо в канале обращения');
+      t = store.get('tickets', t.id) || t; if (t.status === 'closed') bad('Обращение закрыто');
+    }
     t.messages.push({ from: staff ? 'staff' : 'guest', text, at: Date.now(), by, ooc });
     if (t.messages.length > 300) t.messages = t.messages.slice(-300);
     t.lastAt = Date.now(); t.lastFrom = staff ? 'staff' : 'guest'; store.put('tickets', t.id, t); emit(['tickets']);
@@ -569,6 +586,7 @@ export function createCore(store, hooks = {}) {
     const prev = store.get(params.col, id) || {};
     const doc = { ...prev, ...clean(params.col, body || {}), id, updatedAt: Date.now() };
     if (params.col === 'settings' && id !== 'main') bad('Неверный раздел настроек');
+    if (params.col === 'venues') { const f = venueFloor(doc); if (f !== null && f !== venueFloor(prev) && store.all('rooms').some(r => r.floor === f)) bad(`На ${f} этаже номера. Сначала перенесите их или выберите другой этаж для площадки`); }
     store.put(params.col, id, doc); log(`${user.username} изменил ${label(params.col)}: ${doc.name || doc.title || id}`, 'edit', user.username);
     emit([params.col, 'log']); return { doc };
   });
@@ -579,10 +597,11 @@ export function createCore(store, hooks = {}) {
     store.del(params.col, params.id); log(`${user.username} удалил ${label(params.col)}: ${d.name || d.title || d.id}`, 'edit', user.username); emit([params.col, 'log']); return { ok: true };
   });
 
-  // номера и этажи
+  // номера и этажи: больше, чем помещается в башню, сервер не принимает
+  const fits = (floor, add, moving = []) => { const e = roomLimitError(store.all('rooms'), store.all('venues'), floor, add, moving); if (e) bad(e); };
   on('POST', '/admin/rooms/:id/status', ({ params, body, user }) => {
     need(user, 'mod'); const r = store.get('rooms', params.id); if (!r) throw new HttpError(404, 'Номер не найден');
-    const st = str(body.status, 20); if (!ROOM_STATUS[st]) bad('Неверный статус');
+    const st = str(body.status, 20); if (!Object.hasOwn(ROOM_STATUS, st)) bad('Неверный статус');
     Object.assign(r, { status: st, updatedAt: Date.now() }); if (st === 'free') Object.assign(r, { guest: null, discord: null, bookingId: null });
     store.put('rooms', r.id, r); log(`${user.username}: номер ${r.id} → ${ROOM_STATUS[st]}`, 'room', user.username); roomsChanged(); emit(['log']); return { room: r };
   });
@@ -592,28 +611,30 @@ export function createCore(store, hooks = {}) {
     if (!/^[\w-]{1,10}$/.test(newId)) bad('Номер: только цифры и буквы, до 10 символов');
     if (!store.get('types', type)) bad('Нет такого типа номера');
     if (newId !== r.id && store.get('rooms', newId)) bad(`Номер ${newId} уже существует`);
-    const doc = { ...r, id: newId, type, floor: Math.round(num(body.floor, r.floor)), note: str(body.note ?? r.note, 200) };
+    const floor = body.floor === undefined || body.floor === '' ? r.floor : Number(body.floor); if (floor !== r.floor) fits(floor, 1, [r.id]);
+    const doc = { ...r, id: newId, type, floor, note: str(body.note ?? r.note, 200) };
     if (newId !== r.id) { store.del('rooms', r.id); store.all('bookings').filter(b => b.room === r.id || b.preferredRoom === r.id).forEach(b => store.put('bookings', b.id, { ...b, room: b.room === r.id ? newId : b.room, preferredRoom: b.preferredRoom === r.id ? newId : b.preferredRoom })); emit(['bookings']); }
     store.put('rooms', newId, doc); log(`${user.username} изменил номер ${r.id}${newId !== r.id ? ' → ' + newId : ''}`, 'edit', user.username); roomsChanged(); emit(['log']); return { room: doc };
   });
   on('POST', '/admin/rooms', ({ body, user }) => {
-    need(user, 'admin'); const id = str(body.id, 10), type = str(body.type, 40), floor = Math.round(num(body.floor, NaN));
-    if (!/^[\w-]{1,10}$/.test(id) || !Number.isFinite(floor)) bad('Укажите номер и этаж'); if (store.get('rooms', id)) bad(`Номер ${id} уже есть`); if (!store.get('types', type)) bad('Выберите тип');
+    need(user, 'admin'); const id = str(body.id, 10), type = str(body.type, 40), floor = body.floor === '' ? NaN : Number(body.floor);
+    if (!/^[\w-]{1,10}$/.test(id) || !Number.isFinite(floor)) bad('Укажите номер и этаж'); if (store.get('rooms', id)) bad(`Номер ${id} уже есть`); if (!store.get('types', type)) bad('Выберите тип'); fits(floor, 1);
     const r = { id, floor, type, status: 'free', createdAt: Date.now() }; store.put('rooms', id, r); roomsChanged(); emit(['log']); log(`${user.username} добавил номер ${id}`, 'edit', user.username); return { room: r };
   });
   const busy = r => ['booked', 'occupied'].includes(r.status) || store.all('bookings').some(b => b.room === r.id && ['confirmed', 'checkedin'].includes(b.status));
   on('DELETE', '/admin/rooms/:id', ({ params, user }) => { need(user, 'admin'); const rr = store.get('rooms', params.id); if (!rr) throw new HttpError(404, 'Нет номера'); if (busy(rr)) bad('В номере бронь или гость — сначала завершите или перенесите бронь'); store.del('rooms', params.id); log(`${user.username} удалил номер ${params.id}`, 'edit', user.username); roomsChanged(); emit(['log']); return { ok: true }; });
   on('POST', '/admin/floors', ({ body, user }) => {
-    need(user, 'admin'); const floor = Math.round(num(body.floor, NaN)), count = Math.min(40, Math.max(1, Math.round(num(body.count, 1)))), type = str(body.type, 40);
-    if (!Number.isFinite(floor) || floor < -5 || floor > 300) bad('Укажите этаж'); if (!store.get('types', type)) bad('Выберите тип номеров');
-    const start = Math.round(num(body.start, floor * 100 + 1)); const made = [];
-    for (let i = 0; i < count; i++) { const id = String(start + i); if (store.get('rooms', id)) continue; store.put('rooms', id, { id, floor, type, status: 'free', createdAt: Date.now() }); made.push(id); }
+    need(user, 'admin'); const floor = body.floor === '' ? NaN : Number(body.floor), count = Math.round(num(body.count, 1)), type = str(body.type, 40);
+    if (!store.get('types', type)) bad('Выберите тип номеров'); if (count < 1) bad('Укажите, сколько номеров добавить'); fits(floor, count);
+    const start = Math.round(num(body.start, floor * 100 + 1)), made = [], ids = Array.from({ length: count }, (_, i) => String(start + i)), taken = ids.filter(id => store.get('rooms', id));
+    if (start < 1 || ids.some(id => id.length > 10)) bad('Первый номер: положительное число до 10 цифр'); if (taken.length) bad(`Номера уже заняты: ${taken.slice(0, 6).join(', ')}. Укажите другой первый номер`);
+    for (const id of ids) { store.put('rooms', id, { id, floor, type, status: 'free', createdAt: Date.now() }); made.push(id); }
     log(`${user.username} добавил ${made.length} номеров на ${floor} этаже`, 'edit', user.username); roomsChanged(); emit(['log']); return { made };
   });
   // правка этажа целиком: новый номер этажа (номера вида 2601 переименовываются в 2701), общий тип для всех номеров
   on('PUT', '/admin/floors/:floor', ({ params, body, user }) => {
     need(user, 'admin'); const f = Math.round(num(params.floor, NaN)), rs = store.all('rooms').filter(r => r.floor === f); if (!rs.length) throw new HttpError(404, 'Нет такого этажа');
-    const to = Math.round(num(body.floor, f)); if (!Number.isFinite(to) || to < -5 || to > 300) bad('Укажите этаж');
+    const to = body.floor === undefined || body.floor === '' ? f : Number(body.floor); if (to !== f) fits(to, rs.length, rs.map(r => r.id));
     const type = body.type ? str(body.type, 40) : ''; if (type && !store.get('types', type)) bad('Нет такого типа номера');
     const renum = body.renumber !== false && to !== f, pre = String(f), plan = rs.map(r => ({ r, id: renum && r.id.startsWith(pre) && /^\d+$/.test(r.id) && r.id.length === pre.length + 2 ? String(to) + r.id.slice(pre.length) : r.id }));
     const taken = plan.filter(x => x.id !== x.r.id && store.get('rooms', x.id) && !rs.some(r => r.id === x.id)).map(x => x.id); if (taken.length) bad(`Номера уже заняты: ${taken.slice(0, 6).join(', ')}`);
@@ -778,7 +799,7 @@ export function createCore(store, hooks = {}) {
 
   // имя сотрудника, написавшего прямо в Discord: игровое из профиля, если задано
   const icOf = discordId => String(profileOf('d:' + discordId)?.name || '').trim();
-  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, bookingMessage, matchVenue, settings, log, store, linkLifex, icOf, seen, setAvatar, avatarBan };
+  return { handle, publicData, freeSummary, upsertEvent, removeEvent, ticketMessage, bookingMessage, linked, matchVenue, settings, log, store, linkLifex, icOf, seen, setAvatar, avatarBan };
 }
 
 /* ---------- стартовые данные ---------- */
@@ -817,6 +838,28 @@ function floorsV1(store) {
 function hideDemoEvents(store) { for (const id of ['e-demo1', 'e-demo2']) { const e = store.get('events', id); if (e && e.status !== 'cancelled') store.put('events', id, { ...e, status: 'cancelled' }); } }
 
 // Кнопка лифта в игре для этажа номеров: снизу вверх, верхние этажи сверх шести идут на Rooms Floor 6
+// Вместимость башни на вкладке «Номера». Ниже 4 этажа — подиум, выше 41 — вывеска; 56 окон этажа делятся поровну максимум на 14 номеров
+export const TOWER = { minFloor: 4, maxFloor: 41, floors: 16, perFloor: 14 };
+export const venueFloor = v => { const n = parseInt((String(v?.floor || '').match(/\d+/) || [])[0], 10); return Number.isFinite(n) ? n : null; };
+// почему на этаж нельзя добавить (или перенести) столько номеров; пустая строка — можно
+export function roomLimitError(rooms, venues, floor, add = 1, moving = []) {
+  if (!Number.isInteger(floor)) return 'Укажите этаж целым числом';
+  if (floor < TOWER.minFloor || floor > TOWER.maxFloor) return `Номера бывают только на этажах с ${TOWER.minFloor} по ${TOWER.maxFloor}: ${floor < TOWER.minFloor ? 'ниже подиум' : 'выше вывеска и крыша'}`;
+  const v = venues.find(x => venueFloor(x) === floor); if (v) return `${floor} этаж занят площадкой «${v.name}»`;
+  const rest = rooms.filter(r => !moving.includes(r.id)), on = rest.filter(r => r.floor === floor).length, fl = new Set(rest.map(r => r.floor));
+  if (on + add > TOWER.perFloor) return on >= TOWER.perFloor ? `На ${floor} этаже уже ${on} номеров, это предел (${TOWER.perFloor})` : `На этаже помещается ${TOWER.perFloor} номеров. На ${floor} этаже сейчас ${on}, можно добавить не больше ${TOWER.perFloor - on}`;
+  if (!fl.has(floor) && fl.size >= TOWER.floors) return `Этажей с номерами может быть не больше ${TOWER.floors}, сейчас ${fl.size}. Сначала удалите или объедините этаж`;
+  return '';
+}
+// что в уже заведённых номерах не помещается в башню (данные, появившиеся до лимитов)
+export function towerOverflow(rooms, venues) {
+  const by = new Map(), out = []; rooms.forEach(r => by.set(r.floor, (by.get(r.floor) || 0) + 1));
+  if (by.size > TOWER.floors) out.push(`Этажей с номерами ${by.size}, помещается ${TOWER.floors}`);
+  [...by].sort((a, b) => b[0] - a[0]).forEach(([f, n]) => { const v = venues.find(x => venueFloor(x) === f);
+    if (f < TOWER.minFloor || f > TOWER.maxFloor) out.push(`${f} этаж вне башни, его номера не показаны на модели`); else if (v) out.push(`${f} этаж занят площадкой «${v.name}», его номера не показаны на модели`);
+    if (n > TOWER.perFloor) out.push(`На ${f} этаже ${n} номеров, помещается ${TOWER.perFloor}`); });
+  return out;
+}
 export function roomGameFloor(rooms, floor) { const list = [...new Set(rooms.map(r => r.floor))].sort((a, b) => a - b), i = list.indexOf(floor); return i < 0 ? '' : `Rooms Floor ${Math.min(i + 1, 6)}`; }
 
 export function seed(store) { const fresh = seedBase(store); floorsV1(store); hideDemoEvents(store); siteV3(store); return fresh; }

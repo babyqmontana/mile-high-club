@@ -11,7 +11,7 @@
   /* ---- Vertical Noir. Новые токены поверх старых, старые не удаляются ---- */
   --surface-0:var(--bg);--surface-1:var(--bg2);--surface-2:var(--card);--surface-3:var(--card2);--edge:var(--line);--edge-strong:var(--line2);
   --edge-brass:linear-gradient(90deg,#8a6228,#f9edc7 50%,#8a6228);--hi:inset 0 1px 0 rgba(249,237,199,.06);
-  --st-free:var(--gold);--st-booked:var(--pink);--st-occupied:var(--violet);--st-idle:var(--mut);--st-live:var(--pink);
+  --st-free:var(--gold);--st-booked:var(--pink);--st-occupied:var(--violet);--st-idle:var(--mut);--st-cleaning:#b3a792;--st-repair:#6d5a7a;--st-live:var(--pink);
   --ease-out:cubic-bezier(.2,.8,.2,1);--ease-in-out:cubic-bezier(.65,0,.35,1);--ease-spring:cubic-bezier(.2,.9,.3,1.3);
   --d-tap:120ms;--d-hover:200ms;--d-ui:320ms;--d-panel:480ms;--d-floor:720ms;--d-scene:1200ms;
   --s1:.25rem;--s2:.5rem;--s3:.75rem;--s4:1rem;--s5:1.5rem;--s6:2rem;--s7:3rem;--s8:5rem;--s9:8rem;
@@ -37,8 +37,8 @@ html{-webkit-text-size-adjust:100%;scroll-padding-top:calc(var(--nav) + 0.75rem)
 @media(min-width:1800px){html{font-size:calc(16px + (100vw - 1800px) * .0045)}}
 @media(min-width:3000px){html{font-size:calc(21px + (100vw - 3000px) * .004)}}
 /* место под полосу прокрутки всегда занято: на коротких вкладках она пропадала, и вся вёрстка прыгала вбок */
-html{overflow-y:scroll;scrollbar-gutter:stable}
-body{margin:0;background:var(--bg);color:var(--fg);font:400 1rem/1.6 var(--body);overflow-x:hidden;-webkit-font-smoothing:antialiased;transition:background-color .6s,color .6s}
+html{overflow-x:hidden;overflow-y:scroll;scrollbar-gutter:stable}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 1rem/1.6 var(--body);-webkit-font-smoothing:antialiased;transition:background-color .6s,color .6s}
 img{max-width:100%;display:block}
 a{color:inherit}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -296,7 +296,7 @@ a.fb-row:hover .fb-k{color:var(--floor-accent)}
 .room::before{content:"";position:absolute;top:.65rem;right:.65rem;width:0.5625rem;height:0.5625rem;border-radius:50%;background:var(--sc)}
 .room:hover{transform:translateY(-2px);border-color:var(--sc)}
 .room[aria-pressed="true"]{box-shadow:0 0 0 2px var(--sc);border-color:var(--sc)}
-.room.free{--sc:var(--gold)}.room.booked{--sc:var(--pink)}.room.occupied{--sc:var(--violet)}.room.cleaning,.room.repair{--sc:var(--mut)}
+.room.free{--sc:var(--gold)}.room.booked{--sc:var(--pink)}.room.occupied{--sc:var(--violet)}.room.cleaning{--sc:var(--st-cleaning)}.room.repair{--sc:var(--st-repair)}
 .room:not(.free){opacity:.62}
 .rpanel{display:grid;grid-template-columns:9.375rem 1fr;gap:1rem;align-items:center}
 .rpanel .img{border-radius:0.875rem;aspect-ratio:4/3}
@@ -985,6 +985,7 @@ footer .wrap.kon{padding-block:0 1.2rem;justify-content:center;font:600 .6rem va
 .facade .w.free{background:var(--st-free);box-shadow:0 0 .5rem rgba(247,181,10,.45)}
 .facade .w.booked{background:var(--st-booked)}
 .facade .w.occupied{background:var(--st-occupied)}
+.facade .w.cleaning{background:var(--st-cleaning)}.facade .w.repair{background:var(--st-repair)}
 .facade .w.hv{outline:2px solid var(--fg);outline-offset:1px}
 .facade .w.sel{outline:2px solid var(--fg);outline-offset:2px;color:var(--fg);animation:pulse 1.6s infinite}
 .facade .base{margin-top:6px;font:800 .66rem var(--body);letter-spacing:.2em;text-transform:uppercase;color:var(--mut)}
@@ -1510,3 +1511,6 @@ a.g-p:hover,a.g-p:focus-visible{transform:translateY(-3px);border-color:var(--go
 .g-p b{font-size:1.05rem;overflow-wrap:anywhere}.g-p small{color:var(--mut);font-size:.82rem}.g-p p{margin:.4rem 0 0;font-size:.86rem;color:var(--mut);overflow-wrap:anywhere}
 .g-back{display:inline-flex;align-items:center;gap:.4rem;margin-bottom:1rem;color:var(--mut);text-decoration:none;min-height:2.4rem}.g-back svg{width:1.1rem;height:1.1rem}.g-back:hover{color:var(--fg)}.g-sec{display:flex;flex-wrap:wrap;gap:.4rem}
 .g-pub{display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:.9rem 1rem;border:1px solid var(--line2);border-radius:.8rem;background:var(--bg2)}.g-pub .check{align-items:flex-start;flex:1 1 16rem}.g-pub small{display:block;color:var(--mut);margin-top:.2rem}
+
+.lims{display:grid;gap:.35rem;padding:.9rem 1.1rem;margin-bottom:1.2rem;border:1px solid color-mix(in srgb,var(--bad) 45%,transparent);border-radius:var(--r);background:color-mix(in srgb,var(--bad) 9%,transparent);color:color-mix(in srgb,var(--bad) 80%,var(--fg));font-size:.9rem}.lims ul{margin:.2rem 0 0;padding-left:1.1rem}
+.lim-e{margin:0;color:color-mix(in srgb,var(--bad) 80%,var(--fg));font-size:.86rem}.btn:disabled{opacity:.45;cursor:not-allowed}input.bad{border-color:var(--bad)!important;color:color-mix(in srgb,var(--bad) 80%,var(--fg))}

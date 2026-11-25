@@ -6,6 +6,7 @@ import { buildBlueprint, overwritesFor, TEXT, VOICE, CATEGORY, ANNOUNCEMENT } fr
 import { planSetup, snapshotGuild, applyPlan, planCleanup } from '../server/discord/plan.js';
 import { helpdeskBoard, postPayload, eventAnnouncement, transcriptHtml, feedCard } from '../server/discord/embeds.js';
 import { buildCommands, createInteractions } from '../server/discord/commands.js';
+import { syncBoard } from '../server/discord/board.js';
 import { createCore, seed, roomGameFloor, weatherNow } from '../public/js/core.js';
 
 const EVERYONE = 'everyone', BOT = 'bot-user', STAFF = ['role-staff'], TIERS = { admin: ['role-admin'], director: ['role-dir'], staff: STAFF, dev: ['role-dev'] };
@@ -464,4 +465,64 @@ test('отклик на вакансию из Discord уходит персон�
   const got = [], { core } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'chan3', notify: async (k, d) => { got.push([k, d.topic]); } });
   await createInteractions({ core, resolveRole: async () => 'guest' })(fakeModal('mhc:job:send', { name: 'Джон', topic: 'Повар', text: 'Опыт три года' }));
   assert.ok(got.some(([k, t]) => k === 'ticket_discord' && /^Трудоустройство: Повар/.test(t)));
+});
+
+// --- кнопки обращений после смены бота ---
+function boardChannel(list) {
+  const all = new Map(), sent = []; let n = 1;
+  const add = (author, ids) => { const id = 'm' + n++; const m = { id, author: { id: author, bot: author !== 'human' }, edits: 0, components: ids.length ? [{ components: ids.map(customId => ({ customId })) }] : [], edit: async () => { if (author !== 'new-bot') throw Object.assign(new Error('Cannot edit'), { code: 50005 }); m.edits++; }, delete: async () => { all.delete(id); } }; all.set(id, m); return m; };
+  list.forEach(([a, ids]) => add(a, ids));
+  return { all, sent, messages: { fetch: async q => { if (typeof q !== 'string') return all; if (!all.has(q)) throw new Error('Unknown Message'); return all.get(q); } }, send: async p => { sent.push(p); return add('new-bot', ['mhc:ticket', 'mhc:job']); } };
+}
+test('кнопки от прежнего бота заменяются, даже если база хранит их как свои', async () => {
+  const B = ['mhc:ticket', 'mhc:job'], c = boardChannel([['old-bot', B], ['human', []]]), p = helpdeskBoard();
+  const first = await syncBoard(boardChannel([]), 'old-bot', p, null); // хеш прежнего бота совпадает с нынешним
+  const r = await syncBoard(c, 'new-bot', p, { id: 'm1', hash: first.hash });
+  assert.equal(r.action, 'sent'); assert.equal(c.sent.length, 1); assert.deepEqual([...c.all.keys()], ['m2', r.id]);
+  const again = await syncBoard(c, 'new-bot', p, r); assert.equal(again.action, 'ok'); assert.equal(c.sent.length, 1);
+  c.all.delete(r.id); assert.equal((await syncBoard(c, 'new-bot', p, r)).action, 'sent');
+});
+test('кнопки: своё сообщение находится без записи в базе, дубль убирается', async () => {
+  const B = ['mhc:ticket', 'mhc:job'], c = boardChannel([['new-bot', B], ['new-bot', B], ['new-bot', ['mhc:close']]]);
+  const r = await syncBoard(c, 'new-bot', helpdeskBoard(), null);
+  assert.equal(r.action, 'edited'); assert.equal(c.sent.length, 0); assert.equal(c.all.size, 2);
+});
+test('закрытие: Discord получает ответ до проверки прав', async () => {
+  const { core } = makeCore({}); const order = [];
+  const b = { ...fakeButton('nochan', 'u1') }, d = b.deferReply; b.deferReply = async x => { order.push('defer'); b.deferred = true; return d?.(x); };
+  await createInteractions({ core, resolveRole: async () => { order.push('role'); return 'guest'; } })(b);
+  assert.deepEqual(order, ['defer', 'role']);
+});
+
+// --- тикет из Discord и кабинет на сайте ---
+test('тикет из Discord виден в кабинете, ответ с сайта уходит в канал, без привязки — предупреждение', async () => {
+  const out = [], notes = [], { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async t => { t.discordId = 'u7'; return 'chan7'; }, ticketReply: async (...a) => { out.push(a.slice(1)); return true; }, ticketLinked: async t => { notes.push(t.id); } });
+  const modal = () => ({ ...fakeModal('mhc:ticket:send', { name: 'Джон', topic: 'Вопрос', text: 'Помогите' }), user: { id: 'u7', username: 'john' } });
+  const reply = async () => { const said = [], m = modal(); m.deferReply = async () => { m.deferred = true; }; m.editReply = async x => said.push(x); await createInteractions({ core, resolveRole: async () => 'guest', site: 'https://h.test' })(m); return said.at(-1); };
+  const a = await reply(); assert.match(a.content, /chan7/); assert.match(a.content, /не получите уведомления/); assert.match(a.components[0].components[0].url, /auth\/discord\?next=me/);
+  core.seen({ id: 'u7', username: 'john', role: 'guest' }, true); assert.equal(notes.length, 1); core.seen({ id: 'u7', username: 'john', role: 'guest' }, true); assert.equal(notes.length, 1);
+  const b = await reply(); assert.match(b.content, /кабинете/); assert.match(b.components[0].components[0].url, /#me/);
+  const user = { id: 'u7', username: 'john', role: 'guest' }, t = store.all('tickets').sort((x, y) => x.createdAt - y.createdAt)[0];
+  core.ticketMessage(t.id, { from: 'staff', by: 'Мэри', text: 'Слушаю', at: Date.now() });
+  const it = await core.handle('GET', '/me/items', { user }), mine = it.tickets.find(x => x.id === t.id);
+  assert.equal(mine.chat, true); assert.deepEqual(mine.messages.map(m => m.text), ['Помогите', 'Слушаю']); assert.ok(it.notices.some(n => /Слушаю/.test(n.text)));
+  await core.handle('POST', `/tickets/${t.id}/messages`, { user, body: { text: 'Спасибо' } }); assert.deepEqual(out, [['Спасибо', 'Джон', false, true]]);
+  assert.equal(store.get('tickets', t.id).messages.at(-1).from, 'guest');
+});
+test('чужой ник без входа: переписки из Discord на сайте нет, писать туда нельзя', async () => {
+  const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async t => { t.discordId = 'victim'; return 'c1'; }, ticketReply: async () => true });
+  const { ticket } = await core.handle('POST', '/tickets', { guestKey: 'k9', body: { discord: 'victim', name: 'Ник', text: 'привет' } });
+  await core.handle('POST', `/tickets/${ticket.id}/mode`, { guestKey: 'k9', body: { mode: 'discord' } });
+  core.ticketMessage(ticket.id, { from: 'staff', by: 'М', text: 'тайна', at: 1 });
+  const x = (await core.handle('GET', '/me/items', { guestKey: 'k9' })).tickets[0]; assert.equal(x.unlinked, true); assert.equal(x.messages.length, 0);
+  await assert.rejects(core.handle('POST', `/tickets/${ticket.id}/messages`, { guestKey: 'k9', body: { text: 'х' } }), /войдите через Discord/);
+  core.seen({ id: 'evil', username: 'e' }, true); await core.handle('POST', '/me/claim', { user: { id: 'evil', username: 'e', role: 'guest' }, guestKey: 'k9' });
+  assert.equal((await core.handle('GET', '/me/items', { user: { id: 'evil', username: 'e', role: 'guest' } })).tickets[0].messages.length, 0);
+});
+test('Discord не принял сообщение гостя — на сайте оно не сохраняется', async () => {
+  const { core, store } = makeCore({ checkMember: async () => true, createTicketChannel: async () => 'c1', ticketReply: async () => { throw new Error('нет канала'); } });
+  const user = { id: 'u1', username: 'a', role: 'guest' }, { ticket } = await core.handle('POST', '/tickets', { user, body: { name: 'Джон', text: 'т' } });
+  await core.handle('POST', `/tickets/${ticket.id}/mode`, { user, body: { mode: 'discord' } });
+  await assert.rejects(core.handle('POST', `/tickets/${ticket.id}/messages`, { user, body: { text: 'х' } }), /не принял/);
+  assert.equal(store.get('tickets', ticket.id).messages.length, 0);
 });

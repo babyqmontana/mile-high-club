@@ -26,16 +26,16 @@ export function mountBook(wrap, el, issue, ctl) {
   addEventListener('keydown', key);
   const refit = () => setTimeout(() => { fitW(); dispatchEvent(new Event('resize')); book.update?.(); }, 60);
   function toggleFs(on = !wrap.classList.contains('fs')) {
-    wrap.classList.toggle('fs', on); document.body.style.overflow = on ? 'hidden' : '';
+    wrap.classList.toggle('fs', on); document.documentElement.style.overflowY = on ? 'hidden' : '';
     const phone = matchMedia('(pointer:coarse)').matches || innerWidth < 760;
     if (on && !phone) wrap.requestFullscreen?.().catch(() => {}); else if (!on && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     if (on) history.pushState({ mhcFs: 1 }, ''); 
     play(on ? 'open' : 'close'); refit();
   }
-  const onPop = () => { if (wrap.classList.contains('fs')) { wrap.classList.remove('fs'); document.body.style.overflow = ''; refit(); } };
+  const onPop = () => { if (wrap.classList.contains('fs')) { wrap.classList.remove('fs'); document.documentElement.style.overflowY = ''; refit(); } };
   addEventListener('popstate', onPop);
-  const fsChange = () => { if (!document.fullscreenElement && wrap.classList.contains('fs')) { wrap.classList.remove('fs'); document.body.style.overflow = ''; refit(); } };
+  const fsChange = () => { if (!document.fullscreenElement && wrap.classList.contains('fs')) { wrap.classList.remove('fs'); document.documentElement.style.overflowY = ''; refit(); } };
   document.addEventListener('fullscreenchange', fsChange);
   ctl.fs.onclick = () => toggleFs(); ctl.fsx.onclick = () => { toggleFs(false); if (history.state?.mhcFs) history.back(); };
-  return { destroy() { removeEventListener('popstate', onPop); wrap.classList.remove('fs'); removeEventListener('keydown', key); removeEventListener('resize', fitW); document.removeEventListener('fullscreenchange', fsChange); document.body.style.overflow = ''; try { book.destroy(); } catch { } }, active() {} };
+  return { destroy() { removeEventListener('popstate', onPop); wrap.classList.remove('fs'); removeEventListener('keydown', key); removeEventListener('resize', fitW); document.removeEventListener('fullscreenchange', fsChange); document.documentElement.style.overflowY = ''; try { book.destroy(); } catch { } }, active() {} };
 }

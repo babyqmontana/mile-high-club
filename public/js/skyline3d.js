@@ -5,7 +5,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // фиолетовые светодиоды по рёбрам и вывеска с верблюдом. Этажи отеля горят по статусам номеров.
 // Вокруг — даунтаун: кварталы, дороги с машинами, фонари, холмы, дымка и облака,
 // которые прячут дальний план, чтобы внимание оставалось на отеле.
-const STATUS = { free: '#f7b50a', booked: '#f0177a', occupied: '#ef5617', cleaning: '#3a2c2e', repair: '#3a2c2e' };
+const STATUS = { free: '#f7b50a', booked: '#f0177a', occupied: '#ef5617', cleaning: '#b3a792', repair: '#6d5a7a' };
+import { TOWER } from './core.js';
 const FH = 0.46, W = 4.4, D = 3.0, COLS = 56;
 
 // --- геометрия «кольца» этажа: стены по контуру, U идёт по периметру (окна не растягиваются) ---
@@ -146,6 +147,20 @@ function sinkJs(x, z, h) { const c = SINK.uCamP.value, ox = 1.6 - c.x, oz = -c.z
 function sinkTops(mat, inst) { mat.onBeforeCompile = sh => { sh.uniforms.uCamP = SINK.uCamP; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + SINK_GLSL).replace('#include <begin_vertex>', inst
   ? '#include <begin_vertex>\n#ifdef USE_INSTANCING\nfloat tp=instanceMatrix[3].y-(' + GY.toFixed(2) + ');transformed.y+=(sinkTop(instanceMatrix[3].xz,tp)-tp)/length(instanceMatrix[1].xyz);\n#endif'
   : '#include <begin_vertex>\nfloat tp=position.y-(' + GY.toFixed(2) + ');transformed.y+=sinkTop(position.xz,tp)-tp;'); }; return mat; }
+// вода бассейнов и фонтана: солнечная сетка на дне, светлые борта, отражение ночного неба. Без прозрачности и текстур
+const WATER_T = { value: 0 };
+function waterMat(color, hx, hz, round = 0, glow = 1) {
+  const c = new THREE.Color(color).convertLinearToSRGB();
+  return new THREE.ShaderMaterial({ uniforms: { uT: WATER_T, uC: { value: new THREE.Vector3(c.r, c.g, c.b) }, uH: { value: new THREE.Vector3(hx, hz, round) }, uG: { value: glow } },
+    vertexShader: 'varying vec2 p;varying vec3 v;void main(){p=position.xz;vec4 w=modelMatrix*vec4(position,1.);v=w.xyz-cameraPosition;gl_Position=projectionMatrix*viewMatrix*w;}',
+    fragmentShader: `uniform float uT,uG;uniform vec3 uC,uH;varying vec2 p;varying vec3 v;
+      void main(){vec2 q=p*9.,r=q;float k=0.;for(int i=0;i<3;i++){float f=float(i);r=q+vec2(cos(uT*.8-r.x+f*2.1)+sin(uT*.6+r.y),sin(uT*.7-r.y)+cos(uT*.9+r.x+f));k+=1./(.35+abs(sin(r.x)+cos(r.y)));}
+        float det=clamp(1.35-fwidth(q.x)*.55-fwidth(q.y)*.55,0.,1.),ca=mix(.32,pow(clamp(k/6.2,0.,1.),2.),det);   // издалека сетка сливается в ровный тон, без ряби
+        float e=uH.z>.5?uH.x-length(p):min(uH.x-abs(p.x),uH.y-abs(p.y));float rim=exp(-max(e,0.)*9.);
+        float fr=pow(1.-clamp(-normalize(v).y,0.,1.),3.);
+        vec3 c=uC*(.3+.42*ca)+vec3(.55,.95,1.)*ca*ca*.34+uC*rim*.5;
+        c=mix(c,vec3(.26,.17,.4)+uC*.22,fr*.5);gl_FragColor=vec4(c*uG,1.);}` });
+}
 // светодиодная лента: короткие яркие сегменты с зазорами
 function ledTex() { const c = document.createElement('canvas'); c.width = 4; c.height = 32; const g = c.getContext('2d'); g.fillStyle = '#2a0b3d'; g.fillRect(0, 0, 4, 32); g.fillStyle = '#ffffff'; g.fillRect(0, 4, 4, 22); const t = new THREE.CanvasTexture(c); t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.NearestFilter; return t; }
 
@@ -294,11 +309,11 @@ function cityMaterial() {
   return m;
 }
 // --- асфальт с разметкой: кварталы по сетке ---
-function groundMaterial(block, road) {
+function groundMaterial(block, road, uF) {
   return new THREE.ShaderMaterial({
-    fog: true, uniforms: { ...THREE.UniformsLib.fog, uDay: { value: 0 }, uSnow: { value: 0 } },
+    fog: true, uniforms: { ...THREE.UniformsLib.fog, uF, uDay: { value: 0 }, uSnow: { value: 0 } },
     vertexShader: `varying vec3 vWp;\n#include <fog_pars_vertex>\nvoid main(){vec4 wp=modelMatrix*vec4(position,1.);vWp=wp.xyz;vec4 mvPosition=viewMatrix*wp;gl_Position=projectionMatrix*mvPosition;\n#include <fog_vertex>\n}`,
-    fragmentShader: `uniform float uDay,uSnow;varying vec3 vWp;\n#include <fog_pars_fragment>\nvoid main(){
+    fragmentShader: `uniform float uDay,uSnow;uniform vec3 uF;varying vec3 vWp;\n#include <fog_pars_fragment>\nvoid main(){
       vec2 p=vWp.xz+${(block / 2).toFixed(2)}; vec2 m=mod(p,${block.toFixed(2)}); vec2 dr=min(m,${block.toFixed(2)}-m);
       float rd=step(min(dr.x,dr.y),${(road / 2).toFixed(2)});
       float walk=step(min(dr.x,dr.y),${(road / 2 + .35).toFixed(2)})-rd;
@@ -314,6 +329,7 @@ function groundMaterial(block, road) {
       col=mix(col,mix(vec3(.32,.3,.31),vec3(.86,.85,.84),uDay)*(1.-rd*.35),uSnow*(1.-lane));
       gl_FragColor=vec4(col,1.);
       #include <fog_fragment>
+      vec2 gv=vWp.xz-cameraPosition.xz;float gd=length(gv);gl_FragColor.rgb=mix(gl_FragColor.rgb,mix(uF,vec3(.25,.1,.23),.75*(1.-uDay)),smoothstep(95.,300.,gd));
     }`
   });
 }
@@ -355,7 +371,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
   // и засветка большого города у горизонта в фиолетово-розовых тонах
   const MOON = new THREE.Vector3(-.62, .2, -.76).normalize();
   const skyU = { uDay: { value: 0 }, uFog: { value: new THREE.Color() }, uTime: { value: 0 }, uMoon: { value: MOON } };
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 48, 24), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: skyU,
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(800, 48, 24), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: skyU,
     vertexShader: 'varying vec3 vP;void main(){vP=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
     fragmentShader: `uniform float uDay,uTime;uniform vec3 uFog,uMoon;varying vec3 vP;
       float h31(vec3 p){p=fract(p*vec3(.1031,.1030,.0973));p+=dot(p,p.yxz+33.33);return fract((p.x+p.y)*p.z);}
@@ -386,9 +402,9 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
         c=mix(c,mix(vec3(.16,.07,.2),vec3(.35,.14,.3),lp*2.),cl*.75);
         c+=vec3(.6,.5,.8)*cl*pow(max(md,0.),25.)*.3;
         c+=vec3(.30,.12,.07)*exp(-max(h,0.)*22.)*(1.-uDay); // янтарное зарево города
-        c=mix(uFog,c,smoothstep(.0,.055,h)); // у горизонта небо = цвет дымки, город растворяется без границы
-        gl_FragColor=vec4(c,1.);}` }));
-  scene.add(sky); await breathe();
+        c=mix(mix(uFog,vec3(.25,.1,.23),.75*(1.-uDay)*smoothstep(-.6,.05,normalize(d.xz).y)),c,smoothstep(-.018,.03,h)); // у горизонта небо = цвет дымки, город растворяется без границы
+        gl_FragColor=vec4(c+(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.,1.);}` }));
+  sky.frustumCulled = false; sky.renderOrder = -2; scene.add(sky); // небо едет за камерой: горизонт всегда на уровне глаз и растворяется в дымке await breathe();
 
   const root = new THREE.Group(); scene.add(root);
   const world = new THREE.Group(); scene.add(world);
@@ -400,7 +416,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
 
   // ---------- город ----------
   const BLOCK = 7, ROAD = 1.6, GROUND = GY;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), groundMaterial(BLOCK, ROAD)); ground.rotation.x = -Math.PI / 2; ground.position.y = GROUND; world.add(ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), groundMaterial(BLOCK, ROAD, skyU.uFog)); ground.rotation.x = -Math.PI / 2; ground.position.y = GROUND; world.add(ground);
   const cityM = cityMaterial(), cityAtlas = glassAtlas(), landmarkMats = [], sinkers = []; let crownLit = null, traffic = null;
   const lots = []; seedN = 11;
   for (let gx = -9; gx <= 9; gx++) for (let gz = -9; gz <= 9; gz++) {
@@ -503,50 +519,94 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
   const lamp = []; for (let a = -9; a <= 9; a++) for (let b = -60; b <= 60; b += 2.3) { const r = a * BLOCK + BLOCK / 2; [[r + ROAD / 2 + .15, b], [b, r + ROAD / 2 + .15]].forEach(([x, z]) => { if (Math.hypot(x, z) < 70 && !(x > SUPER.x0 + .6 && x < SUPER.x1 - .6 && z > SUPER.z0 + .6 && z < SUPER.z1 - .6) && !nearFreeway(x, z, 1.5)) lamp.push(x, GROUND + .55, z); }); }
   const lampG = new THREE.BufferGeometry(); lampG.setAttribute('position', new THREE.Float32BufferAttribute(lamp, 3));
   const lamps = new THREE.Points(lampG, new THREE.PointsMaterial({ map: dotTex, color: 0xffc46a, size: .55, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })); world.add(lamps);
-  // ---------- горизонт Лос-Сантоса: ковёр огней, холмы с домами и мачтами, океан с пирсом, самолёты и вертолёт ----------
+  // ---------- горизонт Лос-Сантоса: ковёр огней, холмы, океан с пирсом, самолёты и вертолёт ----------
   await breathe();
   const far = { uT: { value: 0 }, uK: { value: 1 } }, farList = [], rf = (() => { let q = 4711; return () => (q = q * 16807 % 2147483647) / 2147483647; })();
   const SEA = 118, inSea = (x, z) => z > SEA + Math.sin(x * .031) * 9 + Math.sin(x * .011 + 2) * 12;
   // улицы до горизонта: бесконечная янтарная сетка, как над Лос-Сантосом ночью
   for (let l = -46; l <= 46; l++) for (let b = -330; b <= 330; b += 4.6) for (const ax of [0, 1]) {
-    const c = l * 7 + 3.5, x = ax ? c : b + rf() * 3, z = ax ? b + rf() * 3 : c, d = Math.hypot(x, z); if (d < 58 || d > 325 || inSea(x, z) || (z < -150 && rf() < .8) || rf() > (d < 130 ? .8 : .55)) continue;
-    const w = rf(); farList.push(x, GROUND + .4 + rf() * .5, z, w < .72 ? 1 : w < .9 ? .85 : .5, w < .72 ? .58 : w < .9 ? .8 : .7, w < .72 ? .24 : w < .9 ? .62 : 1, .55 + rf() * .8, rf() * 60);
+    const c = l * 7 + 3.5, x = ax ? c : b + rf() * 3, z = ax ? b + rf() * 3 : c, d = Math.hypot(x, z); if (d < 58 || d > 150 || inSea(x, z) || rf() > (d < 110 ? .75 : .5)) continue; // только вдоль улиц и по земле; дальше всё в дымке
+    const w = rf(); farList.push(x, GROUND + .45, z, 1, w < .8 ? .6 : .78, w < .8 ? .28 : .56, .4 + rf() * .6, rf() * 60);
   }
   await breathe();
-  // окна дальних кварталов
-  for (let k = 0; k < 2600; k++) { const a = rf() * 6.283, d = 70 + rf() * 180, x = Math.cos(a) * d, z = Math.sin(a) * d; if (inSea(x, z) || z < -165) continue; farList.push(x, GROUND + 1 + rf() * rf() * 13, z, 1, .78, .5, .35 + rf() * .6, rf() * 60); }
+  // дымка у горизонта: одно кольцо вокруг камеры перед холмами и дальним океаном. Края земли, воды и холмов тонут в ней,
+  // город и отель ближе — их она не трогает. Без текстур, один вызов отрисовки
+  const haze = new THREE.Mesh(new THREE.CylinderGeometry(214, 214, 84, 64, 1, true), new THREE.ShaderMaterial({ side: THREE.BackSide, transparent: true, depthWrite: false, fog: false, uniforms: { uF: skyU.uFog, uDay: skyU.uDay, uT: skyU.uTime },
+    vertexShader: 'varying vec3 p;varying float wy;void main(){p=position;wy=(modelMatrix*vec4(position,1.)).y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+    fragmentShader: `uniform vec3 uF;uniform float uDay,uT;varying vec3 p;varying float wy;void main(){
+      float a=atan(p.z,p.x),w=sin(a*3.+uT*.011)*.5+sin(a*7.-uT*.017+1.3)*.3+sin(a*13.+uT*.02)*.2,e=p.y/214.;
+      float n=smoothstep(-.02,-.5,p.z/214.),up=exp(-pow(max(e+.012+.062*n,0.)/(.034+.012*w-.008*n),2.))*(1.-.25*n),dn=exp(-pow(min(e+.03,0.)/.062,2.));
+      vec3 c=mix(mix(uF*1.15,vec3(.27,.11,.25),.75),uF,uDay);c+=vec3(.05,.015,.035)*(1.-uDay)*smoothstep(-.05,.03,e);
+      gl_FragColor=vec4(c+(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.,up*dn*(.9+.07*w)*smoothstep(42.,33.,abs(p.y))*smoothstep(-.6,11.,wy));}` }));
+  haze.frustumCulled = false; haze.renderOrder = -1; world.add(haze);
   await breathe();
   // холмы: три гряды, дальние светлее — воздушная перспектива; на юге их нет, там океан
-  const ridge = (R, H, col, seed, houses) => {
+  const ridge = (R, H, col, seed) => {
     const n = 220, pos = [], idx = []; const hgt = a => { const north = Math.max(0, -Math.sin(a) * 1.15 + .32); return Math.min(1, north) * H * (.55 + .2 * Math.sin(a * 5 + seed) + .16 * Math.sin(a * 11 + seed * 2.3) + .09 * Math.sin(a * 23 + seed) + .05 * Math.sin(a * 47)); };
     for (let k = 0; k <= n; k++) { const a = k / n * 6.28319, x = Math.cos(a) * R, z = Math.sin(a) * R; pos.push(x, GROUND - 4, z, x, GROUND + Math.max(0, hgt(a)), z); if (k) { const q = k * 2; idx.push(q - 2, q, q - 1, q - 1, q, q + 1); } }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
-    const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.DoubleSide, uniforms: { uC: { value: new THREE.Vector3(...col) }, uF: skyU.uFog, uH: { value: H } }, vertexShader: 'varying float y;void main(){y=position.y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', fragmentShader: 'uniform vec3 uC,uF;uniform float uH;varying float y;void main(){gl_FragColor=vec4(mix(uF,uC,smoothstep(-1.,uH*.55,y)),1.);}' })); m.renderOrder = -1; world.add(m);
-    for (let k = 0; k < houses; k++) { const a = -(.25 + rf() * 2.65), top = hgt(a); if (top < 5) continue; const y = GROUND + top * (.15 + rf() * .72), r2 = R - 1.5; farList.push(Math.cos(a) * r2, y, Math.sin(a) * r2, 1, .74, .44, .5 + rf() * .9, rf() * 60); }
+    const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ side: THREE.DoubleSide, uniforms: { uC: { value: new THREE.Vector3(...col) }, uF: skyU.uFog, uDay: skyU.uDay, uH: { value: H } }, vertexShader: 'varying float y;void main(){y=position.y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', fragmentShader: 'uniform vec3 uC,uF;uniform float uH,uDay;varying float y;void main(){gl_FragColor=vec4(mix(mix(uF,vec3(.25,.1,.23),.75*(1.-uDay)),uC,smoothstep(1.,uH*.5,y)),1.);}' })); m.renderOrder = -1; world.add(m);
     return hgt;
   };
-  ridge(330, 62, [.115, .062, .16], 1.7, 0); ridge(270, 46, [.08, .042, .125], 4.1, 240); const near = ridge(215, 31, [.05, .027, .088], 2.6, 620);
-  // серпантин по склону, обсерватория и мачты на вершинах
-  for (let k = 0; k < 130; k++) { const a = -(1.0 + k / 130 * .9), y = GROUND + near(a) * (.25 + .4 * (k / 130) + .07 * Math.sin(k * .35)); farList.push(Math.cos(a) * 212, y, Math.sin(a) * 212, 1, .66, .34, .85, k * .3); }
-  await breathe();
+  ridge(330, 62, [.115, .062, .16], 1.7); ridge(270, 46, [.08, .042, .125], 4.1); const near = ridge(215, 31, [.05, .027, .088], 2.6);
+  // холмы с особняками: дома стоят на уступах вдоль дорог-серпантинов, у каждого свои окна, у части — бассейн.
+  // Пять сеток на всё: уступы, деревья, стены, окна, бассейны; огни дорог идут вместе с остальными дальними огнями
+  {
+    const at = (a, y, r, f) => f(Math.cos(a) * r, y, Math.sin(a) * r, Math.atan2(-Math.cos(a), -Math.sin(a))), walls = [], glass = [], pools = [], trees = [], earth = [], plate = (w, h, d, x, y, z, ry, dx = 0, dy = 0, dz = 0) => { const q = new THREE.BoxGeometry(w, h, d); q.translate(dx, dy + h / 2, dz); q.rotateY(ry); q.translate(x, y, z); return q; };
+    [.5, .68, .85].forEach((lvl, n) => {
+      for (let a = -2.95; a < -.2; ) {
+        const top = near(a), y = GROUND + top * (lvl + .05 * Math.sin(a * 19 + n * 2)); a += .012 + rf() * .02; if (top < 12 || y < 12.5) continue;
+        at(a, y - .3, 213.6, (x, yy, z) => farList.push(x, yy, z, 1, .68, .38, .6, 500 + rf() * 60));                       // фонарь дороги
+        if (rf() < .3) continue;
+        const w = 1.3 + rf() * 1.3, h = .5 + rf() * .2, two = rf() < .4;
+        at(a, y, 213.2, (x, yy, z, ry) => {
+          walls.push(plate(w, h, 1.1, x, yy, z, ry), plate(w + .3, .07, 1.3, x, yy, z, ry, 0, h)); earth.push(plate(w + 1.2, .9, 1.5, x, yy, z, ry, 0, -.9));
+          const panes = (pw, px, py, pz) => { const m = Math.max(2, Math.round(pw / .42)); for (let q = 0; q < m; q++) if (rf() < .72) glass.push(plate(pw / m * .72, h * .46, .06, x, yy, z, ry, px + (q + .5) / m * pw - pw / 2, py, pz)); };
+          panes(w * .9, 0, h * .26, .56); if (two) { walls.push(plate(w * .5, h * .9, .9, x, yy, z, ry, w * .18, h)); panes(w * .44, w * .18, h * 1.25, .46); }
+          if (rf() < .25) pools.push(plate(.7, .06, .4, x, yy, z, ry, -w * .6, .01, .7));
+          for (let q = 2 + (rf() * 3 | 0); q--;) { const th = .7 + rf() * .9, c = new THREE.ConeGeometry(.16 + rf() * .16, th, 5); c.translate((rf() - .5) * (w + 2.4), th / 2 - .3, rf() < .5 ? .9 : -.8); c.rotateY(ry); c.translate(x, yy, z); trees.push(c); }
+        });
+        a += .009;
+      }
+    });
+    [[earth, 0x0d0716], [trees, 0x150c20], [walls, 0x241730], [glass, 0xb98450], [pools, 0x2c7f90]].forEach(([l, c]) => l.length && world.add(new THREE.Mesh(mergeGeos(l), new THREE.MeshBasicMaterial({ color: c, fog: false, toneMapped: false }))));
+  }
   // обсерватория на гребне: фасад с арками в тёплой подсветке и три тёмных купола — читается силуэтом
-  const obs = -1.28, oy = GROUND + near(obs) - .4; {
+  let obs = -1.28; for (let a = -1.75; a < -.9; a += .01) if (near(a) > near(obs)) obs = a;
+  const oy = GROUND + near(obs) - .4; {
     const c = document.createElement('canvas'); c.width = 256; c.height = 48; const g = c.getContext('2d'); const wl = g.createLinearGradient(0, 48, 0, 0); wl.addColorStop(0, '#8a5a34'); wl.addColorStop(1, '#33223a'); g.fillStyle = wl; g.fillRect(0, 0, 256, 48); g.fillStyle = '#1b1222'; g.fillRect(0, 0, 256, 4);
     for (let x = 8; x < 250; x += 15) { g.fillStyle = '#ffc47a'; g.beginPath(); g.arc(x + 4, 22, 4, Math.PI, 0); g.rect(x, 22, 8, 18); g.fill(); }
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; const gr = new THREE.Group(), box = (w, h, d, x, y) => { const q = new THREE.BoxGeometry(w, h, d); q.translate(x, y + h / 2, 0); return q; }, dome = (r, x, y) => { const q = new THREE.SphereGeometry(r, 18, 8, 0, 6.283, 0, 1.571); q.translate(x, y, 0); return q; };
     gr.add(new THREE.Mesh(mergeGeos([box(17, 2.4, 4, 0, 0), box(5.4, 4, 5, 0, 0), box(3.4, 3.1, 4.4, -7.4, 0), box(3.4, 3.1, 4.4, 7.4, 0)]), new THREE.MeshBasicMaterial({ map: t, color: 0x6b5a6c, fog: false, toneMapped: false })));
     gr.add(new THREE.Mesh(mergeGeos([dome(2.5, 0, 4), dome(1.5, -7.4, 3.1), dome(1.5, 7.4, 3.1)]), new THREE.MeshBasicMaterial({ color: 0x1b1228, fog: false, toneMapped: false })));
-    gr.position.set(Math.cos(obs) * 211, oy, Math.sin(obs) * 211); gr.lookAt(0, oy, 0);
-    const hill = new THREE.CylinderGeometry(13, 34, 16, 40, 1); hill.translate(0, -8, 0); hill.scale(1, 1, .35); gr.add(new THREE.Mesh(hill, new THREE.MeshBasicMaterial({ color: 0x140b22, fog: false, toneMapped: false }))); world.add(gr);
+    gr.scale.setScalar(.55); gr.position.set(Math.cos(obs) * 212, oy - .9, Math.sin(obs) * 212); gr.lookAt(0, oy - .9, 0); const hill = new THREE.CylinderGeometry(10, 17, 5, 24, 1); hill.translate(0, -2.5, 0); hill.scale(1, 1, .2); gr.add(new THREE.Mesh(hill, new THREE.MeshBasicMaterial({ color: 0x0d0716, fog: false, toneMapped: false })));
+    world.add(gr);
   }
-  const mast = []; [-.62, -1.75, -2.2].forEach(a => { const y = GROUND + near(a), x = Math.cos(a) * 212, z = Math.sin(a) * 212; mast.push(x, y - 1, z, x, y + 13, z); for (const q of [13, 8.5, 4.5]) farList.push(x, y + q, z, 1, .12, .1, 2.2, -1); });
-  const mastG = new THREE.BufferGeometry(); mastG.setAttribute('position', new THREE.Float32BufferAttribute(mast, 3)); world.add(new THREE.LineSegments(mastG, new THREE.LineBasicMaterial({ color: 0x2a1a38, fog: false })));
   await breathe();
-  // океан на юге: лунная дорожка и рябь; вдоль берега — набережная, пирс с колесом обозрения
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1500, 560, 60, 1), new THREE.ShaderMaterial({ uniforms: { uT: far.uT, uF: skyU.uFog }, vertexShader: 'varying vec3 w;varying vec3 vd;void main(){vec4 q=modelMatrix*vec4(position,1.);if(uv.y>.5)q.z=' + SEA.toFixed(1) + '+sin(q.x*.031)*9.+sin(q.x*.011+2.)*12.;w=q.xyz;vd=q.xyz-cameraPosition;gl_Position=projectionMatrix*viewMatrix*q;}',
-    fragmentShader: `uniform float uT;uniform vec3 uF;varying vec3 w,vd;float n(vec2 p){return sin(p.x*1.7+uT*.6)*sin(p.y*2.3-uT*.8)+.5*sin(p.x*3.9-uT)*sin(p.y*5.1+uT*.7);}
-      void main(){float d=length(vd);float g=smoothstep(.55,1.2,n(w.xz*vec2(.35,.9)));vec3 c=vec3(.03,.026,.07);float path=exp(-pow((w.x+30.)/46.,2.));c+=vec3(.34,.26,.42)*g*path*.55;c+=vec3(.35,.16,.1)*g*exp(-max(w.z-118.,0.)/26.)*.5;gl_FragColor=vec4(mix(uF*1.15,c,exp(-d*d*.0000075)),1.);}` }));
+  // океан на юге: отражает зарево неба, дальше растворяется в той же дымке; дорожки — от колеса обозрения и судов
+  const SEA_L = [[34, SEA + 34, 1, .42, .72], [-64, SEA + 96, 1, .78, .5], [92, SEA + 120, 1, .8, .55], [-150, SEA + 60, 1, .5, .34], [6, SEA + 150, .75, .85, 1]];
+  const seaU = { uT: far.uT, uF: skyU.uFog, uDay: skyU.uDay, uL: { value: SEA_L.map(l => new THREE.Vector2(l[0], l[1])) }, uC: { value: SEA_L.map(l => new THREE.Vector3(l[2], l[3], l[4])) } };
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1500, 560, 60, 1), new THREE.ShaderMaterial({ uniforms: seaU, vertexShader: 'varying vec3 w;varying float sh;void main(){vec4 q=modelMatrix*vec4(position,1.);float c=' + SEA.toFixed(1) + '+sin(q.x*.031)*9.+sin(q.x*.011+2.)*12.;if(uv.y>.5)q.z=c;sh=q.z-c;w=q.xyz;gl_Position=projectionMatrix*viewMatrix*q;}',
+    fragmentShader: `uniform float uT,uDay;uniform vec3 uF;uniform vec2 uL[5];uniform vec3 uC[5];varying vec3 w;varying float sh;
+      void main(){vec3 v=w-cameraPosition;float d=length(v),vis=1.-smoothstep(150.,430.,d);vec2 dir=normalize(v.xz);vec3 hz=mix(uF,vec3(.25,.1,.23),.75*(1.-uDay)*smoothstep(-.6,.05,dir.y));
+        if(vis<.004){gl_FragColor=vec4(hz,1.);return;}                                    // дальняя половина океана — одна дымка, без счёта волн
+        vec2 p=w.xz*vec2(.22,.55);float near=1./(1.+d*d*.00005);
+        float a=sin(p.x*1.3+p.y*.7+uT*.5),b=sin(p.y*1.9-p.x*.8-uT*.62+a),e=sin(p.x*3.1+p.y*4.3+uT*.9+b*1.4),wave=(a*.3+b*.4+e*.3)*near;
+        float fr=pow(1.-clamp(-v.y/d,0.,1.),5.);                                          // чем ближе к горизонту, тем больше неба в воде
+        vec3 c=mix(vec3(.03,.034,.085),vec3(.3,.13,.3),fr*(.6+.4*wave));
+        c+=vec3(.2,.12,.26)*smoothstep(.2,.7,wave)*.6;
+        c+=vec3(.36,.19,.1)*exp(-max(sh,0.)*.11)*(.4+.6*smoothstep(-.1,.8,wave));         // тёплый свет набережной у берега
+        c+=vec3(.5,.42,.52)*exp(-pow((sh-1.2-.7*a)*1.1,2.))*.28;                          // пена у кромки
+        for(int i=0;i<5;i++){vec2 l=uL[i]-cameraPosition.xz;float L=length(l);l/=L;float off=(dir.x*l.y-dir.y*l.x)*d,q=L-d;
+          float k=exp(-off*off/(6.+max(q,0.)*.16))*smoothstep(-2.,3.,q)*exp(-max(q,0.)*.02);
+          c+=uC[i]*k*(.2+.75*smoothstep(.1,.7,b*.5+e*.5));}
+        c=mix(c,vec3(.3,.46,.52)+.06*wave,uDay*.85);
+        gl_FragColor=vec4(mix(hz,c,vis)+(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.,1.);}` }));
   sea.rotation.x = -Math.PI / 2; sea.position.set(0, GROUND + .06, SEA + 280); world.add(sea);
+  // суда: корпус и рубка, огни стоят на них, дорожки в воде — от них же
+  const hulls = []; SEA_L.slice(1).forEach(([x, z, r, g, b], k) => { const bx = (w, h, d, dx, y) => { const q = new THREE.BoxGeometry(w, h, d); q.translate(x + dx, GROUND + y, z); hulls.push(q); };
+    bx(7, .9, 1.7, 0, .5); bx(2, 1.1, 1.3, 1.6, 1.5); bx(.1, 1.8, .1, -1.2, 1.8); farList.push(x + 1.6, GROUND + 1.7, z - .75, r, g, b, 1.5, k * 9, x - 1.2, GROUND + 2.7, z, 1, .9, .7, 1, k * 9 + 1); });
+  world.add(new THREE.Mesh(mergeGeos(hulls), new THREE.MeshBasicMaterial({ color: 0x1b1129, fog: false, toneMapped: false })));
   for (let x = -260; x <= 260; x += 3.2) { const z = SEA + Math.sin(x * .031) * 9 + Math.sin(x * .011 + 2) * 12 - 1.2; farList.push(x, GROUND + .7, z, 1, .7, .36, 1.1, x); }
   const PX = 34, PZ = SEA + Math.sin(PX * .031) * 9 + Math.sin(PX * .011 + 2) * 12; for (let k = 0; k < 34; k++) for (const o of [-1.4, 1.4]) farList.push(PX + o, GROUND + .9, PZ + k * 1.3, 1, .8, .55, 1, k);
   await breathe();
@@ -567,7 +627,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('aC', new THREE.BufferAttribute(C, 4)); g.setAttribute('aF', new THREE.BufferAttribute(F, 1));
     const m = new THREE.Points(g, new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { ...far, uPx: { value: dpr } },
       vertexShader: `attribute vec4 aC;attribute float aF;uniform float uT,uPx;varying vec3 c;void main(){vec3 p=position;if(aF>=999.){float a=(aF-1000.)/48.*6.28319+uT*.12;float r=mod(aF,2.)<1.?7.6:5.4;p.xy+=vec2(cos(a),sin(a))*r;}
-        vec4 mv=modelViewMatrix*vec4(p,1.);float d=-mv.z;float tw=aF<0.?step(0.,sin(uT*2.4)):.82+.18*sin(uT*1.6+aF*7.);c=aC.rgb*aC.a*tw*2.1*exp(-d*d*.000009);gl_PointSize=clamp(260./d,1.7,4.)*uPx;gl_Position=projectionMatrix*mv;}`,
+        vec4 mv=modelViewMatrix*vec4(p,1.);float d=-mv.z;float tw=.92+.08*sin(uT*.9+aF*7.);c=aC.rgb*aC.a*tw*2.1*exp(-d*d*.000016)*(aF>=999.?1.:aF>=500.?.9:1.-smoothstep(80.,165.,d));gl_PointSize=clamp(260./d,1.7,4.)*uPx;gl_Position=projectionMatrix*mv;}`,
       fragmentShader: 'uniform float uK;varying vec3 c;void main(){vec2 q=gl_PointCoord-.5;gl_FragColor=vec4(c*uK*smoothstep(.5,.12,length(q)),1.);}' })); m.frustumCulled = false; world.add(m); }
   await breathe();
   // самолёты на посадке и полицейский вертолёт с лучом
@@ -645,11 +705,11 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
   const setbackAt = () => 1;
   // видимая часть главной башни: от стыка с объёмом B по задней грани, левой, передней и кусок правой до стыка
   const hotelPath = () => { const w = W / 2, d = D / 2, bx = VOL.B.x - VOL.B.w / 2, bz = VOL.B.z + VOL.B.d / 2; return [[bx, -d], [-w, -d], [-w, d], [w, d], [w, bz]]; };
-  let lift = null, lift0 = null, ledM = null, officeMats = [], venues = [], venueMeshes = [], poolWater = [], hoverV = null;
+  let syncFloors = null, lift = null, lift0 = null, ledM = null, officeMats = [], venues = [], venueMeshes = [], hoverV = null;
   function build(rooms) {
-    root.traverse(o => { if (o.isMesh || o.isPoints || o.isLine) { o.geometry?.dispose?.(); const ms = [].concat(o.material || []); ms.forEach(mm => { mm.map?.dispose?.(); mm.emissiveMap?.dispose?.(); }); } }); root.clear(); lift0 = lift ? lift.position.y : null; lift = null; floors = []; hotel = []; officeMats = [];
-    const hF = [...new Set(rooms.map(r => r.floor))].sort((a, b) => a - b), maxF = hF.at(-1) ?? 26;
-    const n = Math.max(44, maxF + 12), podH = 3;
+    const keep = new Set([...Object.values(FACADE || {}), ...Object.values(HOTEL || {}).flatMap(h => [h.geo, h.mat, h.mat.map])]); // общие текстуры и модели переживают пересборку
+    root.traverse(o => { if (o.isMesh || o.isPoints || o.isLine) { if (!keep.has(o.geometry)) o.geometry?.dispose?.(); [].concat(o.material || []).forEach(mm => { if (keep.has(mm)) return; [mm.map, mm.emissiveMap].forEach(t => t && !keep.has(t) && t.dispose()); mm.dispose(); }); } }); root.clear(); lift0 = lift ? lift.position.y : null; lift = null; floors = []; hotel = []; officeMats = [];
+    const n = 44, podH = 3; // высота башни не зависит от номеров: лимиты этажей в core.js (TOWER)
     topY = n * FH;
     const roofM0 = new THREE.MeshStandardMaterial({ color: 0x0d1015, metalness: .1, roughness: .95, envMapIntensity: .25 });
     const atlas = facadeTex() || glassAtlas(), steel = new THREE.MeshStandardMaterial({ color: 0x1d232b, metalness: .4, roughness: .65, envMapIntensity: .3 });
@@ -660,14 +720,26 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
       for (let i = from; i < to; i++) { if (skip?.(i)) continue; geos.push(ringGeoAtlas(pts, FH, i * FH, (i * 5 + (pts[0][0] * 3 | 0)) & 7)); }
       if (geos.length) root.add(new THREE.Mesh(mergeGeos(geos), glassM()));
     };
-    // A: номера отеля — отдельные этажи с подсветкой по статусам, остальные в общей сетке
-    for (let i = podH; i < n; i++) {
-      const f = i + 1; if (!hF.includes(f)) continue;
-      const m = new THREE.Mesh(ringGeo(hotelPath(), FH * .86, 0, true), emis(floorCanvas(rooms.filter(r => r.floor === f), 0, null, null, dim), 1)); m.position.y = i * FH; m.userData = { floor: f, hotel: true, s: 1 };
-      root.add(m); floors.push(m); hotel.push(m);
-      const sl = new THREE.Mesh(slabRing(outline(1), 0, FH * .14), steel); sl.position.y = i * FH + FH * .86; root.add(sl); m.userData.slab = sl;
-    }
-    officeBlock(outline(1), podH, n, i => hF.includes(i + 1) || venues.some(v => v.floor === i + 1 && v.floor > podH));
+    // A: номера отеля — отдельные этажи с подсветкой по статусам, остальные в общей сетке. Номера и этажи
+    // добавляются и убираются на месте: меняются только затронутые этажи, без пересборки здания и без мерцания
+    const officeA = new THREE.Mesh(new THREE.BufferGeometry(), glassM()); officeA.frustumCulled = false; root.add(officeA); let officeKey = null;
+    syncFloors = (rooms, first) => {
+      let fresh = false;
+      const want = new Map(); rooms.forEach(r => { if (r.floor >= TOWER.minFloor && r.floor <= TOWER.maxFloor && !venues.some(v => v.floor === r.floor)) want.set(r.floor, [...(want.get(r.floor) || []), r]); });
+      hotel.filter(m => !want.has(m.userData.floor)).forEach(m => { root.remove(m, m.userData.slab); m.geometry.dispose(); m.userData.slab.geometry.dispose(); m.material.map.dispose(); m.material.dispose(); });
+      hotel = hotel.filter(m => want.has(m.userData.floor));
+      want.forEach((list, f) => {
+        const key = list.map(r => r.id + r.status).join(), old = hotel.find(m => m.userData.floor === f);
+        if (old) { if (old.userData.key !== key) { old.userData.key = key; floorCanvas(list, 0, hiRoom, hovRoom, dim, old.material.map); } return; }
+        const m = new THREE.Mesh(ringGeo(hotelPath(), FH * .86, 0, true), emis(floorCanvas(list, 0, hiRoom, hovRoom, dim), first ? 1 : 0)), sl = new THREE.Mesh(slabRing(outline(1), 0, FH * .14), steel);
+        m.position.y = (f - 1) * FH; sl.position.y = m.position.y + FH * .86; m.material.fog = steel.fog = false; m.userData = { floor: f, hotel: true, s: 1, key, slab: sl }; root.add(m, sl); hotel.push(m); fresh = true;
+      });
+      hotel.sort((a, b) => a.userData.floor - b.userData.floor); floors = hotel; if (fresh && !first) relight(); // новый этаж получает те же отражения и свет, что остальные
+      const ok = [...want.keys()].sort().join() + '|' + venues.map(v => v.floor).join(); if (ok === officeKey) return; officeKey = ok;
+      const geos = []; for (let i = podH; i < n; i++) if (!want.has(i + 1) && !venues.some(v => v.floor === i + 1 && v.floor > podH)) geos.push(ringGeoAtlas(outline(1), FH, i * FH, (i * 5 + (outline(1)[0][0] * 3 | 0)) & 7));
+      officeA.geometry.dispose(); officeA.geometry = mergeGeos(geos);
+    };
+    syncFloors(rooms, true);
     // этажи площадок: свой свет и цвет, наведение и клик ведут на страницу площадки
     venueMeshes = [];
     const vf = new Map(venues.filter(v => v.floor > podH && v.floor <= n).map(v => [v.floor, v]));
@@ -676,8 +748,8 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
       if (v.kind === 'pool') { // открытая терраса: стеклянное ядро, вода, ограждение и колонны
         const core = new THREE.Mesh(ringGeo(outline(.8), FH * .86), mat); core.position.y = y; root.add(core);
         const deck = new THREE.Mesh(slabRing(outline(1), y - .02, .06), steel); root.add(deck);
-        const water = new THREE.Mesh(slabGeo(rect(0, D * .5 - .45, W * .86, .7), .03), new THREE.MeshStandardMaterial({ color: new THREE.Color(v.accent).lerp(new THREE.Color(0x2ad1c9), .6), emissive: new THREE.Color(v.accent).lerp(new THREE.Color(0x2ad1c9), .6), emissiveIntensity: .7, metalness: .2, roughness: .05, transparent: true, opacity: .9 }));
-        water.position.y = y + .05; root.add(water); poolWater.push(water.material);
+        const wg = new THREE.BoxGeometry(W * .86, .03, .7), water = new THREE.Mesh(wg, waterMat(new THREE.Color(v.accent).lerp(new THREE.Color(0x1fb6d0), .88), W * .43, .35));
+        water.position.set(0, y + .065, D * .5 - .45); root.add(water);
         const rail = new THREE.Mesh(ringGeo(outline(.998), FH * .28), new THREE.MeshBasicMaterial({ color: 0x9fd9e0, transparent: true, opacity: .16, side: THREE.DoubleSide, depthWrite: false })); rail.position.y = y; root.add(rail);
         outline(.985).forEach(([x, z]) => { const c = new THREE.Mesh(new THREE.BoxGeometry(.14, FH * .86, .14), steel); c.position.set(x, y + FH * .43, z); root.add(c); });
         const hit = new THREE.Mesh(ringGeo(outline(1), FH * .86), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })); hit.position.y = y; hit.userData = { venue: v, floor: f, light: mat }; root.add(hit); venueMeshes.push(hit);
@@ -705,6 +777,8 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     if (HOTEL) { // запечённые части отеля: земля, крыши, вертолётная площадка
       const put = (k, y) => { if (!HOTEL[k]) return; const m = new THREE.Mesh(HOTEL[k].geo, HOTEL[k].mat); m.position.y = y; m.updateMatrix(); m.matrixAutoUpdate = false; root.add(m); };
       put('base', 0); put('roofA', crownTop); put('roofB', topB + .26); put('roofC', topC + .26);
+      const pool = (geo, m, x, y, z) => { const q = new THREE.Mesh(geo, m); q.position.set(x, y, z); q.updateMatrix(); q.matrixAutoUpdate = false; root.add(q); }, flat = g => g.rotateX(-Math.PI / 2);
+      pool(flat(new THREE.PlaneGeometry(1.45, 1)), waterMat('#2fb6cc', .725, .5), 5.3, topC + .26 + .141, .6); pool(flat(new THREE.CircleGeometry(1.03, 40)), waterMat('#2493b4', 1.03, 0, 1, .85), .2, .1295, 4.7);
     } else root.add(new THREE.Mesh(slabGeo(podPts, podH * FH - .02), new THREE.MeshStandardMaterial({ color: 0x3a3135, roughness: .85 })));
     // этажи подиума: невидимая зона клика с лёгкой подсветкой при наведении
     shopM = new THREE.MeshBasicMaterial({ color: 0x2a1806, transparent: true, opacity: .4, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -778,7 +852,7 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     applyWx(); relight();
     root.position.y = GROUND; world.position.y = 0;
     if (BAKE.shadow && !HOTEL) root.add(shadowM ??= contactShadow());
-    built = JSON.stringify(rooms.map(r => [r.id, r.floor])) + venueKey();
+    built = venueKey();
   }
   const venueKey = () => JSON.stringify(venues.map(v => [v.id, v.floor, v.kind]));
   let hiRoom = null, hovRoom = null, rotTarget = null;
@@ -797,8 +871,8 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
   let wantRooms = null, assetsIn = false;
   function update(rooms, floor) {
     wantRooms = [rooms, floor]; if (!assetsIn) { curRooms = rooms; sel = floor; return; } // собираем здание один раз, когда всё приехало
-    const k = JSON.stringify(rooms.map(r => [r.id, r.floor])) + venueKey();
-    if (k !== built) build(rooms); else if (rooms.map(r => r.status).join() !== curRooms.map(r => r.status).join()) retexture(rooms);
+    if (!rooms.some(r => r.id === hiRoom)) hiRoom = null; if (!rooms.some(r => r.id === hovRoom)) hovRoom = null;
+    if (built !== venueKey()) build(rooms); else syncFloors(rooms);
     curRooms = rooms; sel = floor;
     const fm = hotel.find(m => m.userData.floor === sel); camTargetY = fm ? fm.position.y + root.position.y : topY * .5;
     if (fm && hl) { hl.position.y = fm.position.y - FH * .01; hl.scale.setScalar(fm.userData.s); }
@@ -868,18 +942,17 @@ export async function mountTower(host, { onPick, onPickVenue, onSpin, onHoverFlo
     introT += dt; const it = Math.min(1, introT / 3.4);                                        // первое появление: кран от площади вверх к общему плану
     if (it < 1) { const k = 1 - Math.pow(1 - it, 3.2), q = 1 - k; dist *= 1 - .52 * q; ly -= (ly - 3) * q * .9; yw -= .85 * q; e2 -= .1 * q; fov += 12 * q; }
     if (Math.abs(cam.fov - fov) > .01) { cam.fov = fov; cam.updateProjectionMatrix(); }
-    cam.position.set(lxx + Math.sin(yw) * dist * Math.cos(e2), Math.max(GROUND + 1.2, ly + 1.5 + Math.sin(e2) * dist), Math.cos(yw) * dist * Math.cos(e2)); cam.lookAt(lxx, ly, 0);
+    cam.position.set(lxx + Math.sin(yw) * dist * Math.cos(e2), Math.max(GROUND + 1.2, ly + 1.5 + Math.sin(e2) * dist), Math.cos(yw) * dist * Math.cos(e2)); cam.lookAt(lxx, ly, 0); sky.position.copy(cam.position); haze.position.copy(cam.position);
     SINK.uCamP.value.set(cam.position.x, cam.position.y - GROUND, cam.position.z); sinkers.forEach(k => { k.g.scale.y = Math.max(.02, sinkJs(k.x, k.z, k.h) / k.h); });
     venueMeshes.forEach(m => { const L = m.userData.light, t2 = hoverV === m.userData.venue ? 1.2 : .85; if (L.emissiveIntensity != null) L.emissiveIntensity += (t2 - L.emissiveIntensity) * Math.min(1, dt * 8); else L.opacity += ((hoverV === m.userData.venue ? .95 : .55) - L.opacity) * Math.min(1, dt * 8); });
-    poolWater.forEach(w => { w.emissiveIntensity = .55 + .15 * Math.sin(t / 700); });
     // фокус на выбранном этаже: он горит ярче, а остальные приглушаются (как подсветка выбора на топовых 3D-сайтах)
     floors.forEach(m => { const on = m.userData.floor === sel, hv = m.userData.floor === hover; const target = on ? 1.25 : hv && m.userData.hotel ? 1.18 : m.userData.hotel ? .95 : officeK; m.material.emissiveIntensity += (target - m.material.emissiveIntensity) * Math.min(1, dt * 8); const sc = on ? 1.04 : 1; m.scale.x += (sc - m.scale.x) * Math.min(1, dt * 8); m.scale.z = m.scale.x; m.userData.slab?.scale.set(m.scale.x, 1, m.scale.x); });
-    if (hl) { const vis = sel !== null ? 1 : 0, pz = .94 + .06 * Math.sin(t / 900); const s = hl.userData.shell.uniforms.uOp; s.value += (vis * pz - s.value) * Math.min(1, dt * 6); hl.userData.trim.opacity += (vis * pz * .85 - hl.userData.trim.opacity) * Math.min(1, dt * 6); }
+    if (hl) { const vis = hotel.some(m => m.userData.floor === sel) ? 1 : 0, pz = .94 + .06 * Math.sin(t / 900); const s = hl.userData.shell.uniforms.uOp; s.value += (vis * pz - s.value) * Math.min(1, dt * 6); hl.userData.trim.opacity += (vis * pz * .85 - hl.userData.trim.opacity) * Math.min(1, dt * 6); }
     if (lift) { const u = lift.userData, fm = hotel.find(m => m.userData.floor === sel), ty = Math.max(u.y0, Math.min(u.y1, fm ? fm.position.y + FH * .45 : u.y0)); lift.position.y += (ty - lift.position.y) * Math.min(1, dt * 1.8); }
     if (beacon) beacon.material.color.setHSL(0.05, .9, 0.42 + Math.max(0, Math.sin(t / 420)) * 0.18);
     beacons.material.opacity = .55 + .45 * Math.sin(t / 500);
     const s = t / 1000; if (traffic) traffic.material.uniforms.uT.value = s % 100000;
-    far.uT.value = s % 100000; flyAir(s); clouds.rotation.y = s * 0.004; skyU.uTime.value = s; searchBeams.forEach(p => { p.rotation.y = s * .22 + p.userData.ph; });
+    far.uT.value = s % 100000; if (!RM) WATER_T.value = s % 1000; flyAir(s); clouds.rotation.y = s * 0.004; skyU.uTime.value = s; searchBeams.forEach(p => { p.rotation.y = s * .22 + p.userData.ph; });
     if (rain.visible) { for (let i = 0; i < RAIN; i++) { const o = i * 6, d = rainV[i] * dt; rainPos[o + 1] -= d; rainPos[o + 4] -= d; rainPos[o] -= d * .07; rainPos[o + 3] -= d * .07; if (rainPos[o + 1] < GROUND) reset(i, true); } rainG.attributes.position.needsUpdate = true; }
     if (snow.visible) { for (let i = 0; i < SNOW; i++) { const o = i * 3; snowPh[i] += dt; snowPos[o + 1] -= dt * (1.1 + (i % 7) * .12); snowPos[o] += Math.sin(snowPh[i]) * dt * .35; snowPos[o + 2] += Math.cos(snowPh[i] * .8) * dt * .25; if (snowPos[o + 1] < GROUND) resetS(i, true); } snowG.attributes.position.needsUpdate = true; }
     if (garland?.visible && garlandBase) { const ca = garland.children[0].geometry.attributes.color; for (let i = 0; i < ca.count; i++) { const k = .45 + .55 * Math.max(0, Math.sin(s * 2.2 + i * 1.7)); ca.array[i * 3] = garlandBase[i * 3] * k; ca.array[i * 3 + 1] = garlandBase[i * 3 + 1] * k; ca.array[i * 3 + 2] = garlandBase[i * 3 + 2] * k; } ca.needsUpdate = true; garland.children[1].material.opacity = .75 + .25 * Math.sin(s * 3); }

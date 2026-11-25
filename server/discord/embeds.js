@@ -17,12 +17,17 @@ export function helpdeskBoard() {
   };
 }
 
-// Первое сообщение тикета: кнопка закрытия работает только у администрации
-export function ticketOpened(t, memberId) {
+export const closeRow = () => ({ type: 1, components: [btn('mhc:close', 'Закрыть обращение', 4, '🔒')] });
+
+// Первое сообщение тикета: закрыть может автор или администрация
+// Кабинет на сайте: привязанному — ссылка, остальным — предложение войти. Discord принимает в кнопках только https
+export const cabinetRow = (site, linked = true) => linkRow(linked ? 'Кабинет на сайте' : 'Войти через Discord', /^https:/.test(site || '') ? site + (linked ? '/#me' : '/auth/discord?next=me') : '');
+export const linkText = linked => (linked ? 'Обращение есть и в вашем кабинете на сайте: ответы придут туда уведомлением, отвечать можно и оттуда.' : 'Вы не получите уведомления на сайте: ваш Discord к нему не присоединён. Войдите на сайт через Discord, и обращение появится в кабинете.');
+export function ticketOpened(t, memberId, { site = '', linked = true } = {}) {
   return {
-    content: `<@${memberId}>, управляющие скоро ответят.`,
-    embeds: [{ title: `🎫 ${cut(t.topic, 240)}`, color: PALETTE.gold, description: cut(t.text, 3900), fields: [{ name: 'Имя', value: t.name || '—', inline: true }, { name: 'Discord', value: t.discord, inline: true }], footer: { text: 'Закрыть обращение может только администрация. История сохранится.' } }],
-    components: [{ type: 1, components: [btn('mhc:close', 'Закрыть обращение', 4, '🔒')] }]
+    content: `<@${memberId}>, управляющие скоро ответят.\n-# ${linked ? '🔗' : '⚠️'} ${linkText(linked)}`,
+    embeds: [{ title: `🎫 ${cut(t.topic, 240)}`, color: PALETTE.gold, description: cut(t.text, 3900), fields: [{ name: 'Имя', value: t.name || '—', inline: true }, { name: 'Discord', value: t.discord, inline: true }], footer: { text: 'Закрыть может автор или администрация. История сохранится.' } }],
+    components: [closeRow(), ...cabinetRow(site, linked)]
   };
 }
 

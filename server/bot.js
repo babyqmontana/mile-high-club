@@ -1,10 +1,10 @@
 import { Client, GatewayIntentBits, Events, Options, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ActivityType } from 'discord.js';
-import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildBlueprint, allTiers, DIRECTOR_ROLE } from './discord/layout.js';
 import { planSetup, snapshotGuild, snapshotRoles, applyPlan, planCleanup } from './discord/plan.js';
-import { helpdeskBoard, postPayload, eventAnnouncement, ticketOpened, archiveCard, transcriptHtml, feedCard } from './discord/embeds.js';
+import { helpdeskBoard, postPayload, eventAnnouncement, ticketOpened, closeRow, cabinetRow, archiveCard, transcriptHtml, feedCard } from './discord/embeds.js';
+import { syncBoard } from './discord/board.js';
 import { applyProfile } from './discord/profile.js';
 import { buildCommands, createInteractions } from './discord/commands.js';
 
@@ -43,6 +43,7 @@ export async function startBot({ core, store, env, hooks }) {
   const tiers = () => ({ admin: known(listIds(S().adminRoles, env.ADMIN_ROLE_IDS)), director: known(listIds(S().directorRoles)), staff: known(listIds(S().modRoles, env.MOD_ROLE_IDS)), dev: known(S().devRoles?.length ? S().devRoles : guild.roles.cache.filter(r => r.name === 'Dev').map(r => r.id)) });
   const staffIds = () => allTiers(tiers());
   const staffOverwrites = () => [{ id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }, ...staffIds().map(id => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }))];
+  const botOverwrite = () => ({ id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] });
   const links = list => { const b = list.filter(([, url]) => url).map(([label, url]) => new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(url)); return b.length ? [new ActionRowBuilder().addComponents(b)] : []; };
   const send = async (key, payload) => { const c = await channel(key); return c ? c.send(payload).catch(e => { console.error('Discord send:', e.message); return null; }) : null; };
 
@@ -76,11 +77,13 @@ export async function startBot({ core, store, env, hooks }) {
     const m = await findMember(t.discord, t.discordId); if (!m) return null;
     const cat = await channel('catDesk');
     t.discordId = m.id; // сообщения из канала разделяются на гостя и персонал по этому id
-    const ch = await guild.channels.create({ name: `🎫・${(m.user.username || 'гость').slice(0, 20)}-${t.id.slice(-4)}`, type: ChannelType.GuildText, parent: cat?.id, permissionOverwrites: [...staffOverwrites(), { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] }, { id: m.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] }] });
-    await ch.send(ticketOpened(t, m.id));
+    const ch = await guild.channels.create({ name: `🎫・${(m.user.username || 'гость').slice(0, 20)}-${t.id.slice(-4)}`, type: ChannelType.GuildText, parent: cat?.id, permissionOverwrites: [...staffOverwrites(), botOverwrite(), { id: m.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] }] });
+    await ch.send(ticketOpened(t, m.id, { site, linked: t.owner === 'd:' + m.id && core.linked(m.id) }));
     return ch.id;
   };
 
+  // канал мог быть удалён вручную; сбой сети или прав за удаление не считаем
+  const ticketChannel = id => guild.channels.fetch(id).catch(e => { if (e.code === 10003) return null; throw e; });
   async function allMessages(c) {
     const out = []; let before;
     for (let n = 0; n < 20; n++) { const page = await c.messages.fetch({ limit: 100, before }); if (!page.size) break; out.push(...page.values()); before = page.last().id; if (page.size < 100) break; }
@@ -97,7 +100,7 @@ export async function startBot({ core, store, env, hooks }) {
   const authorKind = (t, m) => (relayGuest(m) ? 'guest' : relayStaff(m) ? 'staff' : m.author.bot ? 'bot' : m.author.id === t.discordId ? 'guest' : 'staff');
   // Закрытие: сначала архив, потом удаление канала. Не сохранился транскрипт — канал остаётся.
   hooks.closeTicketChannel = async (t, by, byGuest) => {
-    const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) return [];
+    const c = await ticketChannel(t.channel); if (!c) return [];
     const log = (await allMessages(c)).filter(m => !m.system).map(m => ({ from: authorKind(t, m), by: fromSite(m)?.[1] || m.member?.displayName || m.author.username, text: fromSite(m)?.[2] || textOf(m), files: [...m.attachments.values()].map(a => a.url), at: m.createdTimestamp }));
     const sent = await send('ticketArchive', { ...archiveCard(t, log, by, t.discordId), files: [{ attachment: Buffer.from(transcriptHtml(t, log, by), 'utf8'), name: `ticket-${t.id}.html` }] });
     if (!sent) throw new Error('не удалось сохранить транскрипт');
@@ -107,7 +110,9 @@ export async function startBot({ core, store, env, hooks }) {
     return log;
   };
   // ответ из панели сайта уходит в тикет-канал
-  hooks.ticketReply = async (t, text, by, ooc) => { const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) throw new Error('канал тикета не найден'); await c.send({ content: `**${by}** (с сайта): ${oocTag(ooc)}${text}`, allowedMentions: { parse: [] } }); };
+  hooks.ticketReply = async (t, text, by, ooc, guest) => { const c = await guild.channels.fetch(t.channel).catch(() => null); if (!c) throw new Error('канал тикета не найден'); await c.send({ content: `${guest ? '💬 ' : ''}**${by}** (с сайта): ${oocTag(ooc)}${text}`.slice(0, 2000), allowedMentions: { parse: [] } }); return true; };
+  // гость вошёл на сайт через Discord, пока тикет открыт
+  hooks.ticketLinked = async t => { const c = await ticketChannel(t.channel); if (c) await c.send({ content: '🔗 Discord привязан к сайту: переписка и уведомления теперь есть и в кабинете.', components: cabinetRow(site), allowedMentions: { parse: [] } }); };
   // --- Канал-мост беседы в Discord (бронь или заявка с сайта) ---
   // Персонал видит и отвечает прямо из Discord — сайт открывать не нужно. Гость пишет на сайте, бот дублирует сюда;
   // сотрудник пишет в канал — попадает гостю на сайт и в ЛС. Канал только для персонала (гость взаимодействует на сайте).
@@ -121,9 +126,9 @@ export async function startBot({ core, store, env, hooks }) {
   async function ensureBridge(kind, d) {
     if (d.channel) { const c = await guild.channels.fetch(d.channel).catch(() => null); if (c) return c; }
     const cat = await channel('catDesk'), m = await findMember(d.discord, d.discordId);
-    const ch = await guild.channels.create({ name: bridgeName(kind, d, m), type: ChannelType.GuildText, parent: cat?.id, permissionOverwrites: staffOverwrites() });
+    const ch = await guild.channels.create({ name: bridgeName(kind, d, m), type: ChannelType.GuildText, parent: cat?.id, permissionOverwrites: [...staffOverwrites(), botOverwrite()] });
     const role = /^\d+$/.test(S().bookingRole || '') ? S().bookingRole : null;
-    await ch.send({ content: (role ? `<@&${role}>\n` : '') + bridgeHead(kind, d), components: links([['Открыть в панели', panel]]), allowedMentions: { parse: [], roles: role ? [role] : [] } });
+    await ch.send({ content: (role ? `<@&${role}>\n` : '') + bridgeHead(kind, d), components: [...links([['Открыть в панели', panel]]), ...(kind === 'ticket' ? [closeRow()] : [])], allowedMentions: { parse: [], roles: role ? [role] : [] } });
     const fresh = store.get(BR[kind].col, d.id); if (fresh) store.put(BR[kind].col, d.id, { ...fresh, channel: ch.id, discordId: m?.id || fresh.discordId });
     convIdx = null; return ch;
   }
@@ -152,6 +157,19 @@ export async function startBot({ core, store, env, hooks }) {
     const text = textOf(m) || 'вложение', by = core.icOf?.(m.author.id) || m.member?.displayName || m.author.username, ooc = OOC_RE.test(text);
     if (c.kind === 'ticket') core.ticketMessage(c.doc.id, { from: authorKind(c.doc, m), by, text, ooc, at: m.createdTimestamp });
     else core.bookingMessage(c.doc.id, { by, text, ooc, at: m.createdTimestamp }); // в канале брони пишут только сотрудники
+  });
+
+  // канал тикета удалили вручную: обращение закрывается и на сайте, иначе гость упрётся в лимит открытых заявок
+  const closeOrphan = async t => {
+    const now = store.get('tickets', t.id); if (!now || now.status === 'closed' || now.channel !== t.channel || now.mode !== 'discord') return;
+    if (await ticketChannel(t.channel)) return;
+    await core.handle('POST', `/admin/tickets/${t.id}/close`, { user: { id: client.user.id, username: 'Discord', role: 'admin' } });
+  };
+  const orphanCheck = t => closeOrphan(t).catch(e => console.error('Discord ticket:', e.message));
+  client.on(Events.ChannelDelete, ch => {
+    if (ch.guildId !== env.GUILD_ID) return;
+    const t = store.all('tickets').find(x => x.channel === ch.id && x.status !== 'closed');
+    if (t) setTimeout(() => orphanCheck(t), 5000).unref(); // при закрытии кнопкой обращение к этому времени уже отмечено
   });
 
   // уведомления персоналу: одна лента. Гость на сервере — кликабельный профиль, иначе только имя
@@ -247,16 +265,20 @@ export async function startBot({ core, store, env, hooks }) {
     };
   };
 
-  // панель обращений: одно сообщение, правится только при изменении
+  // панель обращений: одно сообщение от текущего бота
   async function publishHelpdesk() {
-    const payload = helpdeskBoard(), hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex'), rec = S().helpdeskBoard;
-    const c = await channel('helpdesk'); if (!c) return;
-    // сообщение с кнопками могли удалить (чистка канала): раньше при том же тексте бот его не восстанавливал — «бот умер в ветке»
-    if (rec?.id) { const m = await c.messages.fetch(rec.id).catch(() => null); if (m) { if (rec.hash !== hash) await m.edit(payload); save({ helpdeskBoard: { id: m.id, hash } }); return; } }
-    const old = S().boards?.helpdesk; // карточка прошлой версии: её отправлял вебхук, им и удаляем
-    if (old?.id) { const h = (await c.fetchWebhooks().catch(() => null))?.find(w => w.owner?.id === client.user.id); await h?.deleteMessage(old.id).catch(() => {}); }
-    const m = await c.send(payload);
-    save({ helpdeskBoard: { id: m.id, hash } });
+    const c = await channel('helpdesk'); if (!c) return null;
+    const run = () => syncBoard(c, client.user.id, helpdeskBoard(), S().helpdeskBoard);
+    const r = await run().catch(async e => {
+      if (![50001, 50013].includes(e.code)) throw e;
+      // канал создал прежний бот: у нового нет в нём прав, выдаём себе
+      await c.permissionOverwrites.edit(client.user.id, { ViewChannel: true, SendMessages: true, EmbedLinks: true, ReadMessageHistory: true });
+      return run();
+    });
+    if (S().helpdeskBoard?.id !== r.id || S().helpdeskBoard?.hash !== r.hash) save({ helpdeskBoard: { id: r.id, hash: r.hash } });
+    if (r.action === 'sent') core.log('Discord: кнопки обращений выложены заново', 'ticket');
+    if (r.stale) console.error('Discord: старое сообщение с кнопками не удалилось, у бота нет права «Управлять сообщениями»');
+    return r;
   }
 
   // события сервера → сайт и анонс в канал
@@ -353,7 +375,7 @@ export async function startBot({ core, store, env, hooks }) {
 
   // функции берём сразу, а не через общий объект hooks: его может изменить сервер, а кнопки должны работать всегда
   const resolveRole = hooks.resolveRole;
-  const interact = createInteractions({ core, resolveRole });
+  const interact = createInteractions({ core, resolveRole, site });
   client.on(Events.InteractionCreate, i => { if (i.guildId === env.GUILD_ID) interact(i); });
 
   // Если бот не смог подключиться к серверу, клиент гасим: иначе он продолжал бы принимать нажатия кнопок,
@@ -375,6 +397,10 @@ export async function startBot({ core, store, env, hooks }) {
     const channelId = await hooks.createTicketChannel(t).catch(e => { console.error('Discord ticket:', e.message); return null; });
     if (channelId) { const doc = { ...t, channel: channelId }; store.put('tickets', t.id, doc); hooks.notify('ticket_update', doc).catch(() => {}); }
   }
+  for (const t of store.all('tickets').filter(x => x.status !== 'closed' && x.mode === 'discord' && x.channel)) await orphanCheck(t);
+  // кнопки обращений проверяются при каждом запуске и дальше раз в 15 минут
+  const board = () => publishHelpdesk().catch(e => { console.error('Discord board:', e.message); core.log(`Discord: кнопки обращений не выложены — ${e.message}`, 'error'); });
+  await board(); setInterval(board, 15 * 60e3).unref();
   await guild.commands.set(buildCommands()).catch(e => console.error('Discord commands:', e.message));
   try { client.user.setActivity(site && /^https:/.test(site) ? site.replace(/^https:\/\//, '') : 'Отель над Лос-Сантосом', { type: ActivityType.Watching }); } catch (e) { console.error('Discord activity:', e.message); }
   return client;

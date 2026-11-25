@@ -2,7 +2,7 @@ import { S, $, $$, esc, money, when, plural, I, bg, toast, fail, modal, confirmB
 import { api, upload, DEMO } from './api.js';
 import { play } from './sound.js';
 import { discordPreview } from './dcpreview.js';
-import { ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, venueState, roomGameFloor, PREFS, SERVICES, SERVICE_STATUS } from './core.js';
+import { ROOM_STATUS, BOOKING_STATUS, ORDER_STATUS, TICKET_STATUS, CIGAR_SHAPES, venueState, roomGameFloor, TOWER, roomLimitError, towerOverflow, PREFS, SERVICES, SERVICE_STATUS } from './core.js';
 import { LIST as ACH_LIST, emblem } from './achievements.js';
 
 const SECTIONS = [
@@ -214,7 +214,7 @@ function bookingChat(b) {
 // Доска номеров — «шахматка»: строки — этажи, клетки — номера, цвет — статус.
 // Счётчики сверху — фильтры и цели для перетаскивания. Клик по номеру — карточка: статус, гость, бронь.
 // «Выбрать несколько» — смена статуса сразу у группы (например, после уборки всего этажа).
-const RSC = { free: 'var(--gold)', booked: 'var(--pink)', occupied: 'var(--violet)', cleaning: '#7fb6a8', repair: 'var(--mut)' };
+const RSC = { free: 'var(--gold)', booked: 'var(--pink)', occupied: 'var(--violet)', cleaning: 'var(--st-cleaning)', repair: 'var(--st-repair)' };
 let bSel = new Set(), bMulti = false, bOpen = null;
 // Вид доски запоминается у администратора в браузере: 'floors' — по этажам (шахматка), 'kanban' — колонки по статусу (как было изначально).
 function boardStyle() { try { return localStorage.getItem('mhc:boardStyle') === 'kanban' ? 'kanban' : 'floors'; } catch { return 'floors'; } }
@@ -422,21 +422,37 @@ function media(m) {
 }
 
 /* ---------- отель ---------- */
+const nextFloor = () => { const fl = [...new Set(A.rooms.map(r => r.floor))], top = Math.max(TOWER.minFloor - 1, ...fl); for (let k = 1; k <= TOWER.maxFloor; k++) for (const f of [top + k, top - k]) if (!fl.includes(f) && !roomLimitError(A.rooms, A.venues, f, 1)) return f; return ''; };
+// лимиты модели отеля красным: сколько уже занято и что не помещается
+function limits(floors) {
+  const over = towerOverflow(A.rooms, A.venues);
+  return `<div class="lims" role="note"><b>Лимиты модели отеля на вкладке «Номера»</b><span>Этажи с номерами: <b class="num">${floors.length} из ${TOWER.floors}</b>, допустимы этажи с ${TOWER.minFloor} по ${TOWER.maxFloor}, кроме занятых площадками. На одном этаже не больше <b class="num">${TOWER.perFloor}</b> номеров. Лишнее сайт не сохранит.</span>${over.length ? `<ul>${over.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>`;
+}
+// проверка прямо при вводе: красный текст под формой и закрытая кнопка
+function limitForm(f, why) {
+  const p = f.querySelector('.lim-e'), b = f.querySelector('button.btn:not([type="button"])'), check = () => { const e = why(); p.hidden = !e; p.textContent = e; b.disabled = !!e; return e; };
+  f.addEventListener('input', check); check(); return check;
+}
 function structure(m) {
   const floors = [...new Set(A.rooms.map(r => r.floor))].sort((a, b) => b - a), T = A.types;
   const tOpt = v => T.map(t => `<option value="${esc(t.id)}" ${t.id === v ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
-  m.innerHTML = head('Этажи и номера', '', `${A.rooms.length} ${plural(A.rooms.length, 'номер', 'номера', 'номеров')} на ${floors.length} ${plural(floors.length, 'этаже', 'этажах', 'этажах')}. Номер комнаты, этаж и тип можно поменять у каждого номера.`) +
-    `<div class="g2" style="align-items:start;margin-bottom:1.2rem"><form class="card pad stack" id="flF"><h3 style="font-size:1rem">Добавить этаж</h3><div class="g3"><label class="field"><span>Этаж</span><input id="flN" type="number" value="${(floors[0] ?? 19) + 1}"></label><label class="field"><span>Номеров</span><input id="flC" type="number" min="1" max="40" value="6"></label><label class="field"><span>Первый номер</span><input id="flS" type="number" placeholder="авто"></label></div><label class="field"><span>Тип номеров</span><select id="flT">${tOpt(T[0]?.id)}</select></label><button class="btn">Добавить этаж</button></form>
-      <form class="card pad stack" id="rmF"><h3 style="font-size:1rem">Добавить один номер</h3><div class="g3"><label class="field"><span>Номер</span><input id="rmN" placeholder="2109"></label><label class="field"><span>Этаж</span><input id="rmFl" type="number"></label></div><label class="field"><span>Тип</span><select id="rmT">${tOpt(T[0]?.id)}</select></label><button class="btn ghost">Добавить номер</button></form></div>
-    <div class="stack">${floors.map(f => { const rs = A.rooms.filter(r => r.floor === f); return `<div class="card pad stack"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.05rem">${f} этаж <span class="note">· ${roomGameFloor(A.rooms, f)} · ${rs.length} ${plural(rs.length, 'номер', 'номера', 'номеров')}</span></h3><button class="btn sm ghost" data-delf="${f}">${I.trash} Удалить этаж</button></div>
-      <form class="row fl-ed" data-flo="${f}" style="gap:.6rem;align-items:flex-end;flex-wrap:wrap"><label class="field" style="width:110px"><span>Номер этажа</span><input type="number" data-fk="floor" value="${f}"></label><label class="field" style="min-width:180px"><span>Тип для всех номеров</span><select data-fk="type"><option value="">— не менять —</option>${tOpt('')}</select></label><label class="row" style="gap:.4rem;align-items:center;padding-bottom:.55rem"><input type="checkbox" data-fk="renumber" checked> <span class="note">перенумеровать (${f}01 → новый этаж)</span></label><button class="btn sm">Сохранить этаж</button></form>
+  m.innerHTML = head('Этажи и номера', '', `${A.rooms.length} ${plural(A.rooms.length, 'номер', 'номера', 'номеров')} на ${floors.length} ${plural(floors.length, 'этаже', 'этажах', 'этажах')}. Номер комнаты, этаж и тип можно поменять у каждого номера.`) + limits(floors) +
+    `<div class="g2" style="align-items:start;margin-bottom:1.2rem"><form class="card pad stack" id="flF" novalidate><h3 style="font-size:1rem">Добавить этаж</h3><div class="g3"><label class="field"><span>Этаж</span><input id="flN" type="number" min="${TOWER.minFloor}" max="${TOWER.maxFloor}" value="${nextFloor()}"></label><label class="field"><span>Номеров</span><input id="flC" type="number" min="1" max="${TOWER.perFloor}" value="6"></label><label class="field"><span>Первый номер</span><input id="flS" type="number" placeholder="авто"></label></div><label class="field"><span>Тип номеров</span><select id="flT">${tOpt(T[0]?.id)}</select></label><p class="lim-e" role="alert" hidden></p><button class="btn">Добавить этаж</button></form>
+      <form class="card pad stack" id="rmF" novalidate><h3 style="font-size:1rem">Добавить один номер</h3><div class="g3"><label class="field"><span>Номер</span><input id="rmN" placeholder="2109"></label><label class="field"><span>Этаж</span><input id="rmFl" type="number" min="${TOWER.minFloor}" max="${TOWER.maxFloor}"></label></div><label class="field"><span>Тип</span><select id="rmT">${tOpt(T[0]?.id)}</select></label><p class="lim-e" role="alert" hidden></p><button class="btn ghost">Добавить номер</button></form></div>
+    <div class="stack">${floors.map(f => { const rs = A.rooms.filter(r => r.floor === f); return `<div class="card pad stack"><div class="row" style="justify-content:space-between"><h3 style="font-size:1.05rem">${f} этаж <span class="note">· ${roomGameFloor(A.rooms, f)} · <span class="${rs.length >= TOWER.perFloor ? 'danger-t' : ''}">${rs.length} из ${TOWER.perFloor} номеров</span></span></h3><button class="btn sm ghost" data-delf="${f}">${I.trash} Удалить этаж</button></div>
+      <form class="row fl-ed" data-flo="${f}" style="gap:.6rem;align-items:flex-end;flex-wrap:wrap"><label class="field" style="width:110px"><span>Номер этажа</span><input type="number" data-fk="floor" value="${f}"></label><label class="field" style="min-width:180px"><span>Тип для всех номеров</span><select data-fk="type"><option value="">— не менять —</option>${tOpt('')}</select></label><label class="row" style="gap:.4rem;align-items:center;padding-bottom:.55rem"><input type="checkbox" data-fk="renumber" checked> <span class="note">перенумеровать (${f}01 → новый этаж)</span></label><button class="btn sm">Сохранить этаж</button><p class="lim-e" role="alert" hidden style="flex-basis:100%"></p></form>
       <div class="scroll"><table class="tbl"><thead><tr><th>Номер</th><th>Этаж</th><th>Тип</th><th>Статус</th><th></th></tr></thead><tbody>${rs.map(r => `<tr data-id="${esc(r.id)}"><td><input value="${esc(r.id)}" data-k="id" style="width:90px"></td><td><input type="number" value="${r.floor}" data-k="floor" style="width:80px"></td><td><select data-k="type">${tOpt(r.type)}</select></td><td><span class="chip ${r.status === 'free' ? 'ok' : 'm'}">${ROOM_STATUS[r.status]}</span></td><td style="white-space:nowrap"><button class="btn sm" data-save>Сохранить</button> <button class="btn sm ghost icon" data-delr aria-label="Удалить номер">${I.trash}</button></td></tr>`).join('')}</tbody></table></div></div>`; }).join('')}</div>`;
-  $('#flF').onsubmit = async e => { e.preventDefault(); const r = await run(() => api('POST', '/admin/floors', { floor: $('#flN').value, count: $('#flC').value, start: $('#flS').value || undefined, type: $('#flT').value })); if (r) { toast(`Добавлено номеров: ${r.made.length}`); play('success'); await load(); paint(); } };
-  $('#rmF').onsubmit = async e => { e.preventDefault(); if (await run(() => api('POST', '/admin/rooms', { id: $('#rmN').value, floor: $('#rmFl').value, type: $('#rmT').value }), 'Номер добавлен')) { await load(); paint(); } };
+  const int = v => (String(v).trim() === '' ? NaN : Number(v));
+  const flBad = limitForm($('#flF'), () => { const c = int($('#flC').value); return !Number.isInteger(c) || c < 1 ? 'Укажите, сколько номеров добавить' : roomLimitError(A.rooms, A.venues, int($('#flN').value), c); });
+  const rmBad = limitForm($('#rmF'), () => ($('#rmFl').value.trim() === '' ? '' : roomLimitError(A.rooms, A.venues, int($('#rmFl').value), 1)));
+  $('#flF').onsubmit = async e => { e.preventDefault(); const er = flBad(); if (er) return toast(er, 'err'); const r = await run(() => api('POST', '/admin/floors', { floor: $('#flN').value, count: $('#flC').value, start: $('#flS').value || undefined, type: $('#flT').value })); if (r) { toast(`Добавлено номеров: ${r.made.length}`); play('success'); await load(); paint(); } };
+  $('#rmF').onsubmit = async e => { e.preventDefault(); const er = rmBad(); if (er) return toast(er, 'err'); if (await run(() => api('POST', '/admin/rooms', { id: $('#rmN').value, floor: $('#rmFl').value, type: $('#rmT').value }), 'Номер добавлен')) { await load(); paint(); } };
   $$('#amain tr[data-id]').forEach(tr => {
     tr.querySelector('[data-save]').onclick = async () => { const body = Object.fromEntries([...tr.querySelectorAll('[data-k]')].map(i => [i.dataset.k, i.value])); if (await run(() => api('PUT', `/admin/rooms/${encodeURIComponent(tr.dataset.id)}`, body), 'Номер сохранён')) { await load(); paint(); } };
     tr.querySelector('[data-delr]').onclick = async () => { if (!await confirmBox(`Удалить номер ${tr.dataset.id}?`, 'Номер исчезнет с сайта и с доски.', 'Удалить', true)) return; if (await run(() => api('DELETE', `/admin/rooms/${encodeURIComponent(tr.dataset.id)}`), 'Удалено')) { await load(); paint(); } };
   });
+  $$('form[data-flo]').forEach(fm => limitForm(fm, () => { const f = +fm.dataset.flo, to = int(fm.querySelector('[data-fk="floor"]').value), rs = A.rooms.filter(r => r.floor === f); return to === f ? '' : roomLimitError(A.rooms, A.venues, to, rs.length, rs.map(r => r.id)); }));
+  $$('#amain tr[data-id] [data-k="floor"]').forEach(i => i.addEventListener('input', () => { const r = A.rooms.find(x => x.id === i.closest('tr').dataset.id), e = r && int(i.value) !== r.floor ? roomLimitError(A.rooms, A.venues, int(i.value), 1, [r.id]) : ''; i.classList.toggle('bad', !!e); i.title = e; i.closest('tr').querySelector('[data-save]').disabled = !!e; if (e) toast(e, 'err'); }));
   $$('form[data-flo]').forEach(fm => fm.onsubmit = async e => { e.preventDefault(); const q = k => fm.querySelector(`[data-fk="${k}"]`), body = { floor: q('floor').value, type: q('type').value || undefined, renumber: q('renumber').checked };
     if (+body.floor === +fm.dataset.flo && !body.type) return toast('Ничего не изменилось');
     if (await run(() => api('PUT', `/admin/floors/${fm.dataset.flo}`, body), 'Этаж сохранён')) { await load(); paint(); } });

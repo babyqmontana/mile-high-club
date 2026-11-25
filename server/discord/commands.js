@@ -1,36 +1,42 @@
 // В Discord остаются только обращения. Брони, меню, афиша и управление живут на сайте.
 
+import { cabinetRow, linkText } from './embeds.js';
+
 export const buildCommands = () => [{ name: 'обращение', description: 'Написать отелю: откроется закрытый канал' }];
 
 const input = (custom_id, label, opts = {}) => ({ type: 1, components: [{ type: 4, custom_id, label, style: opts.long ? 2 : 1, required: true, max_length: opts.long ? 1000 : 60 }] });
 const ticketModal = (id, title, topicLabel) => ({ custom_id: id, title, components: [input('name', 'Имя персонажа'), input('topic', topicLabel), input('text', 'Сообщение', { long: true })] });
 
-/** ctx: { core, resolveRole } */
-export function createInteractions({ core, resolveRole }) {
+/** ctx: { core, resolveRole, site } */
+export function createInteractions({ core, resolveRole, site = '' }) {
   const EPH = 64; // MessageFlags.Ephemeral: видно только нажавшему (вместо устаревшего ephemeral: true)
-  const say = (i, content) => (i.deferred || i.replied ? i.editReply({ content }) : i.reply({ content, flags: EPH }));
+  const say = (i, content, components = []) => (i.deferred || i.replied ? i.editReply({ content, components }) : i.reply({ content, flags: EPH }));
   // защита от спама: не чаще раза в 2 минуты и не больше 3 открытых обращений на человека
   const lastAt = new Map();
   const openTicket = async (i, topic) => {
     const now = Date.now(), open = core.store.all('tickets').filter(t => t.discordId === i.user.id && t.status !== 'closed').length;
     if (open >= 3) return i.reply({ content: 'У вас уже три открытых обращения — дождитесь ответа по ним.', flags: EPH });
     if (now - (lastAt.get(i.user.id) || 0) < 120e3) return i.reply({ content: 'Новое обращение можно открыть через пару минут.', flags: EPH });
-    lastAt.set(i.user.id, now);
     await i.deferReply({ flags: EPH });
+    lastAt.set(i.user.id, now);
+    try {
     const user = { id: i.user.id, username: i.user.username, role: await resolveRole(i.user.id) };
     const { ticket } = await core.handle('POST', '/tickets', { user, body: { name: i.fields.getTextInputValue('name'), topic, text: i.fields.getTextInputValue('text') } });
     const r = await core.handle('POST', `/tickets/${ticket.id}/mode`, { user, body: { mode: 'discord' } });
-    return say(i, r.ticket.channel ? `Обращение открыто: <#${r.ticket.channel}>` : 'Обращение принято, управляющие ответят.');
+    const linked = core.linked(i.user.id);
+    return await say(i, `${r.ticket.channel ? `Обращение открыто: <#${r.ticket.channel}>` : 'Обращение принято, управляющие ответят.'}\n${linked ? '🔗' : '⚠️'} ${linkText(linked)}`, cabinetRow(site, linked));
+    } catch (e) { lastAt.delete(i.user.id); throw e; } // не открылось — ждать две минуты не нужно
   };
 
   // закрыть может персонал или сам автор обращения: транскрипт и удаление канала делает core через бота
   const closeTicket = async i => {
+    // Discord ждёт ответ 3 секунды: сначала подтверждаем нажатие, потом проверяем права
+    await i.deferReply({ flags: EPH });
     const role = await resolveRole(i.user.id);
     const t = core.store.all('tickets').find(x => x.channel === i.channelId && x.status !== 'closed');
-    if (!t) return i.reply({ content: 'Это обращение уже закрыто.', flags: EPH });
+    if (!t) return say(i, 'Это обращение уже закрыто.');
     const own = t.discordId === i.user.id;
-    if (role === 'guest' && !own) return i.reply({ content: 'Закрыть обращение может его автор или администрация.', flags: EPH });
-    await i.deferReply({ flags: EPH });
+    if (role === 'guest' && !own) return say(i, 'Закрыть обращение может его автор или администрация.');
     const user = { id: i.user.id, username: i.member?.displayName || i.user.username, role };
     await core.handle('POST', role === 'guest' ? `/tickets/${t.id}/close` : `/admin/tickets/${t.id}/close`, { user });
   };
