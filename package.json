@@ -1,6 +1,6 @@
 {
   "name": "mile-high-club",
-  "version": "5.15.3",
+  "version": "5.15.4",
   "description": "Сайт отеля Mile High Club с Discord-ботом",
   "main": "server/index.js",
   "scripts": {
